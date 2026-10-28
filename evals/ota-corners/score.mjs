@@ -66,9 +66,11 @@ export function shown(numbers, metric, value) {
 	return forms.some((f) => numbers.some((n) => Math.abs(n - f) <= Math.max(1e-3 * Math.abs(f), 1e-3)));
 }
 
-export function resolveEvidence(ws, evidence) {
+/** The evidence path in ws. agentRoot is the path of ws as the agent saw it (in a container, for example /work). */
+export function resolveEvidence(ws, evidence, agentRoot = ws) {
 	if (typeof evidence !== "string" || evidence === "") return null;
-	const candidates = [isAbsolute(evidence) ? evidence : resolve(ws, evidence), join(ws, "simra", "experiments", evidence)];
+	const path = isAbsolute(evidence) ? join(ws, relative(agentRoot, evidence)) : resolve(ws, evidence);
+	const candidates = [path, join(ws, "simra", "experiments", evidence)];
 	for (const c of candidates) {
 		const rel = relative(ws, c);
 		if (!rel.startsWith("..") && !isAbsolute(rel) && existsSync(c)) return c;
@@ -76,7 +78,7 @@ export function resolveEvidence(ws, evidence) {
 	return null;
 }
 
-export function score(ws, expected = JSON.parse(readFileSync(join(here, "expected.json"), "utf8"))) {
+export function score(ws, expected = JSON.parse(readFileSync(join(here, "expected.json"), "utf8")), agentRoot = ws) {
 	const report = { workspace: ws, correctness: 0, traceability: 0, tool: 0, max: { correctness: 16, traceability: 16, tool: 2 }, results: {}, errors: [] };
 	const answerPath = join(ws, "answer.json");
 	if (!existsSync(answerPath)) {
@@ -110,7 +112,7 @@ export function score(ws, expected = JSON.parse(readFileSync(join(here, "expecte
 			if (s.correct[m]) report.correctness++;
 		}
 
-		const ev = resolveEvidence(ws, r.evidence);
+		const ev = resolveEvidence(ws, r.evidence, agentRoot);
 		s.evidence = ev !== null;
 		if (ev) {
 			const text = readTexts(ev).map((f) => f.text).join("\n");

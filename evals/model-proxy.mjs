@@ -2,15 +2,18 @@
 // It forwards each request to the upstream API without change and writes one JSON line per request:
 // time, path, the model name in the request, thinking settings, the model name in the response, and token usage.
 // It never logs headers, so the API key does not appear in the log.
+// If DEEPSEEK_API_KEY is set for the proxy, the proxy puts it in the Authorization header of each request.
+// Then the agent needs only a dummy key and never sees the real one.
 //
-// Usage: node evals/model-proxy.mjs <port> <log.jsonl> [upstream]   (default upstream: https://api.deepseek.com)
+// Usage: node evals/model-proxy.mjs <port | socket path> <log.jsonl> [upstream]   (default upstream: https://api.deepseek.com)
 
 import { appendFileSync } from "node:fs";
 import { createServer } from "node:http";
 
 const [port, logPath, upstream = "https://api.deepseek.com"] = process.argv.slice(2);
+const key = process.env.DEEPSEEK_API_KEY;
 if (!port || !logPath) {
-	console.error("usage: node evals/model-proxy.mjs <port> <log.jsonl> [upstream]");
+	console.error("usage: node evals/model-proxy.mjs <port | socket path> <log.jsonl> [upstream]");
 	process.exit(2);
 }
 
@@ -29,7 +32,7 @@ function scanResponse(text) {
 	return { response_model, usage };
 }
 
-createServer(async (req, res) => {
+const server = createServer(async (req, res) => {
 	const chunks = [];
 	for await (const c of req) chunks.push(c);
 	const body = Buffer.concat(chunks);
@@ -50,6 +53,7 @@ createServer(async (req, res) => {
 	delete headers.host;
 	delete headers["content-length"];
 	delete headers["accept-encoding"];
+	if (key) headers.authorization = `Bearer ${key}`;
 	try {
 		const up = await fetch(upstream + req.url, { method: req.method, headers, body: body.length ? body : undefined });
 		entry.status = up.status;
@@ -72,4 +76,6 @@ createServer(async (req, res) => {
 		res.end();
 	}
 	appendFileSync(logPath, `${JSON.stringify(entry)}\n`);
-}).listen(Number(port), "127.0.0.1", () => console.error(`model proxy on 127.0.0.1:${port} -> ${upstream}, log ${logPath}`));
+});
+const where = /^\d+$/.test(port) ? [Number(port), "127.0.0.1"] : [port];
+server.listen(...where, () => console.error(`model proxy on ${where.join(":")} -> ${upstream}, log ${logPath}`));

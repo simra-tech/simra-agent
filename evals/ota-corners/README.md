@@ -65,10 +65,22 @@ Arms:
 
 All arms use the model `deepseek/deepseek-flash` with high reasoning effort. On 2026-10-28, a check through
 `model-proxy.mjs` showed that pi 1.4.0 and OpenCode 1.14.48 both send the model name `deepseek-flash` and
-`reasoning_effort: high` to `api.deepseek.com`.
+`reasoning_effort: high` to `api.deepseek.com`. OpenCode also sends one call for the session title, without
+tools and without a reasoning effort.
 
-1. Put `DEEPSEEK_API_KEY` in the environment or in `.env` in the repository root.
-2. Run `node evals/run-arm.mjs evals/ota-corners <arm>`.
+Each arm runs in a sandbox container of the environment image (`container/`):
+
+- no network, a read-only root file system, no capabilities;
+- only the workspace (at `/work`), the harness state (at `/state`) and the socket of the model proxy are mounted;
+- the agent gets a dummy key. `model-proxy.mjs` runs on the host and puts the real key in each request.
+
+The image does not hold `evals/`, so the agent cannot read `expected.json`. `test/arm-sandbox.test.mjs` checks
+the sandbox with a fake model API.
+
+1. Build the environment image with `container/build.sh`.
+2. Write `examples/ota-sg13g2/simra.local.json` for this image (see the example README).
+3. Put `DEEPSEEK_API_KEY` in the environment or in `.env` in the repository root.
+4. Run `node evals/run-arm.mjs evals/ota-corners <arm>`.
 
 The run directory is outside the repository (default: `$TMPDIR/simra-evals`; change it with `--runs <dir>`
 or `SIMRA_EVAL_RUNS`). It holds the workspace `ws/`, the event stream `transcript.jsonl`, the model call log

@@ -3,8 +3,8 @@ This directory holds a two-stage Miller OTA for the IHP SG13G2 PDK:
 - `ota.spice`: the OTA subcircuit.
 - `tb_ota.spice`: an open-loop testbench. It has no MOS model library and no analyses. Read its comments.
 
-ngspice and the IHP SG13G2 PDK are available through `./sim.sh <deck>`. It runs `ngspice -b <deck>` in a
-container. The PDK is at `$PDK_ROOT/ihp-sg13g2` in the container. This directory is mounted at the same path.
+ngspice and the IHP SG13G2 PDK are available through `./sim.sh <deck>`. It runs `ngspice -b <deck>`.
+The PDK is at `$PDK_ROOT/ihp-sg13g2`.
 
 Do these steps:
 
