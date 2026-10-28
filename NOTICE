@@ -1,0 +1,9 @@
+Simra Agent
+Copyright 2026 Simra Agent contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Simra Agent is built on pi (https://github.com/earendil-works/pi),
+Copyright (c) 2025 Mario Zechner and contributors, licensed under the MIT License.
+pi is used as an unmodified npm dependency (@earendil-works/pi-coding-agent).
+It is not copied into this repository.

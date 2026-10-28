@@ -1,0 +1,20 @@
+{
+  "name": "simra-agent",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Simra Agent: a chip-design agent harness built on pi",
+  "license": "Apache-2.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.mjs\""
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "1.4.0"
+  }
+}
