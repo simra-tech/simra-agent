@@ -12,8 +12,12 @@ also work without pi. See [README.md](README.md) for the status.
 
 | Path | Contents |
 | --- | --- |
+| `packages/kernel/` | runner, experiment records, environments, `simra` CLI (no pi dependency) |
 | `packages/pi-extension/` | the pi extension (the only package that imports pi) |
-| `test/` | smoke test |
+| `adapters/` | tool adapters (JSON-in / JSON-out), one directory per tool |
+| `examples/` | small public example designs |
+| `evals/` | demo evaluation tasks for the inner development loop (not decision benchmarks) |
+| `test/` | smoke and integration tests |
 | `.github/workflows/` | CI |
 
 ## Build and test

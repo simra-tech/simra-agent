@@ -13,10 +13,15 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
 
 ## Status
 
-**Stage 0. Nothing is usable yet.**
+**Stage 1. One capability: recorded simulation runs.**
 
-This repository holds only the foundation: a pinned pi release, an empty pi extension, and one smoke test.
-The extension registers one command, `/simra-version`. It has no chip-design function yet.
+- The tool `run_experiment` (pi extension) and the command `simra run` (plain CLI) run one simulation through
+  an adapter.
+- Each run writes a record to `simra/experiments/<id>/` in the design root: the request, the environment
+  (container image ID, CPU pinning), the git state of the design, the hash of every input file (including the
+  PDK model files), the tool version, the measurements, the logs and the hashed outputs.
+- One adapter exists: ngspice.
+- One example design exists: a two-stage OTA for the open IHP SG13G2 PDK.
 
 ## Requirements
 
@@ -29,22 +34,38 @@ The extension registers one command, `/simra-version`. It has no chip-design fun
 2. Run `npm ci`.
 3. Run `npm test`.
 
-The smoke test starts pi in RPC mode with only the Simra extension loaded. It needs no model, no API key and
-no network access after `npm ci`.
+The tests need no model, no API key and no network access after `npm ci`. The adapter tests need Python 3.6
+or later. The integration test with ngspice runs only if `ngspice` is on the PATH; otherwise it is reported as
+skipped. To also test a container image, set `SIMRA_TEST_PODMAN_IMAGE` to an image with ngspice and Python.
 
-## Try the command in pi
+## Run a simulation
 
-1. Run `npx pi -e ./packages/pi-extension`.
-2. Type `/simra-version`.
+From a plain command line:
 
-pi shows the Simra Agent version and the pi version.
+1. Write a spec file, for example `run.json`:
+   `{"adapter": "ngspice", "operation": "simulate", "purpose": "check the RC filter", "inputs": {"deck": "rc.spice"}}`
+2. Run `npx simra run run.json` in the design root.
+3. Run `npx simra list` and `npx simra show <id>` to read the records.
+
+In pi:
+
+1. Run `npx pi -e ./packages/pi-extension` in the design root.
+2. Ask for a simulation. The agent calls `run_experiment` and cites the experiment id.
+
+The design root is the nearest directory upward with `simra.config.json`. It defines the execution
+environments. Put machine-specific settings (image ID, CPU list) in `simra.local.json`, which git ignores.
+See [examples/ota-sg13g2](examples/ota-sg13g2/README.md).
 
 ## Layout
 
 | Path | Contents |
 | --- | --- |
+| `packages/kernel/` | runner, experiment records, environments, `simra` CLI (no pi dependency) |
 | `packages/pi-extension/` | the pi extension (the only package that imports pi) |
-| `test/` | smoke test |
+| `adapters/ngspice/` | ngspice adapter (Python) and its tests |
+| `examples/ota-sg13g2/` | two-stage OTA for IHP SG13G2 |
+| `evals/` | demo evaluation for the inner development loop (not a decision benchmark): the OTA at 3 corners, a scorer and an arm runner |
+| `test/` | smoke and integration tests |
 
 ## Licence
 

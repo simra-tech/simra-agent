@@ -1,0 +1,20 @@
+* Reference measurements for examples/ota-sg13g2 (used by evals/ota-corners/reference.mjs)
+.include "tb_ota.spice"
+.control
+op
+print v(out)
+ac dec 100 1 10G
+meas ac gain_db find vdb(out) at=1
+meas ac ugf_hz when vdb(out)=0
+* vp() is in radians in ngspice: convert before the phase margin.
+meas ac phase_ugf_rad find vp(out) at=ugf_hz
+let pm_deg = 180 + phase_ugf_rad * 180 / pi
+print pm_deg
+* Raw complex response for the independent cross-check.
+wrdata ac.txt v(out)
+noise v(out) Vinp lin 1 1k 1k
+setplot noise1
+* One frequency point: inoise_spectrum is a scalar.
+let vn_1k_nv = inoise_spectrum * 1e9
+print vn_1k_nv
+.endc

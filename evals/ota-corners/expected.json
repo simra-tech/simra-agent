@@ -1,0 +1,116 @@
+{
+  "task": "ota-corners",
+  "generated_by": "evals/ota-corners/reference.mjs",
+  "provenance": {
+    "image_id": "sha256:ddeb69576f2808676d1c5d474ecf04f6d1d6f8abdcff6b72b39790ded924bab2",
+    "ngspice": "46",
+    "pdk_commit": "84374023ee8b4b126bebbba67fcbada0a9c0ff0b",
+    "design_files": [
+      {
+        "path": "reference.spice",
+        "sha256": "bafb7b7fc3a2a64e6b5ecda1a1d3ebae75441b0981c8cf206789f0bd57243ba3",
+        "bytes": 623,
+        "role": "deck"
+      },
+      {
+        "path": "tb_ota.spice",
+        "sha256": "cb1a1f95bc5fa8f80739d6e53d47136bf89186743916c2e1d1805bed2bf1fc2a",
+        "bytes": 706,
+        "role": "include"
+      },
+      {
+        "path": "ota.spice",
+        "sha256": "24914a1280b729850f0927faa91df3af2c8f4cfe9f4af56522f988653048f13a",
+        "bytes": 799,
+        "role": "include"
+      },
+      {
+        "path": "/foss/pdks/ihp-sg13g2/libs.tech/ngspice/.spiceinit",
+        "sha256": "56ec1880a943fa481c3c321d62857b6240387e39d5aa8ded403835c34edb515d",
+        "bytes": 957,
+        "role": "init"
+      }
+    ]
+  },
+  "tolerance": {
+    "gain_db": {
+      "abs": 0.5
+    },
+    "ugf_hz": {
+      "rel": 0.05
+    },
+    "pm_deg": {
+      "abs": 2
+    },
+    "vn_1k_nv": {
+      "rel": 0.1
+    }
+  },
+  "corners": {
+    "tt": {
+      "experiment": "20261028-182125-b86292",
+      "values": {
+        "v(out)": 0.5989898,
+        "gain_db": 52.1052,
+        "ugf_hz": 20776600,
+        "pm_deg": 76.10883,
+        "vn_1k_nv": 679.5603
+      },
+      "cross_check": {
+        "gain_db": 52.1051578172049,
+        "ugf_hz": 20775536.71016092,
+        "pm_deg": 76.10884694609356
+      }
+    },
+    "ss": {
+      "experiment": "20261028-182130-7f8f16",
+      "values": {
+        "v(out)": 0.5988077,
+        "gain_db": 52.1302,
+        "ugf_hz": 20287500,
+        "pm_deg": 76.08116,
+        "vn_1k_nv": 702.1762
+      },
+      "cross_check": {
+        "gain_db": 52.13015805379813,
+        "ugf_hz": 20286414.99082718,
+        "pm_deg": 76.0811632156334
+      }
+    },
+    "ff": {
+      "experiment": "20261028-182136-6b08b6",
+      "values": {
+        "v(out)": 0.5991142,
+        "gain_db": 52.2441,
+        "ugf_hz": 21354700,
+        "pm_deg": 76.29017,
+        "vn_1k_nv": 654.0494
+      },
+      "cross_check": {
+        "gain_db": 52.24413288915209,
+        "ugf_hz": 21354435.663532395,
+        "pm_deg": 76.29015535496832
+      }
+    }
+  },
+  "variants": {
+    "tt_cc1p5": {
+      "corner": "tt",
+      "change": "ota.spice: Cc z out 1p -> 1.5p",
+      "ota_sha256": "6b6bd530331ce9525a6c05330e7031f28ff67898041181a254b06c4171a7c526",
+      "experiment": "20261028-182144-4bafc4",
+      "values": {
+        "v(out)": 0.5989898,
+        "gain_db": 52.1052,
+        "ugf_hz": 15115500,
+        "pm_deg": 86.23082,
+        "vn_1k_nv": 679.5603
+      },
+      "cross_check": {
+        "gain_db": 52.105157818262455,
+        "ugf_hz": 15115254.846525967,
+        "pm_deg": 86.23079772873183
+      }
+    }
+  }
+}

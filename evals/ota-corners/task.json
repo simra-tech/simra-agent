@@ -1,0 +1,12 @@
+{
+  "name": "ota-corners",
+  "prompt": "task.md",
+  "score": "score.mjs",
+  "environment": "eda",
+  "files": {
+    "ota.spice": "../../examples/ota-sg13g2/ota.spice",
+    "tb_ota.spice": "../../examples/ota-sg13g2/tb_ota.spice",
+    "simra.config.json": "../../examples/ota-sg13g2/simra.config.json",
+    "simra.local.json": "../../examples/ota-sg13g2/simra.local.json"
+  }
+}
