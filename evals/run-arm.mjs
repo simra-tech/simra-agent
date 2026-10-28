@@ -180,7 +180,10 @@ function armCommand(arm, state, prompt) {
 			limit: { context: 1_000_000, output: 384_000 },
 			variants: { high: { reasoningEffort: "high" } },
 		};
-		const config = { $schema: "https://opencode.ai/config.json", provider: { deepseek: { options: { baseURL: BASE_URL }, models: { "deepseek-flash": flash } } } };
+		// The sandbox is the boundary, as for pi, which has no permission checks. In "opencode run", a check that
+		// asks (for example a read outside /work, such as the PDK) is rejected and ends the session.
+		const permission = { "*": "allow", external_directory: "allow", doom_loop: "allow" };
+		const config = { $schema: "https://opencode.ai/config.json", permission, provider: { deepseek: { options: { baseURL: BASE_URL }, models: { "deepseek-flash": flash } } } };
 		writeFileSync(join(state, "opencode", "config", "opencode", "opencode.json"), JSON.stringify(config, null, 2));
 		const xdg = `${STATE}/opencode`;
 		return {
