@@ -2,11 +2,11 @@ Note: Compatibility modes selected: hs a
 Circuit: * simra ngspice adapter: top level for experiment x
 Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
 No. of Data Rows : 501
-gain_db             =  5.21052e+01
-ugf_hz              =  2.07777e+07 at=  1.0e+00
+gain_db             =  4.83317e+01
+ugf_hz              =  1.34562e+07 at=  1.0e+00
 Error: measure  ph_rad  (WHEN) : out of interval
  meas ac pm_raw find vp(out) at=1e12 failed!
-pm_deg = 7.610871e+01
+pm_deg = 6.391427e+01
 pm_deg = 7.700000e+01
 Warning from checkvalid: vector x is not available or has zero length.
 inoise_spectrum[0] = 2.148163e-05

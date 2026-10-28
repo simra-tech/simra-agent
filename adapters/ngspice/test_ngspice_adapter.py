@@ -20,9 +20,9 @@ class ParseLogTest(unittest.TestCase):
     def test_requested_measurements(self):
         wanted = {"gain_db": "dB", "ugf_hz": "Hz", "ph_rad": "rad", "pm_raw": "rad", "pm_deg": "deg", "noise": "V"}
         m, diags = adapter.parse_log(read_log(), wanted)
-        self.assertEqual(m["gain_db"], {"value": 52.1052, "unit": "dB", "status": "measured",
+        self.assertEqual(m["gain_db"], {"value": 48.3317, "unit": "dB", "status": "measured",
                                         "source": "work/ngspice.log:5"})
-        self.assertEqual(m["ugf_hz"]["value"], 2.07777e7)
+        self.assertEqual(m["ugf_hz"]["value"], 1.34562e7)
         self.assertEqual(m["ph_rad"]["status"], "failed")
         self.assertEqual(m["pm_raw"]["status"], "failed")
         self.assertEqual(m["noise"], {"value": None, "unit": "V", "status": "missing"})
