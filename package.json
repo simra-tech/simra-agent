@@ -12,7 +12,7 @@
     "node": ">=22.19.0"
   },
   "scripts": {
-    "test": "node --test \"test/**/*.test.mjs\" \"packages/*/test/**/*.test.ts\""
+    "test": "node --test \"test/**/*.test.mjs\" \"packages/*/test/**/*.test.ts\" && python3 -m unittest discover -s adapters/ngspice -p \"test_*.py\""
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "1.4.0"

@@ -1,0 +1,14 @@
+{
+  "contract": "simra.adapter/0",
+  "name": "ngspice",
+  "version": "0.1.0",
+  "command": [
+    "python3",
+    "{adapter_dir}/ngspice_adapter.py"
+  ],
+  "operations": {
+    "simulate": {
+      "description": "Run one ngspice batch simulation (ngspice -b) of a deck. Inputs: deck (path relative to the design root; the deck holds the circuit, the analyses and a .control block), libs (optional list of {path, section}; each becomes a .lib line before the deck, for example a PDK corner; $PDK_ROOT is expanded), measurements (optional {name: unit}). A measurement is read from a 'name = value' line in the ngspice output, so use meas or print in the .control block with the same name. A wanted name that ngspice does not print is reported as missing. Files that the deck writes (for example with wrdata) go to the work directory of the experiment and are hashed."
+    }
+  }
+}

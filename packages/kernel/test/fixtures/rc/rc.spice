@@ -1,0 +1,9 @@
+* RC low-pass. Known answer: f3db = 1 / (2 pi R C) = 159.155 Hz, DC gain = 0 dB.
+V1 in 0 dc 0 ac 1
+R1 in out 1k
+C1 out 0 1u
+.control
+ac dec 100 1 100k
+meas ac f3db_hz when vdb(out)=-3.0103
+meas ac gain_dc_db find vdb(out) at=1
+.endc

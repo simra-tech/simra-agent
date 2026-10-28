@@ -1,0 +1,4 @@
+* top deck
+.include "sub/a.spice"
+.lib "models.lib" tt
+.include missing.spice

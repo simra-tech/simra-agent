@@ -1,0 +1,4 @@
+* models
+.lib tt
+.include sub/a.spice
+.endl tt
