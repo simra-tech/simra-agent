@@ -1,0 +1,7 @@
+{
+  "contract": "simra.adapter/0",
+  "name": "fake",
+  "version": "0.0.1",
+  "command": ["node", "{adapter_dir}/fake.mjs"],
+  "operations": { "run": { "description": "Test adapter. inputs.mode selects the behaviour." } }
+}

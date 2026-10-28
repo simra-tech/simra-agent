@@ -1,2 +1,6 @@
 node_modules/
 .env
+simra.local.json
+simra/experiments/
+evals/*/work/
+__pycache__/

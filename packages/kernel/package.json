@@ -1,0 +1,17 @@
+{
+  "name": "@simra-tech/kernel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Simra Agent kernel: experiment records and job runner. Works without pi.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "simra": "./src/cli.ts"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}
