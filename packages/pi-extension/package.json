@@ -1,6 +1,6 @@
 {
   "name": "@simra-tech/pi-extension",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Simra Agent extension for pi",
   "license": "Apache-2.0",
@@ -14,6 +14,10 @@
     ]
   },
   "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*"
+  },
+  "dependencies": {
+    "@simra-tech/kernel": "0.1.0"
   }
 }
