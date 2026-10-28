@@ -17,6 +17,7 @@ also work without pi. See [README.md](README.md) for the status.
 | `adapters/` | tool adapters (JSON-in / JSON-out), one directory per tool |
 | `examples/` | small public example designs |
 | `evals/` | demo evaluation tasks for the inner development loop (not decision benchmarks) |
+| `container/` | environment image (IIC-OSIC-TOOLS base plus Node.js, pi and OpenCode) |
 | `test/` | smoke and integration tests |
 | `.github/workflows/` | CI |
 

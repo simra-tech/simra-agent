@@ -39,6 +39,18 @@ or later. The integration test with ngspice runs only if `ngspice` is on the PAT
 skipped. To also test a container image, set `SIMRA_TEST_IMAGE` to an image with ngspice and Python, and
 `SIMRA_TEST_ENGINE` to `podman` (the default) or `docker`.
 
+## Environment image
+
+`container/Containerfile` adds Node.js 22, pi (from the lockfile) and OpenCode to a pinned
+[IIC-OSIC-TOOLS](https://github.com/iic-jku/iic-osic-tools) release, which has the open-source EDA tools and
+PDKs. The agent and the tools can then run in one container on any machine with Docker or podman.
+
+1. Pull the base image that `container/Containerfile` names.
+2. Run `container/build.sh`. It builds the committed tree (HEAD) and prints the image tag.
+3. Run `container/check.sh <tag>`. It prints the tool versions and runs `npm test` in the container.
+
+Set `SIMRA_ENGINE=podman` to use podman instead of Docker.
+
 ## Run a simulation
 
 From a plain command line:
@@ -66,6 +78,7 @@ See [examples/ota-sg13g2](examples/ota-sg13g2/README.md).
 | `adapters/ngspice/` | ngspice adapter (Python) and its tests |
 | `examples/ota-sg13g2/` | two-stage OTA for IHP SG13G2 |
 | `evals/` | demo evaluation for the inner development loop (not a decision benchmark): the OTA at 3 corners, a scorer and an arm runner |
+| `container/` | environment image: Containerfile, build and check scripts |
 | `test/` | smoke and integration tests |
 
 ## Licence

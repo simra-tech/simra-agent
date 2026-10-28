@@ -1,0 +1,32 @@
+# Simra Agent environment: IIC-OSIC-TOOLS (EDA tools and PDKs) plus Node.js, pi and OpenCode.
+# Build with container/build.sh. The build context is the committed repository tree (git archive).
+ARG BASE=docker.io/hpretl/iic-osic-tools:2026.10@sha256:306585de35d198e70ea58950f77147c86f56c698726a19afea9f1c83009557be
+FROM ${BASE}
+
+USER root
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# The base image has Node 18 and no npm. pi needs Node 22.19 or later.
+ARG NODE_VERSION=22.23.4
+ARG NODE_SHA256=1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce
+ADD --checksum=sha256:${NODE_SHA256} https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz /tmp/node.tar.xz
+RUN mkdir -p /opt/node && tar -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1 && rm /tmp/node.tar.xz
+
+# The default image startup (VNC) is not used, so set the tool path here.
+ENV PATH=/opt/simra-agent/node_modules/.bin:/opt/node/bin:/foss/tools/bin:${PATH}
+
+ARG OPENCODE_VERSION=1.14.48
+RUN npm install --global --no-fund --no-audit opencode-ai@${OPENCODE_VERSION}
+
+# pi and the other dependencies come from the lockfile.
+WORKDIR /opt/simra-agent
+COPY . .
+RUN npm ci --no-fund --no-audit && chmod -R a+rX /opt/simra-agent /opt/node
+
+ARG COMMIT=unknown
+LABEL org.opencontainers.image.source="https://github.com/simra-tech/simra-agent" \
+      org.opencontainers.image.revision="${COMMIT}" \
+      simra.base="${BASE}"
+
+ENTRYPOINT []
+CMD ["bash"]
