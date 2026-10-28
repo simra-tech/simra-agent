@@ -1,7 +1,9 @@
 # Simra Agent environment: IIC-OSIC-TOOLS (EDA tools and PDKs) plus Node.js, pi and OpenCode.
-# Build with container/build.sh. The build context is the committed repository tree (git archive).
+# Build with container/build.sh. The build context is the runtime part of the committed tree (git archive):
+# no evals/, examples/ or test/, so an agent in the container cannot read the eval answers.
 ARG BASE=docker.io/hpretl/iic-osic-tools:2026.10@sha256:306585de35d198e70ea58950f77147c86f56c698726a19afea9f1c83009557be
 FROM ${BASE}
+ARG BASE
 
 USER root
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
