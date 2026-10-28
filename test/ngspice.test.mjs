@@ -1,6 +1,7 @@
 // End-to-end: kernel runner + ngspice adapter + real ngspice, on an RC filter with a known answer.
-// "local" needs ngspice and python3 on PATH. "podman" runs only when SIMRA_TEST_PODMAN_IMAGE names an image
-// that contains ngspice and python3 (optional: SIMRA_TEST_CPUS for taskset).
+// "local" needs ngspice and python3 on PATH. "container" runs only when SIMRA_TEST_IMAGE names an image
+// that contains ngspice and python3 (optional: SIMRA_TEST_ENGINE podman or docker, default podman;
+// SIMRA_TEST_CPUS for taskset).
 // A skipped case is reported by the test runner as skipped: that check did not run.
 
 import { execFileSync } from "node:child_process";
@@ -24,9 +25,15 @@ const F3DB_HZ = 1 / (2 * Math.PI * 1e3 * 1e-6);
 
 const environments = {
 	local: { config: { kind: "local" }, skip: !(has("ngspice") && has("python3")) && "ngspice or python3 not on PATH" },
-	podman: {
-		config: { kind: "podman", image: process.env.SIMRA_TEST_PODMAN_IMAGE, cpus: process.env.SIMRA_TEST_CPUS, env: { HOME: "/tmp" } },
-		skip: !process.env.SIMRA_TEST_PODMAN_IMAGE && "SIMRA_TEST_PODMAN_IMAGE is not set",
+	container: {
+		config: {
+			kind: "container",
+			engine: process.env.SIMRA_TEST_ENGINE ?? "podman",
+			image: process.env.SIMRA_TEST_IMAGE,
+			cpus: process.env.SIMRA_TEST_CPUS,
+			env: { HOME: "/tmp" },
+		},
+		skip: !process.env.SIMRA_TEST_IMAGE && "SIMRA_TEST_IMAGE is not set",
 	},
 };
 
@@ -55,6 +62,6 @@ for (const [name, { config, skip }] of Object.entries(environments)) {
 		assert.equal(deck.path, "rc.spice");
 		assert.equal(deck.sha256, (await import("node:crypto")).createHash("sha256").update(readFileSync(join(root, "rc.spice"))).digest("hex"));
 		assert.ok(result.outputs.some((f) => f.path.endsWith("work/ngspice.log")));
-		if (name === "podman") assert.match(experiment.environment.image_id, /^sha256:[0-9a-f]{64}$/);
+		if (name === "container") assert.match(experiment.environment.image_id, /^sha256:[0-9a-f]{64}$/);
 	});
 }

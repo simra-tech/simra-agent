@@ -12,12 +12,12 @@ Reference values for 3 corners are in [evals/ota-corners/expected.json](../../ev
 
 ## Set up the environment
 
-The environment `eda` uses podman and the image `docker.io/hpretl/iic-osic-tools:2026.07` (ngspice 46, IHP
-SG13G2). To use a different image, or to pin the image ID and the CPUs, write `simra.local.json` in this
+The environment `eda` runs the image `docker.io/hpretl/iic-osic-tools:2026.07` (ngspice 46, IHP SG13G2) with
+podman. To use docker, a different image, or to pin the image ID and the CPUs, write `simra.local.json` in this
 directory. Git ignores this file.
 
 ```json
-{ "environments": { "eda": { "image": "my-eda-image:latest", "image_id": "sha256:...", "cpus": "0-3" } } }
+{ "environments": { "eda": { "engine": "docker", "image": "my-eda-image:latest", "image_id": "sha256:...", "cpus": "0-3" } } }
 ```
 
 If you set `image_id`, the runner stops when the image has a different ID.

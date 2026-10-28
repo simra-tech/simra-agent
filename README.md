@@ -36,7 +36,8 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
 
 The tests need no model, no API key and no network access after `npm ci`. The adapter tests need Python 3.6
 or later. The integration test with ngspice runs only if `ngspice` is on the PATH; otherwise it is reported as
-skipped. To also test a container image, set `SIMRA_TEST_PODMAN_IMAGE` to an image with ngspice and Python.
+skipped. To also test a container image, set `SIMRA_TEST_IMAGE` to an image with ngspice and Python, and
+`SIMRA_TEST_ENGINE` to `podman` (the default) or `docker`.
 
 ## Run a simulation
 

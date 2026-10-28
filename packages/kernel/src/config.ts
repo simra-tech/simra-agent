@@ -5,11 +5,15 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { readJson } from "./records.ts";
 
+export type ContainerEngine = "podman" | "docker";
+
 export interface EnvironmentConfig {
-	kind: "local" | "podman";
-	/** podman: image reference. */
+	kind: "local" | "container";
+	/** container: the engine that runs the image (default "podman"). */
+	engine?: ContainerEngine;
+	/** container: image reference. */
 	image?: string;
-	/** podman: expected image ID (sha256:...). The run stops if the local image differs. */
+	/** container: expected image ID (sha256:...). The run stops if the local image differs. */
 	image_id?: string;
 	/** CPU list for taskset, for example "121-123,127". */
 	cpus?: string;

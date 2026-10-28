@@ -1,7 +1,7 @@
 {
   "environments": {
     "eda": {
-      "kind": "podman",
+      "kind": "container",
       "image": "docker.io/hpretl/iic-osic-tools:2026.07",
       "env": {
         "PDK_ROOT": "/foss/pdks",

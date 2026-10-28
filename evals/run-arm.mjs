@@ -28,21 +28,22 @@ import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, w
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { loadConfig } from "@simra-tech/kernel";
-import { podmanImageId } from "../packages/kernel/src/environments.ts";
+import { containerImageId, containerUser } from "../packages/kernel/src/environments.ts";
 
 const repo = new URL("../", import.meta.url).pathname;
 export const MODEL = "deepseek/deepseek-flash";
 
 /** sim.sh runs "ngspice -b" in the same container, with the same CPU pinning, as the Simra environment. */
 function simScript(env) {
-	const id = env.image_id ?? podmanImageId(env.image);
+	const engine = env.engine ?? "podman";
+	const id = env.image_id ?? containerImageId(engine, env.image);
 	const e = Object.entries(env.env ?? {}).map(([k, v]) => `-e ${k}=${v}`).join(" ");
 	const pin = env.cpus ? `taskset -c ${env.cpus} ` : "";
 	return `#!/bin/sh
 # Run ngspice in batch mode in the EDA container (IHP SG13G2 PDK at $PDK_ROOT/ihp-sg13g2).
 # Usage: ./sim.sh <deck> [more ngspice arguments]. Paths are the same inside and outside the container.
 here=$(cd "$(dirname "$0")" && pwd)
-exec podman run --rm --network none --pull never -u 0:0 ${e} -v "$here:$here" -w "$PWD" ${id} ${pin}ngspice -b "$@"
+exec ${engine} run --rm --network none --pull never -u ${containerUser(engine)} ${e} -v "$here:$here" -w "$PWD" ${id} ${pin}ngspice -b "$@"
 `;
 }
 
@@ -53,7 +54,7 @@ export function makeWorkspace(taskDir, task, ws) {
 		if (existsSync(from)) copyFileSync(from, join(ws, name));
 	}
 	const env = loadConfig(ws).environments[task.environment];
-	if (!env || env.kind !== "podman") throw new Error(`environment "${task.environment}" must be a podman environment`);
+	if (!env || env.kind !== "container") throw new Error(`environment "${task.environment}" must be a container environment`);
 	writeFileSync(join(ws, "sim.sh"), simScript(env));
 	chmodSync(join(ws, "sim.sh"), 0o755);
 	// A design repository with one commit, as a designer would have it.

@@ -59,7 +59,7 @@ The runner (`packages/kernel`) does these steps for each experiment:
 1. It makes the directory `simra/experiments/<id>/` in the design root, with a `work/` subdirectory.
 2. It writes `experiment.json` (what was asked) and `request.json`.
 3. It starts `command` with the path of `request.json` as the last argument, in the selected environment
-   (`local` or `podman`, from `simra.config.json`).
+   (`local`, or `container` with the engine `podman` or `docker`, from `simra.config.json`).
 4. It writes the stdout and stderr of the adapter to `adapter.stdout.log` and `adapter.stderr.log`.
 5. It reads `response.json` and writes `result.json`.
 
