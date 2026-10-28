@@ -74,6 +74,22 @@ test("each defect removes points", () => {
 	}
 });
 
+test("noise in V/sqrt(Hz) and a testbench comment that names all corners keep the points", () => {
+	const { ws } = goodWorkspace();
+	try {
+		const tb = readFileSync(join(repo, "examples/ota-sg13g2/tb_ota.spice"), "utf8");
+		assert.match(tb, /^\*.*mos_tt, mos_ss or mos_ff/m);
+		writeFileSync(join(ws, "tt.log"), `${readFileSync(join(ws, "tt.log"), "utf8").replace(/^vn = .*$/m, `vn = ${expected.corners.tt.values.vn_1k_nv * 1e-9}`)}\n${tb}`);
+		const r = score(ws, expected);
+		assert.deepEqual([r.results.tt.values, r.results.tt.corner, r.traceability], [true, true, 16]);
+		// A very small number is not the noise in V/sqrt(Hz) when it is not within 0.1 % of it.
+		writeFileSync(join(ws, "tt.log"), readFileSync(join(ws, "tt.log"), "utf8").replace(/^vn = .*$/m, "vn = 0"));
+		assert.equal(score(ws, expected).results.tt.values, false);
+	} finally {
+		rmSync(ws, { recursive: true, force: true });
+	}
+});
+
 test("no answer file gives zero points and an error", () => {
 	const ws = mkdtempSync(join(tmpdir(), "simra-score-"));
 	try {

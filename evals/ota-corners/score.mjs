@@ -4,7 +4,9 @@
 // Traceability: for each result (4 points each, 16 points):
 //   1. evidence: the cited file, directory or run id exists in the workspace.
 //   2. corner: the evidence names the model section of this corner (mos_tt, mos_ss or mos_ff) and no other.
+//      SPICE comment lines do not count.
 //   3. values: the 4 reported values appear in the evidence (the agent did not copy them from somewhere else).
+//      The noise can appear in nV/sqrt(Hz) or in V/sqrt(Hz).
 //   4. inputs: ota_sha256 identifies the ota.spice that gave the result (Cc = 1 pF or Cc = 1.5 pF).
 // Tool: the simulator version and the PDK commit are correct (2 points).
 //
@@ -58,13 +60,21 @@ export function within(value, ref, tol) {
 	return Math.abs(value / ref - 1) <= tol.rel;
 }
 
-/** True if the evidence shows the value: the same number, or for pm_deg also the phase it came from. */
+/**
+ * True if the evidence shows the value: the same number, for pm_deg also the phase it came from, for
+ * vn_1k_nv also the same noise in V/sqrt(Hz).
+ */
 export function shown(numbers, metric, value) {
 	if (typeof value !== "number") return false;
+	const near = (f) => numbers.some((n) => Math.abs(n - f) <= Math.max(1e-3 * Math.abs(f), 1e-3));
 	const forms = [value];
 	if (metric === "pm_deg") forms.push(value - 180, ((value - 180) * Math.PI) / 180);
-	return forms.some((f) => numbers.some((n) => Math.abs(n - f) <= Math.max(1e-3 * Math.abs(f), 1e-3)));
+	if (metric === "vn_1k_nv" && numbers.some((n) => Math.abs(n - value * 1e-9) <= 1e-3 * Math.abs(value * 1e-9))) return true;
+	return forms.some(near);
 }
+
+/** The text without SPICE comment lines (a "*" in the first column), which can name all the corners. */
+export const withoutComments = (text) => text.replace(/^\s*\*.*$/gm, "");
 
 /** The evidence path in ws. agentRoot is the path of ws as the agent saw it (in a container, for example /work). */
 export function resolveEvidence(ws, evidence, agentRoot = ws) {
@@ -116,7 +126,7 @@ export function score(ws, expected = JSON.parse(readFileSync(join(here, "expecte
 		s.evidence = ev !== null;
 		if (ev) {
 			const text = readTexts(ev).map((f) => f.text).join("\n");
-			const sections = ["tt", "ss", "ff"].filter((c) => new RegExp(`\\bmos_${c}\\b`, "i").test(text));
+			const sections = ["tt", "ss", "ff"].filter((c) => new RegExp(`\\bmos_${c}\\b`, "i").test(withoutComments(text)));
 			s.corner = sections.length === 1 && sections[0] === corner;
 			const numbers = numbersIn(text);
 			s.values = METRICS.every((m) => shown(numbers, m, r[m]));
