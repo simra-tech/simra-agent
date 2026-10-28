@@ -2,9 +2,9 @@
   "task": "ota-corners",
   "generated_by": "evals/ota-corners/reference.mjs",
   "provenance": {
-    "image_id": "sha256:ddeb69576f2808676d1c5d474ecf04f6d1d6f8abdcff6b72b39790ded924bab2",
-    "ngspice": "46",
-    "pdk_commit": "84374023ee8b4b126bebbba67fcbada0a9c0ff0b",
+    "image_id": "sha256:23a052280e3d201631d43d0d7d5b6f94249116c7c9fc9dfa03a2e25af420da39",
+    "ngspice": "47",
+    "pdk_commit": "a49358cc0b20635fcb53c0940505e3563763fc7a",
     "design_files": [
       {
         "path": "reference.spice",
@@ -26,8 +26,8 @@
       },
       {
         "path": "/foss/pdks/ihp-sg13g2/libs.tech/ngspice/.spiceinit",
-        "sha256": "56ec1880a943fa481c3c321d62857b6240387e39d5aa8ded403835c34edb515d",
-        "bytes": 957,
+        "sha256": "adf344957f69367ec881b8e5a998ea7b5818680e9fe6324d568b08b026b30a45",
+        "bytes": 1079,
         "role": "init"
       }
     ]
@@ -48,7 +48,7 @@
   },
   "corners": {
     "tt": {
-      "experiment": "20261028-182125-b86292",
+      "experiment": "20261028-201116-b59803",
       "values": {
         "v(out)": 0.5989898,
         "gain_db": 52.1052,
@@ -63,7 +63,7 @@
       }
     },
     "ss": {
-      "experiment": "20261028-182130-7f8f16",
+      "experiment": "20261028-201117-ab9499",
       "values": {
         "v(out)": 0.5988077,
         "gain_db": 52.1302,
@@ -78,7 +78,7 @@
       }
     },
     "ff": {
-      "experiment": "20261028-182136-6b08b6",
+      "experiment": "20261028-201118-14ad79",
       "values": {
         "v(out)": 0.5991142,
         "gain_db": 52.2441,
@@ -98,7 +98,7 @@
       "corner": "tt",
       "change": "ota.spice: Cc z out 1p -> 1.5p",
       "ota_sha256": "6b6bd530331ce9525a6c05330e7031f28ff67898041181a254b06c4171a7c526",
-      "experiment": "20261028-182144-4bafc4",
+      "experiment": "20261028-201119-2f7bc5",
       "values": {
         "v(out)": 0.5989898,
         "gain_db": 52.1052,

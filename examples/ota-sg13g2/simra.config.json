@@ -2,7 +2,7 @@
   "environments": {
     "eda": {
       "kind": "container",
-      "image": "docker.io/hpretl/iic-osic-tools:2026.07",
+      "image": "docker.io/hpretl/iic-osic-tools:2026.10",
       "env": {
         "PDK_ROOT": "/foss/pdks",
         "PDK": "ihp-sg13g2",

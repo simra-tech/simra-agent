@@ -30,7 +30,7 @@ function goodWorkspace() {
 		writeFileSync(join(ws, `${label}.log`), `.lib cornerMOSlv.lib mos_${corner}\ngain_db = ${v.gain_db}\nugf_hz = ${v.ugf_hz}\nphase = ${v.pm_deg - 180}\nvn = ${v.vn_1k_nv}\n`);
 		return { label, corner, cc_pf: cc, gain_db: v.gain_db, ugf_hz: v.ugf_hz, pm_deg: v.pm_deg, vn_1k_nv: v.vn_1k_nv, evidence: `${label}.log`, ota_sha256: sha(ota) };
 	});
-	const answer = { simulator_version: "ngspice-46", pdk_commit: expected.provenance.pdk_commit.slice(0, 10), results };
+	const answer = { simulator_version: `ngspice-${expected.provenance.ngspice}`, pdk_commit: expected.provenance.pdk_commit.slice(0, 10), results };
 	writeFileSync(join(ws, "answer.json"), JSON.stringify(answer));
 	return { ws, answer };
 }

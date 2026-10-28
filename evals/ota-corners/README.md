@@ -46,8 +46,9 @@ Tolerances: gain ±0.5 dB, unity-gain frequency ±5 %, phase margin ±2°, noise
 | ff | 1 pF | 52.244 | 21.355 | 76.29 | 654.0 |
 | tt | 1.5 pF | 52.105 | 15.116 | 86.23 | 679.6 |
 
-ngspice 46, IHP SG13G2 commit `84374023ee8b`. The gain, the UGF and the PM agree with a calculation from the
-raw AC data to better than 0.01 %.
+ngspice 47 in the IIC-OSIC-TOOLS 2026.10 image, IHP SG13G2 commit `a49358cc0b20`. The gain, the UGF and the
+PM agree with a calculation from the raw AC data to better than 0.01 %. The values are the same as with
+ngspice 46 and IHP SG13G2 commit `84374023ee8b`.
 
 To make the values again:
 
