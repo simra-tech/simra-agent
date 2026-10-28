@@ -1,0 +1,14 @@
+{
+  "environments": {
+    "eda": {
+      "kind": "podman",
+      "image": "docker.io/hpretl/iic-osic-tools:2026.07",
+      "env": {
+        "PDK_ROOT": "/foss/pdks",
+        "PDK": "ihp-sg13g2",
+        "SPICE_USERINIT_DIR": "/foss/pdks/ihp-sg13g2/libs.tech/ngspice",
+        "HOME": "/tmp"
+      }
+    }
+  }
+}

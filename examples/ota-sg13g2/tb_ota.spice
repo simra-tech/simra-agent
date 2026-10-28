@@ -1,0 +1,19 @@
+* Open-loop testbench for the OTA in ota.spice (IHP SG13G2, VDD = 1.2 V, VCM = 0.6 V, CL = 2 pF)
+*
+* This file has no MOS model library and no analyses.
+* - Add the corner library $PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerMOSlv.lib
+*   with one section: mos_tt, mos_ss or mos_ff.
+* - Add the analyses and measurements that you need.
+*
+* The AC stimulus (1 V) is on inp. Lfb and Cfb close the loop at DC only, so the output
+* settles at the common-mode voltage and the AC response is the open-loop response.
+.include "ota.spice"
+.param vdd=1.2 vcm=0.6
+Vdd vdd 0 {vdd}
+Vss vss 0 0
+Ib vdd ibias 10u
+Vinp inp 0 dc {vcm} ac 1
+Lfb out inn 1G
+Cfb inn 0 1G
+CL out 0 2p
+Xdut inp inn out vdd vss ibias ota

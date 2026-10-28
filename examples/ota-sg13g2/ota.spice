@@ -1,0 +1,16 @@
+* Two-stage Miller OTA, IHP SG13G2 low-voltage MOS devices, VDD = 1.2 V
+* Pins: inp inn out vdd vss ibias. Bias: a 10 uA current flows into ibias.
+* Stage 1: NMOS differential pair XM1/XM2, PMOS mirror load XM3/XM4, tail source XM5.
+* Stage 2: PMOS common source XM6, NMOS current sink XM7. Miller compensation Cc with zero resistor Rz.
+.subckt ota inp inn out vdd vss ibias
+XM8 ibias ibias vss vss sg13_lv_nmos w=2u l=1u ng=1
+XM5 tail ibias vss vss sg13_lv_nmos w=4u l=1u ng=1
+XM1 x inn tail vss sg13_lv_nmos w=4u l=0.5u ng=2
+XM2 y inp tail vss sg13_lv_nmos w=4u l=0.5u ng=2
+XM3 x x vdd vdd sg13_lv_pmos w=4u l=0.5u ng=2
+XM4 y x vdd vdd sg13_lv_pmos w=4u l=0.5u ng=2
+XM6 out y vdd vdd sg13_lv_pmos w=16u l=0.5u ng=4
+XM7 out ibias vss vss sg13_lv_nmos w=8u l=1u ng=2
+Rz y z 5k
+Cc z out 1p
+.ends ota
