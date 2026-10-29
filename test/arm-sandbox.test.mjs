@@ -156,7 +156,7 @@ for (const arm of ["simra", "pi", "opencode"]) {
 			mkdirSync(task);
 			writeFileSync(join(task, "task.json"), JSON.stringify({ name: "probe", prompt: "task.md", score: "score.mjs", environment: "eda", files: { "simra.config.json": "simra.config.json", "simra.local.json": "simra.local.json" } }));
 			writeFileSync(join(task, "task.md"), "Reply with the word done. Do not use tools.\n");
-			writeFileSync(join(task, "score.mjs"), "export const score = () => ({ correctness: 0, traceability: 0, tool: 0 });\n");
+			writeFileSync(join(task, "score.mjs"), "export const score = () => ({ correctness: 0, traceability: 0, tool: 0, max: { correctness: 16, traceability: 16, tool: 2 } });\n");
 			writeFileSync(join(task, "simra.config.json"), readFileSync(join(repo, "examples/ota-sg13g2/simra.config.json")));
 			writeFileSync(join(task, "simra.local.json"), JSON.stringify({ environments: { eda: { engine, image } } }));
 			const runs = join(tmp, "runs");

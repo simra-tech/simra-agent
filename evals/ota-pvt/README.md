@@ -1,0 +1,75 @@
+# Demo evaluation: OTA against a PVT spec
+
+**This is a demo task for the inner development loop. It is not a decision benchmark.** Use it to check a change
+quickly, from start to end, with a real model. Do not use its score to compare harnesses or to make a release
+decision: one small public task cannot support that.
+
+This task tests whether an agent checks that its measurements are valid before it makes a claim. The design is
+[examples/ota-sg13g2](../../examples/ota-sg13g2/README.md). A trial takes approximately 5 to 10 minutes.
+
+| File | Contents |
+| --- | --- |
+| `task.md` | the prompt, the same for every arm |
+| `spec.md` | the specification that the agent gets: conditions, PVT corners and limits |
+| `tb_ota.spice` | the team testbench that the agent gets |
+| `reference.mjs` | reference simulation through the Simra runner, with an independent cross-check |
+| `expected.json` | reference values, verdicts, tolerances and their provenance |
+| `score.mjs` | scorer for one workspace |
+| `task.json` | task manifest for `../run-arm.mjs` |
+
+## The task
+
+1. Find out if the OTA meets `spec.md` at the corners tt, ss and ff.
+2. Write `answer.json`: the claim `meets_spec`, and the value and verdict of each requirement at each corner.
+
+The team testbench has two faults. The agent must find them from the spec and from the results:
+
+- It applies only the MOS model section. The spec defines each corner by process, supply voltage and
+  temperature. VCM is VDD / 2.
+- It adds the phase in radians to 180. `vp()` in ngspice is in radians, so the phase margin is approximately 178°.
+
+The design does not meet the spec: at ss (1.08 V, 125 °C), the gain and the unity-gain frequency are below the
+limits. With the team testbench as it is, every row passes.
+
+## Scoring
+
+| Part | Points | A point is given when |
+| --- | --- | --- |
+| claim | 4 | `meets_spec` is the same as the reference |
+| verdicts | 9 | the `pass` of a row is the same as the reference |
+| values | 9 | the value of a row is within the tolerance of the reference |
+
+Tolerances: gain ±0.5 dB, unity-gain frequency ±5 %, phase margin ±2°.
+
+The score also has two diagnostics, which give no points:
+
+- `supported`: the number of rows whose value appears in a workspace file other than `answer.json`.
+- `traps`: the rows whose value is the value of the team testbench as it is, and not the reference value.
+
+## Reference values
+
+| Corner | VDD | Temperature | Gain (dB) | UGF (MHz) | PM (°) |
+| --- | --- | --- | --- | --- | --- |
+| tt | 1.20 V | 27 °C | 52.105 | 20.777 | 76.11 |
+| ss | 1.08 V | 125 °C | 49.400 (fail) | 14.740 (fail) | 72.59 |
+| ff | 1.32 V | -40 °C | 54.369 | 27.388 | 80.34 |
+
+Limits: gain >= 51 dB, unity-gain frequency >= 18 MHz, phase margin >= 60°. The team testbench as it is gives
+52.13 dB, 20.29 MHz and 178.19° at ss.
+
+ngspice 47 in the IIC-OSIC-TOOLS 2026.10 image, IHP SG13G2 commit `a49358cc0b20`. The gain, the UGF and the
+PM agree with a calculation from the raw AC data.
+
+To make the values again:
+
+1. Write `examples/ota-sg13g2/simra.local.json` for your container image (see the example README).
+2. Run `node evals/ota-pvt/reference.mjs`.
+
+## Run an arm
+
+See [ota-corners](../ota-corners/README.md#run-an-arm) for the arms and the sandbox.
+
+1. Build the environment image with `container/build.sh`.
+2. Write `examples/ota-sg13g2/simra.local.json` for this image.
+3. Put `DEEPSEEK_API_KEY` in the environment or in `.env` in the repository root.
+4. Run `node evals/run-arm.mjs evals/ota-pvt <arm> --timeout-min 15`.

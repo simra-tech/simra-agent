@@ -3,7 +3,8 @@
 // A task is a directory with task.json:
 //   { "name", "prompt": "task.md", "score": "score.mjs", "environment": "eda",
 //     "files": { "<name in the workspace>": "<path relative to the task directory>" } }
-// A file that does not exist is not copied (for example simra.local.json). score.mjs exports score(ws).
+// A file that does not exist is not copied (for example simra.local.json). score.mjs exports score(ws), which
+// returns the points of each part and "max": { part: maximum points }.
 //
 // Arms (all use the same model and the same thinking level):
 //   simra     pi with the Simra Agent extension (tool run_experiment)
@@ -277,7 +278,8 @@ async function main() {
 	};
 	writeFileSync(join(run, "score.json"), `${JSON.stringify(summary, null, 2)}\n`);
 	const s = summary.score;
-	console.log(`${run}\n${contamination.length ? `CONTAMINATED (${contamination.join(", ")}) ` : ""}${task.name} ${arm}: correctness ${s.correctness}/16, traceability ${s.traceability}/16, tool ${s.tool}/2, ${summary.model_calls} model calls, ${summary.duration_s} s`);
+	const parts = Object.entries(s.max).map(([k, max]) => `${k} ${s[k]}/${max}`);
+	console.log(`${run}\n${contamination.length ? `CONTAMINATED (${contamination.join(", ")}) ` : ""}${task.name} ${arm}: ${parts.join(", ")}, ${summary.model_calls} model calls, ${summary.duration_s} s`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) await main();
