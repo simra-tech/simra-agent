@@ -3,7 +3,15 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { formatVerdict, listExperiments, loadExperiment, runCheck, type VerdictRow } from "../src/index.ts";
+import {
+	formatVerdict,
+	listExperiments,
+	loadExperiment,
+	REQUIREMENTS_EXAMPLE,
+	runCheck,
+	validateRequirements,
+	type VerdictRow,
+} from "../src/index.ts";
 
 const fixtures = new URL("./fixtures/", import.meta.url).pathname;
 
@@ -132,4 +140,16 @@ test("an invalid requirements file names every problem and runs nothing", async 
 	});
 	await assert.rejects(runCheck({ root: designRoot(t, amplifier), requirements: ["nope"] }), /requirement "nope" is not defined/);
 	assert.equal(existsSync(join(root, "simra")), false);
+});
+
+test("a missing file gives a valid example, so the agent can write the file from the spec", async (t) => {
+	const root = designRoot(t, amplifier);
+	rmSync(join(root, "requirements.json"));
+	await assert.rejects(runCheck({ root }), (e: Error) => {
+		assert.match(e.message, /requirements file not found: .*requirements\.json\nThis file is the test suite of the design/);
+		const example = JSON.parse(e.message.slice(e.message.indexOf("Example:\n") + 9, e.message.indexOf("\nEach condition")));
+		assert.deepEqual(example, REQUIREMENTS_EXAMPLE);
+		return true;
+	});
+	assert.deepEqual(validateRequirements(REQUIREMENTS_EXAMPLE), []);
 });
