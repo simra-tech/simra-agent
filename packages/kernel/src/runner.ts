@@ -6,7 +6,8 @@
 
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createWriteStream, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { createWriteStream, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { loadConfig } from "./config.ts";
 import { buildInvocation } from "./environments.ts";
@@ -198,8 +199,62 @@ export async function runExperiment(opts: RunOptions): Promise<RunOutcome> {
 	return { id, dir, experiment, result };
 }
 
+export interface QueryOutcome {
+	status: ExecutionStatus;
+	errors: string[];
+	measurements: ResultRecord["measurements"];
+	diagnostics: ResultRecord["diagnostics"];
+}
+
+/**
+ * Run an adapter operation that only reads files (for example a netlist check) on this host, and return its response.
+ * It writes no experiment record: use runExperiment for a simulation.
+ */
+export async function queryAdapter(opts: Omit<RunOptions, "environment" | "purpose">): Promise<QueryOutcome> {
+	const root = resolve(opts.root);
+	const config = loadConfig(root);
+	const { dir: adapterDir, manifest } = findAdapter(opts.adapter, [...(config.adapter_dirs ?? []), BUILTIN_ADAPTER_DIR]);
+	if (!manifest.operations[opts.operation]) {
+		throw new Error(`adapter "${opts.adapter}" has no operation "${opts.operation}"`);
+	}
+	const dir = mkdtempSync(join(tmpdir(), "simra-query-"));
+	try {
+		const requestPath = join(dir, "request.json");
+		const responsePath = join(dir, "response.json");
+		writeJsonAtomic(requestPath, {
+			contract: CONTRACT,
+			experiment: null,
+			adapter: manifest.name,
+			operation: opts.operation,
+			inputs: opts.inputs,
+			root,
+			work_dir: dir,
+			response_path: responsePath,
+		});
+		const command = manifest.command.map((part) => part.replaceAll("{adapter_dir}", adapterDir));
+		const exit = await spawnAndWait(command[0], [...command.slice(1), requestPath], {
+			cwd: root,
+			env: process.env,
+			stdoutPath: join(dir, "adapter.stdout.log"),
+			stderrPath: join(dir, "adapter.stderr.log"),
+			timeoutS: opts.timeoutS ?? 60,
+			signal: opts.signal,
+		});
+		const result: ResponseFields = { status: "error", errors: [], tool: null, input_files: null, outputs: [], measurements: {}, diagnostics: [] };
+		if (exit.spawnError) result.errors.push(`could not start the adapter: ${exit.spawnError}`);
+		else if (exit.timedOut || exit.cancelled) result.errors.push("the adapter was stopped");
+		else if (!existsSync(responsePath)) result.errors.push(`the adapter wrote no response (exit code ${exit.code})`);
+		else applyResponse(result, responsePath, exit.code);
+		return { status: result.status, errors: result.errors, measurements: result.measurements, diagnostics: result.diagnostics };
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+type ResponseFields = Pick<ResultRecord, "status" | "errors" | "tool" | "input_files" | "outputs" | "measurements" | "diagnostics">;
+
 /** Copy a valid adapter response into the result. An invalid response makes the status "error". */
-function applyResponse(result: ResultRecord, responsePath: string, exitCode: number | null): void {
+function applyResponse(result: ResponseFields, responsePath: string, exitCode: number | null): void {
 	let response: Record<string, unknown>;
 	try {
 		response = readJson<Record<string, unknown>>(responsePath);

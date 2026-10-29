@@ -32,9 +32,7 @@ export function formatOutcome(root: string, experiment: ExperimentRecord, result
 			lines.push(`  ${name} = ${value}`);
 		}
 	}
-	for (const d of result.diagnostics.filter((d) => d.severity !== "info")) {
-		lines.push(`${d.severity}: ${d.message}`);
-	}
+	for (const d of result.diagnostics.filter((d) => d.severity !== "info")) lines.push(formatDiagnostic(d));
 	for (const e of result.errors) lines.push(`error: ${e}`);
 	return lines.join("\n");
 }
@@ -65,4 +63,9 @@ export function formatVerdict(root: string, verdict: VerdictRecord): string {
 	const unselected = verdict.rows.length - rows.length;
 	if (unselected) lines.push(`  NOT_RUN      ${unselected} more row${unselected === 1 ? "" : "s"}: ${NOT_SELECTED} (listed in verdict.json)`);
 	return lines.join("\n");
+}
+
+/** One diagnostic line: the severity, the file and line when the adapter gives them, and the message. */
+export function formatDiagnostic(d: ResultRecord["diagnostics"][number]): string {
+	return d.source && d.source !== "adapter" ? `${d.severity} (${d.source}): ${d.message}` : `${d.severity}: ${d.message}`;
 }

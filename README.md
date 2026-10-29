@@ -72,6 +72,18 @@ The design root is the nearest directory upward with `simra.config.json`. It def
 environments. Put machine-specific settings (image ID, CPU list) in `simra.local.json`, which git ignores.
 See [examples/ota-sg13g2](examples/ota-sg13g2/README.md).
 
+## Netlist check
+
+Some simulator options add elements to the circuit. For example, `.option rshunt=5e5` connects 500 kΩ from
+each node to ground, and the gain decreases. The ngspice adapter gives a warning, with the file and the line,
+for `rshunt`, `cshunt` and a `gmin` above 1e-12:
+
+- in the response of each `simulate` run;
+- from the operation `lint` (input `files`), which runs no simulation.
+
+In pi, the extension adds these warnings to the result of a `read`, `write`, `edit` or `bash` call that names a
+netlist. It adds each warning one time per session.
+
 ## Check requirements
 
 `requirements.json` in the design root (schema `simra.requirements/0`) has three parts:

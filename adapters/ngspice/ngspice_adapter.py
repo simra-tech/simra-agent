@@ -14,6 +14,11 @@ Operation "simulate". Inputs:
 
 The adapter hashes every file that the simulation reads (deck, includes, libraries, .spiceinit, OSDI models)
 and every file that it writes. It never decides whether a result is good: it reports execution status only.
+It gives a warning for each simulator option that changes the circuit (see OPTION_RULES), with its file and line.
+
+Operation "lint". Inputs:
+  files         list of netlist paths, relative to the design root. The adapter reads each file and the files
+                that it includes from the design root, and gives the same option warnings. It runs no simulation.
 """
 
 import hashlib
@@ -31,7 +36,85 @@ MEAS_ERROR = re.compile(r"^\s*Error:\s*measure\s+(\S+)", re.IGNORECASE)
 DIAG_LINE = re.compile(r"^\s*(error|warning)\b[:\s]*(.*)$", re.IGNORECASE)
 INCLUDE_LINE = re.compile(r"^\s*\.(include|inc|lib)\s+(.*)$", re.IGNORECASE)
 OSDI_LINE = re.compile(r"^\s*osdi\s+(.*)$", re.IGNORECASE)
+OPTION_LINE = re.compile(r"^\s*\.?options?\s+(.*)$", re.IGNORECASE)
+OPTION_ASSIGN = re.compile(r"([A-Za-z_]\w*)\s*=\s*([^\s,]+)")
 MAX_DIAGNOSTICS = 50
+GMIN_DEFAULT = 1e-12
+SCALE = {"t": 1e12, "g": 1e9, "meg": 1e6, "k": 1e3, "m": 1e-3, "u": 1e-6, "n": 1e-9, "p": 1e-12, "f": 1e-15}
+
+
+def spice_number(text):
+    """A SPICE number such as 5e5, 500k or 1meg, or None."""
+    m = re.match(r"^(" + NUMBER + r")(meg|[tgkmunpf])?", text.strip().lower())
+    if not m:
+        return None
+    return float(m.group(1)) * SCALE.get(m.group(2), 1)
+
+
+def si(value, unit):
+    """A value with an SI prefix, for example 500 kΩ."""
+    for prefix, scale in (("T", 1e12), ("G", 1e9), ("M", 1e6), ("k", 1e3), ("", 1), ("m", 1e-3), ("µ", 1e-6),
+                          ("n", 1e-9), ("p", 1e-12), ("f", 1e-15)):
+        if abs(value) >= scale:
+            return "{:g} {}{}".format(value / scale, prefix, unit)
+    return "{:g} {}".format(value, unit)
+
+
+# Simulator options that add elements to the circuit. Each rule gives the message, or None when the value is safe.
+OPTION_RULES = {
+    "rshunt": lambda v: "connects a {} resistor from each node to ground".format(si(v, "Ω")),
+    "cshunt": lambda v: "connects a {} capacitor from each node to ground".format(si(v, "F")),
+    "gmin": lambda v: ("connects a conductance of {} across each pn junction and in parallel with each MOSFET "
+                       "channel (the default is {:g} S)").format(si(v, "S"), GMIN_DEFAULT) if v > GMIN_DEFAULT else None,
+}
+
+
+def lint_lines(lines, source):
+    """Warnings for the simulator options in netlist or .spiceinit lines. source names the file in the message."""
+    diagnostics = []
+    for number, line in enumerate(lines, 1):
+        m = OPTION_LINE.match(line)
+        if not m:
+            continue
+        for name, text in OPTION_ASSIGN.findall(m.group(1)):
+            rule = OPTION_RULES.get(name.lower())
+            value = spice_number(text)
+            effect = rule(value) if rule and value is not None else None
+            if effect:
+                diagnostics.append({"severity": "warning", "source": "{}:{}".format(source, number), "message": (
+                    "'{}' {}. The circuit does not have these elements. They can change the operating point, the gain "
+                    "and the poles. Remove the option, or show that the result does not change without it.").format(
+                        line.strip(), effect)})
+    return diagnostics
+
+
+def design_netlists(path, root, seen=None):
+    """The netlist path and, recursively, the files that it includes from the design root (not the PDK)."""
+    seen = set() if seen is None else seen
+    real = os.path.realpath(path)
+    if real in seen or not os.path.isfile(real):
+        return []
+    seen.add(real)
+    files = [real]
+    with open(real, errors="replace") as f:
+        for line in f:
+            m = INCLUDE_LINE.match(line)
+            words = split_args(m.group(2)) if m else []
+            if not words or (m.group(1).lower() == "lib" and len(words) < 2):
+                continue
+            name = os.path.expandvars(words[0])
+            target = name if os.path.isabs(name) else os.path.join(os.path.dirname(real), name)
+            if not os.path.relpath(os.path.realpath(target), os.path.realpath(root)).startswith(".."):
+                files.extend(design_netlists(target, root, seen))
+    return files
+
+
+def lint_netlist(path, root):
+    diagnostics = []
+    for f in design_netlists(path, root):
+        with open(f, errors="replace") as handle:
+            diagnostics.extend(lint_lines(handle.read().splitlines(), display_path(f, root)))
+    return diagnostics
 
 
 def sha256(path):
@@ -225,6 +308,10 @@ def simulate(request):
         add_spiceinit(closure, spiceinit)
     for item in closure.missing:
         diagnostics.append({"severity": "warning", "message": "not hashed, file not found: " + item, "source": "adapter"})
+    diagnostics.extend(lint_netlist(deck_path, root))
+    if spiceinit:
+        with open(spiceinit, errors="replace") as f:
+            diagnostics.extend(lint_lines(f.read().splitlines(), display_path(spiceinit, root)))
 
     log_path = os.path.join(work_dir, "ngspice.log")
     with open(log_path, "w") as log:
@@ -255,6 +342,22 @@ def simulate(request):
     }
 
 
+def lint(request):
+    root = request["root"]
+    files = (request.get("inputs") or {}).get("files")
+    if not isinstance(files, list) or not all(isinstance(f, str) for f in files):
+        return failure(None, "input 'files' is required (list of netlist paths, relative to the design root)")
+    diagnostics = []
+    for name in files:
+        path = os.path.join(root, name)
+        if not os.path.isfile(path):
+            diagnostics.append({"severity": "error", "message": "file not found: " + name, "source": "adapter"})
+            continue
+        diagnostics.extend(lint_netlist(path, root))
+    return {"contract": CONTRACT, "status": "completed", "tool": None, "input_files": None, "outputs": [],
+            "measurements": {}, "diagnostics": diagnostics}
+
+
 def failure(tool, message):
     return {"contract": CONTRACT, "status": "failed", "tool": tool, "input_files": None, "outputs": [],
             "measurements": {}, "diagnostics": [{"severity": "error", "message": message, "source": "adapter"}]}
@@ -269,10 +372,11 @@ def main(argv):
     if request.get("contract") != CONTRACT:
         sys.stderr.write("unsupported contract: {}\n".format(request.get("contract")))
         return 2
-    if request.get("operation") != "simulate":
+    operation = {"simulate": simulate, "lint": lint}.get(request.get("operation"))
+    if operation is None:
         response = failure(None, "unknown operation: {}".format(request.get("operation")))
     else:
-        response = simulate(request)
+        response = operation(request)
     tmp = request["response_path"] + ".tmp"
     with open(tmp, "w") as f:
         json.dump(response, f, indent=2)

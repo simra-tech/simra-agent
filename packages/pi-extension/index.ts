@@ -1,18 +1,22 @@
 // Simra Agent extension for pi.
 // It registers the tools run_experiment (kernel runner + adapters) and check_requirements (requirements.json
 // against the design), and the command /simra-version.
+// After a read, write, edit or bash call that names a netlist, it adds the ngspice adapter's netlist check
+// (operation "lint") to the tool result: for example a warning about ".option rshunt".
 // All logic lives in @simra-tech/kernel, which works without pi.
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
-import { type ExtensionAPI, VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ToolResultEvent, VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
 import {
 	BUILTIN_ADAPTER_DIR,
 	findRoot,
+	formatDiagnostic,
 	formatOutcome,
 	formatVerdict,
 	runCheck,
+	queryAdapter,
 	runExperiment,
 	type AdapterManifest,
 } from "@simra-tech/kernel";
@@ -33,7 +37,39 @@ function adapterCatalog(): string {
 	return lines.join("\n");
 }
 
+const NETLIST = /\.(spice|cir|sp|net|inc)$/i;
+
+/** The netlist files that a tool call names and that exist: the path of read, write and edit, the words of bash. */
+export function netlistsOf(event: Pick<ToolResultEvent, "toolName" | "input">, cwd: string): string[] {
+	const words =
+		event.toolName === "bash"
+			? String(event.input.command ?? "").match(/[^\s"'<>|;&()=]+/g) ?? []
+			: ["read", "write", "edit"].includes(event.toolName) ? [String(event.input.path ?? "")] : [];
+	const files = words.filter((w) => NETLIST.test(w)).map((w) => (isAbsolute(w) ? w : resolve(cwd, w)));
+	return [...new Set(files)].filter((f) => existsSync(f));
+}
+
 export default function (pi: ExtensionAPI) {
+	// A finding is added once per session, at the first call that shows it.
+	const reported = new Set<string>();
+	pi.on("tool_result", async (event, ctx) => {
+		const files = netlistsOf(event, ctx.cwd);
+		if (files.length === 0) return;
+		const root = findRoot(ctx.cwd) ?? ctx.cwd;
+		let found;
+		try {
+			found = await queryAdapter({ root, adapter: "ngspice", operation: "lint", inputs: { files } });
+		} catch {
+			return;
+		}
+		const fresh = found.diagnostics.filter((d) => d.severity === "warning" && !reported.has(formatDiagnostic(d)));
+		if (fresh.length === 0) return;
+		for (const d of fresh) reported.add(formatDiagnostic(d));
+		const note = ["", "Simra netlist check (ngspice adapter, operation lint):", ...fresh.map(formatDiagnostic)].join("\n");
+		return { content: [...event.content, { type: "text", text: note }], structuredContent: event.structuredContent };
+	});
+
+
 	pi.registerCommand("simra-version", {
 		description: "Show the Simra Agent and pi versions",
 		handler: async (_args, ctx) => {

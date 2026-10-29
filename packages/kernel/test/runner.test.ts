@@ -3,7 +3,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { listExperiments, loadExperiment, runExperiment } from "../src/index.ts";
+import { existsSync } from "node:fs";
+import { listExperiments, loadExperiment, queryAdapter, runExperiment } from "../src/index.ts";
 
 const fixtures = new URL("./fixtures/", import.meta.url).pathname;
 
@@ -81,4 +82,15 @@ test("configuration errors create no experiment", async (t) => {
 		/environment "eda" is not defined/,
 	);
 	assert.equal(listExperiments(root).length, 0);
+});
+
+test("queryAdapter returns the response and writes no record", async (t) => {
+	const root = designRoot(t);
+	const ok = await queryAdapter({ root, adapter: "fake", operation: "run", inputs: { mode: "ok" } });
+	assert.equal(ok.status, "completed");
+	assert.deepEqual(ok.measurements.x, { value: 1.5, unit: "V", status: "measured" });
+	assert.equal(existsSync(join(root, "simra")), false);
+	const crash = await queryAdapter({ root, adapter: "fake", operation: "run", inputs: { mode: "crash" } });
+	assert.equal(crash.status, "error");
+	assert.match(crash.errors[0], /wrote no response/);
 });

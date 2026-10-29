@@ -8,7 +8,10 @@
   ],
   "operations": {
     "simulate": {
-      "description": "Run one ngspice batch simulation (ngspice -b) of a deck. Inputs: deck (path relative to the design root; the deck holds the circuit, the analyses and a .control block), libs (optional list of {path, section}; each becomes a .lib line before the deck, for example a PDK corner; $PDK_ROOT is expanded), measurements (optional {name: unit}). A measurement is read from a 'name = value' line in the ngspice output, so use meas or print in the .control block with the same name. A wanted name that ngspice does not print is reported as missing. Files that the deck writes (for example with wrdata) go to the work directory of the experiment and are hashed."
+      "description": "Run one ngspice batch simulation (ngspice -b) of a deck. Inputs: deck (path relative to the design root; the deck holds the circuit, the analyses and a .control block), libs (optional list of {path, section}; each becomes a .lib line before the deck, for example a PDK corner; $PDK_ROOT is expanded), measurements (optional {name: unit}). A measurement is read from a 'name = value' line in the ngspice output, so use meas or print in the .control block with the same name. A wanted name that ngspice does not print is reported as missing. Files that the deck writes (for example with wrdata) go to the work directory of the experiment and are hashed. The response has a warning for each simulator option that adds elements to the circuit (rshunt, cshunt, a gmin above 1e-12), with its file and line."
+    },
+    "lint": {
+      "description": "Check netlists without a simulation. Inputs: files (list of netlist paths relative to the design root). The response has the same option warnings as simulate, for each file and the files that it includes from the design root."
     }
   }
 }

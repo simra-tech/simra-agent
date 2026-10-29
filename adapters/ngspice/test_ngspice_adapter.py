@@ -58,6 +58,48 @@ class ClosureTest(unittest.TestCase):
         self.assertEqual(c.files[0]["sha256"], adapter.sha256(os.path.join(root, "deck.spice")))
 
 
+class LintTest(unittest.TestCase):
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.root)
+
+    def write(self, name, text):
+        os.makedirs(os.path.dirname(os.path.join(self.root, name)) or self.root, exist_ok=True)
+        with open(os.path.join(self.root, name), "w") as f:
+            f.write(text)
+
+    def lint(self, files):
+        return adapter.lint({"contract": adapter.CONTRACT, "operation": "lint", "root": self.root,
+                             "inputs": {"files": files}})
+
+    def test_options_that_add_elements(self):
+        lines = ["* tb", ".option rshunt=5e5", ".options gmin=1e-12 reltol=1e-4", ".control",
+                 "option gmin=1n cshunt=1f", ".endc", "* .option rshunt=1"]
+        d = adapter.lint_lines(lines, "tb.spice")
+        self.assertEqual([x["source"] for x in d], ["tb.spice:2", "tb.spice:5", "tb.spice:5"])
+        self.assertIn("connects a 500 kΩ resistor from each node to ground", d[0]["message"])
+        self.assertIn("a conductance of 1 nS", d[1]["message"])
+        self.assertIn("a 1 fF capacitor", d[2]["message"])
+        self.assertTrue(all(x["severity"] == "warning" for x in d))
+
+    def test_spice_numbers(self):
+        self.assertEqual([adapter.spice_number(t) for t in ("5e5", "500k", "1meg", "2.2Meg", "1m", "x")],
+                         [5e5, 5e5, 1e6, 2.2e6, 1e-3, None])
+
+    def test_lint_follows_design_includes(self):
+        self.write("tb.spice", '* tb\n.include "sub/opts.inc"\n.lib /pdk/models.lib tt\n')
+        self.write("sub/opts.inc", "* opts\n.option rshunt=1meg\n")
+        r = self.lint(["tb.spice", "nope.spice"])
+        self.assertEqual(r["status"], "completed")
+        self.assertEqual([(x["severity"], x["source"]) for x in r["diagnostics"]],
+                         [("warning", os.path.join("sub", "opts.inc") + ":2"), ("error", "adapter")])
+
+    def test_lint_needs_files(self):
+        self.assertEqual(self.lint("tb.spice")["status"], "failed")
+
+
 class SimulateInputTest(unittest.TestCase):
     def setUp(self):
         self.root = tempfile.mkdtemp()
@@ -85,6 +127,25 @@ class SimulateInputTest(unittest.TestCase):
                                                                           "section": "tt"}]}))
         self.assertEqual(r["status"], "failed")
         self.assertIn("/nonexistent/x.lib", r["diagnostics"][0]["message"])
+
+    def test_simulate_warns_about_options(self):
+        # A stand-in for ngspice that prints one value: the test does not need ngspice.
+        bin_dir = os.path.join(self.root, "bin")
+        os.mkdir(bin_dir)
+        with open(os.path.join(bin_dir, "ngspice"), "w") as f:
+            f.write("#!/bin/sh\necho 'gain_db = 46.1'\n")
+        os.chmod(os.path.join(bin_dir, "ngspice"), 0o755)
+        with open(os.path.join(self.root, "tb.spice"), "w") as f:
+            f.write("* tb\n.option rshunt=5e5\n")
+        path = os.environ["PATH"]
+        os.environ["PATH"] = bin_dir + os.pathsep + path
+        try:
+            r = adapter.simulate(self.request({"deck": "tb.spice", "measurements": {"gain_db": "dB"}}))
+        finally:
+            os.environ["PATH"] = path
+        self.assertEqual(r["status"], "completed")
+        self.assertEqual(r["measurements"]["gain_db"]["value"], 46.1)
+        self.assertEqual([(d["severity"], d["source"]) for d in r["diagnostics"]], [("warning", "tb.spice:2")])
 
 
 if __name__ == "__main__":
