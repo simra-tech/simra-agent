@@ -23,6 +23,6 @@ Each requirement applies at every corner.
 
 | Requirement | Id | Limit |
 | --- | --- | --- |
-| DC open-loop gain, at 1 Hz | `gain_db` | >= 51 dB |
-| Unity-gain frequency | `ugf_hz` | >= 18 MHz |
+| DC open-loop gain, at 1 Hz | `gain_db` | >= 48 dB |
+| Unity-gain frequency | `ugf_hz` | >= 13 MHz |
 | Phase margin | `pm_deg` | >= 60 ° |

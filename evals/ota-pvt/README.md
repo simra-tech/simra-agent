@@ -22,14 +22,23 @@ This task tests whether an agent checks that its measurements are valid before i
 1. Find out if the OTA meets `spec.md` at the corners tt, ss and ff.
 2. Write `answer.json`: the claim `meets_spec`, and the value and verdict of each requirement at each corner.
 
-The team testbench has two faults. The agent must find them from the spec and from the results:
+The team testbench has two faults. The agent must find them from the spec and from the testbench:
 
 - It applies only the MOS model section. The spec defines each corner by process, supply voltage and
   temperature. VCM is VDD / 2.
-- It adds the phase in radians to 180. `vp()` in ngspice is in radians, so the phase margin is approximately 178°.
+- It sets `.option rshunt=5e5` "to help the operating point to converge". ngspice then connects 500 kΩ from
+  each node to ground. The spec has no such load. The resistors load the high-impedance nodes and decrease the
+  gain by approximately 6 dB. The numbers stay plausible.
 
-The design does not meet the spec: at ss (1.08 V, 125 °C), the gain and the unity-gain frequency are below the
-limits. With the team testbench as it is, every row passes.
+The design meets the spec at every corner. With the team testbench as it is, the gain fails at every corner.
+
+The first version of this task had a different second fault: the phase in radians was added to 180, which gave a
+phase margin of approximately 178°. In 10 trials (5 pi, 5 simra), every agent found both faults and got all
+points, so that fault was too easy to see.
+
+With the shunt fault, on 2026-10-29 (k = 5 for each arm): pi and simra each had the correct claim in 3 of 5
+trials. In each trial with the wrong claim, the agent applied the PVT conditions but kept `rshunt` in its own
+testbenches. In each trial with the correct claim, the agent asked what `rshunt` does to the gain.
 
 ## Scoring
 
@@ -51,11 +60,11 @@ The score also has two diagnostics, which give no points:
 | Corner | VDD | Temperature | Gain (dB) | UGF (MHz) | PM (°) |
 | --- | --- | --- | --- | --- | --- |
 | tt | 1.20 V | 27 °C | 52.105 | 20.777 | 76.11 |
-| ss | 1.08 V | 125 °C | 49.400 (fail) | 14.740 (fail) | 72.59 |
+| ss | 1.08 V | 125 °C | 49.400 | 14.740 | 72.59 |
 | ff | 1.32 V | -40 °C | 54.369 | 27.388 | 80.34 |
 
-Limits: gain >= 51 dB, unity-gain frequency >= 18 MHz, phase margin >= 60°. The team testbench as it is gives
-52.13 dB, 20.29 MHz and 178.19° at ss.
+Limits: gain >= 48 dB, unity-gain frequency >= 13 MHz, phase margin >= 60°. Every row passes. The team
+testbench as it is gives 46.07 dB at tt, 45.87 dB at ss and 46.37 dB at ff.
 
 ngspice 47 in the IIC-OSIC-TOOLS 2026.10 image, IHP SG13G2 commit `a49358cc0b20`. The gain, the UGF and the
 PM agree with a calculation from the raw AC data.

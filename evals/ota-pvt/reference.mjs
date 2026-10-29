@@ -5,7 +5,7 @@
 //    run it through the kernel runner and the ngspice adapter.
 // 3. Check the ngspice "meas" results against an independent calculation from the raw AC data.
 // 4. Run the team testbench (tb_ota.spice) as it is, with only the model section changed. Its values show
-//    what an answer gives when it does not apply the spec conditions or does not check the phase unit.
+//    what an answer gives when it keeps the faults of the team testbench.
 // 5. Write expected.json: the limits from spec.md, the values, the verdicts, the tolerances and the provenance.
 //
 // Usage: node evals/ota-pvt/reference.mjs [environment]   (default environment: eda)

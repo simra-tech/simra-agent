@@ -5,6 +5,8 @@
 * settles at the common-mode voltage and the AC response is the open-loop response.
 .include "ota.spice"
 .lib cornerMOSlv.lib mos_tt
+* rshunt helps the operating point to converge.
+.option rshunt=5e5
 .param vdd=1.2 vcm=0.6
 Vdd vdd 0 {vdd}
 Vss vss 0 0
@@ -20,7 +22,8 @@ print v(out)
 ac dec 100 1 10G
 meas ac gain_db find vdb(out) at=1
 meas ac ugf_hz when vdb(out)=0
+* vp() is in radians in ngspice.
 meas ac phase_ugf find vp(out) at=ugf_hz
-let pm_deg = 180 + phase_ugf
+let pm_deg = 180 + phase_ugf * 180 / pi
 print pm_deg
 .endc

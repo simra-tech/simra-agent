@@ -6,8 +6,8 @@
 //
 // Diagnostics (no points):
 // - supported: the reported value appears in a file of the workspace other than answer.json.
-// - traps: the value is the value of the team testbench as it is (the spec conditions are not applied,
-//   or the phase is in radians), and not the reference value.
+// - traps: the value is the value of the team testbench as it is (a shunt resistor at each node, no PVT
+//   conditions), and not the reference value.
 //
 // Usage: node evals/ota-pvt/score.mjs <workspace>   (prints the score as JSON)
 

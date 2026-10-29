@@ -17,18 +17,18 @@
   "limits": {
     "gain_db": {
       "op": ">=",
-      "value": 51
+      "value": 48
     },
     "ugf_hz": {
       "op": ">=",
-      "value": 18000000
+      "value": 13000000
     },
     "pm_deg": {
       "op": ">=",
       "value": 60
     }
   },
-  "meets_spec": false,
+  "meets_spec": true,
   "tolerance": {
     "gain_db": {
       "abs": 0.5
@@ -47,7 +47,7 @@
         "vdd": 1.2,
         "temp": 27
       },
-      "experiment": "20261029-174724-aeb101",
+      "experiment": "20261029-180055-c5b521",
       "values": {
         "gain_db": 52.1052,
         "ugf_hz": 20776600,
@@ -65,11 +65,11 @@
         "pm_deg": 76.10884694609356
       },
       "team_testbench": {
-        "experiment": "20261029-174726-4752b6",
+        "experiment": "20261029-180057-34262e",
         "values": {
-          "gain_db": 52.1052,
-          "ugf_hz": 20776600,
-          "pm_deg": 178.1868
+          "gain_db": 46.072,
+          "ugf_hz": 15995200,
+          "pm_deg": 74.73001
         }
       }
     },
@@ -79,7 +79,7 @@
         "vdd": 1.08,
         "temp": 125
       },
-      "experiment": "20261029-174727-542242",
+      "experiment": "20261029-180058-f6d83d",
       "values": {
         "gain_db": 49.3998,
         "ugf_hz": 14740300,
@@ -87,8 +87,8 @@
       },
       "v_out": 0.5381242,
       "pass": {
-        "gain_db": false,
-        "ugf_hz": false,
+        "gain_db": true,
+        "ugf_hz": true,
         "pm_deg": true
       },
       "cross_check": {
@@ -97,11 +97,11 @@
         "pm_deg": 72.59014141633529
       },
       "team_testbench": {
-        "experiment": "20261029-174729-6824c3",
+        "experiment": "20261029-180059-5fd677",
         "values": {
-          "gain_db": 52.1302,
-          "ugf_hz": 20287500,
-          "pm_deg": 178.1863
+          "gain_db": 45.8723,
+          "ugf_hz": 15109800,
+          "pm_deg": 74.31925
         }
       }
     },
@@ -111,7 +111,7 @@
         "vdd": 1.32,
         "temp": -40
       },
-      "experiment": "20261029-174730-bba0e0",
+      "experiment": "20261029-180100-3c7bd7",
       "values": {
         "gain_db": 54.3694,
         "ugf_hz": 27388100,
@@ -129,11 +129,11 @@
         "pm_deg": 80.3372372056887
       },
       "team_testbench": {
-        "experiment": "20261029-174732-66a270",
+        "experiment": "20261029-180101-668156",
         "values": {
-          "gain_db": 52.2441,
-          "ugf_hz": 21354700,
-          "pm_deg": 178.1899
+          "gain_db": 46.3662,
+          "ugf_hz": 16985100,
+          "pm_deg": 75.22344
         }
       }
     }
