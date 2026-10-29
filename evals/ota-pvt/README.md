@@ -40,6 +40,12 @@ With the shunt fault, on 2026-10-29 (k = 5 for each arm): pi and simra each had 
 trials. In each trial with the wrong claim, the agent applied the PVT conditions but kept `rshunt` in its own
 testbenches. In each trial with the correct claim, the agent asked what `rshunt` does to the gain.
 
+With the netlist check (see the [README](../../README.md#netlist-check)), on 2026-10-29 (k = 5 for each arm):
+simra had the correct claim and all 22 points in 5 of 5 trials, and pi in 2 of 5. In each simra trial, the
+check gave the `rshunt` warning when the agent read `tb_ota.spice`, and the agent removed the option from its
+own testbenches. The check finds exactly the fault of this task, so this result shows that the agent acts on
+the warning. It does not show how often the check helps on other designs.
+
 ## Scoring
 
 | Part | Points | A point is given when |
