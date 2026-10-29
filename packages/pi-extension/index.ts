@@ -1,12 +1,21 @@
 // Simra Agent extension for pi.
-// It registers the tool run_experiment (kernel runner + adapters) and the command /simra-version.
+// It registers the tools run_experiment (kernel runner + adapters) and check_requirements (requirements.json
+// against the design), and the command /simra-version.
 // All logic lives in @simra-tech/kernel, which works without pi.
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { type ExtensionAPI, VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
-import { BUILTIN_ADAPTER_DIR, findRoot, formatOutcome, runExperiment, type AdapterManifest } from "@simra-tech/kernel";
+import {
+	BUILTIN_ADAPTER_DIR,
+	findRoot,
+	formatOutcome,
+	formatVerdict,
+	runCheck,
+	runExperiment,
+	type AdapterManifest,
+} from "@simra-tech/kernel";
 
 const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as { version: string };
 
@@ -72,6 +81,43 @@ export default function (pi: ExtensionAPI) {
 			return {
 				content: [{ type: "text", text: formatOutcome(root, outcome.experiment, outcome.result) }],
 				details: { id: outcome.id, status: outcome.result.status, measurements: outcome.result.measurements },
+			};
+		},
+	});
+	pi.registerTool({
+		name: "check_requirements",
+		label: "Check requirements",
+		description: [
+			"Check the design against requirements.json in the design root (schema simra.requirements/0).",
+			"The file names the conditions (for example corners), one experiment template per measurement setup, and the",
+			"requirements (measurement, op <=, >= or between, limit, conditions). The check runs each experiment it needs once per",
+			"condition with the same runner as run_experiment, compares every measurement with its limit, and writes",
+			"simra/checks/<id>/verdict.json. Each row is pass, fail, not measured or not run, with its margin and experiment id.",
+			"The status is pass only when every row of every requirement passes. A check of a selection is never a pass.",
+		].join("\n"),
+		promptSnippet: "check_requirements: run the experiments in requirements.json and compare each measurement with its limit",
+		promptGuidelines: [
+			"Before you say that the design meets its requirements, run check_requirements without a selection and give its check id.",
+			"Use the requirements and conditions parameters to check one row quickly while you work; that result is not a pass.",
+			"Report rows that are not measured or not run as such. Do not replace them with your own estimate.",
+		],
+		parameters: Type.Object({
+			requirements: Type.Optional(Type.Array(Type.String(), { description: "Check only these requirement ids" })),
+			conditions: Type.Optional(Type.Array(Type.String(), { description: "Check only these conditions" })),
+			file: Type.Optional(Type.String({ description: "Requirements file relative to the design root (default requirements.json)" })),
+		}),
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+			const root = findRoot(ctx.cwd) ?? ctx.cwd;
+			const { id, verdict } = await runCheck({
+				root,
+				file: params.file,
+				requirements: params.requirements,
+				conditions: params.conditions,
+				signal,
+			});
+			return {
+				content: [{ type: "text", text: formatVerdict(root, verdict) }],
+				details: { id, status: verdict.status, counts: verdict.counts },
 			};
 		},
 	});

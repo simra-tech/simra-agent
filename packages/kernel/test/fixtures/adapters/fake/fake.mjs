@@ -1,4 +1,5 @@
-// Test adapter. inputs.mode: ok | failed | crash | invalid-json | wrong-contract | bad-exit | sleep
+// Test adapter. inputs.mode: ok | failed | crash | invalid-json | wrong-contract | bad-exit | sleep | values
+// "values": inputs.values {name: number | null} become the measurements, with units from inputs.units.
 import { writeFileSync } from "node:fs";
 
 const request = JSON.parse((await import("node:fs")).readFileSync(process.argv[2], "utf8"));
@@ -15,6 +16,14 @@ const ok = {
 };
 
 if (mode === "ok") respond(ok);
+else if (mode === "values") {
+	const measurements = {};
+	for (const [name, value] of Object.entries(request.inputs.values ?? {})) {
+		const unit = request.inputs.units?.[name] ?? null;
+		measurements[name] = value === null ? { value: null, unit, status: "missing" } : { value, unit, status: "measured" };
+	}
+	respond({ ...ok, measurements });
+}
 else if (mode === "failed") respond({ ...ok, status: "failed", measurements: {} });
 else if (mode === "crash") {
 	console.error("fake adapter: crash");

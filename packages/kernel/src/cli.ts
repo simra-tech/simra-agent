@@ -4,6 +4,7 @@
 //   simra run <spec.json>     run one experiment; spec = { adapter, operation, inputs, environment?, purpose?, timeout_s? }
 //   simra show <id>           print the experiment and result records
 //   simra list                list experiments, oldest first
+//   simra check               check requirements.json; options --file <path>, --only <id,...>, --conditions <name,...>
 //
 // Option: --root <dir> (default: the nearest directory upward with simra.config.json, else the current directory)
 
@@ -11,19 +12,25 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { findRoot } from "./config.ts";
 import { listExperiments, loadExperiment } from "./records.ts";
+import { runCheck } from "./requirements.ts";
 import { runExperiment } from "./runner.ts";
-import { formatOutcome } from "./summary.ts";
+import { formatOutcome, formatVerdict } from "./summary.ts";
 
 function usage(): never {
-	console.error("usage: simra run <spec.json> | simra show <id> | simra list   [--root <dir>]");
+	console.error(
+		"usage: simra run <spec.json> | simra show <id> | simra list | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>]   [--root <dir>]",
+	);
 	process.exit(2);
 }
 
 async function main(argv: string[]): Promise<number> {
 	let root: string | null = null;
 	const args: string[] = [];
+	const options: Record<string, string> = {};
+	const list = (value?: string) => value?.split(",").filter(Boolean);
 	for (let i = 0; i < argv.length; i++) {
 		if (argv[i] === "--root") root = resolve(argv[++i] ?? usage());
+		else if (["--file", "--only", "--conditions"].includes(argv[i])) options[argv[i].slice(2)] = argv[++i] ?? usage();
 		else args.push(argv[i]);
 	}
 	root ??= findRoot(process.cwd()) ?? process.cwd();
@@ -47,6 +54,16 @@ async function main(argv: string[]): Promise<number> {
 		const { experiment, result } = loadExperiment(root, arg);
 		console.log(JSON.stringify({ experiment, result }, null, 2));
 		return 0;
+	}
+	if (command === "check") {
+		const { verdict } = await runCheck({
+			root,
+			file: options.file,
+			requirements: list(options.only),
+			conditions: list(options.conditions),
+		});
+		console.log(formatVerdict(root, verdict));
+		return verdict.status === "pass" ? 0 : 1;
 	}
 	if (command === "list") {
 		for (const { id, experiment, result } of listExperiments(root)) {

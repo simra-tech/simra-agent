@@ -20,6 +20,9 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
 - Each run writes a record to `simra/experiments/<id>/` in the design root: the request, the environment
   (container image ID, CPU pinning), the git state of the design, the hash of every input file (including the
   PDK model files), the tool version, the measurements, the logs and the hashed outputs.
+- The tool `check_requirements` (pi extension) and the command `simra check` (plain CLI) check the design
+  against `requirements.json`. They run the experiments that the requirements need and write a verdict to
+  `simra/checks/<id>/verdict.json`. Each row of the verdict names the experiment that gave its value.
 - One adapter exists: ngspice.
 - One example design exists: a two-stage OTA for the open IHP SG13G2 PDK.
 
@@ -68,6 +71,41 @@ In pi:
 The design root is the nearest directory upward with `simra.config.json`. It defines the execution
 environments. Put machine-specific settings (image ID, CPU list) in `simra.local.json`, which git ignores.
 See [examples/ota-sg13g2](examples/ota-sg13g2/README.md).
+
+## Check requirements
+
+`requirements.json` in the design root (schema `simra.requirements/0`) has three parts:
+
+- `conditions`: named conditions, for example process corners. The `inputs` of a condition replace the
+  experiment inputs of the same name.
+- `experiments`: one template per measurement setup (`adapter`, `operation`, `inputs`). In each string input,
+  `{condition}` is replaced with the condition name.
+- `requirements`: each has an `id`, an `experiment`, a `measurement`, an optional `unit`, an `op` (`<=`, `>=` or
+  `between`), a `limit` and the `conditions`. The limit is one number, `[low, high]` for `between`, or one
+  limit per condition.
+
+Example:
+
+```json
+{
+  "schema": "simra.requirements/0",
+  "conditions": { "nominal": {} },
+  "experiments": {
+    "ac": { "adapter": "ngspice", "operation": "simulate", "inputs": { "deck": "rc.spice", "measurements": { "f3db_hz": "Hz" } } }
+  },
+  "requirements": [
+    { "id": "bandwidth", "experiment": "ac", "measurement": "f3db_hz", "unit": "Hz", "op": "between", "limit": [150, 170], "conditions": ["nominal"] }
+  ]
+}
+```
+
+1. Write `requirements.json` in the design root.
+2. Run `npx simra check`. To check a part, add `--only <id,...>` or `--conditions <name,...>`.
+3. Read the verdict. The command exits with 0 only when the status is `pass`.
+
+The check runs each experiment once per condition, also when more than one requirement reads it. Each row is
+`pass`, `fail`, `not_measured` (no value, or a different unit) or `not_run` (the experiment did not complete,
+or the row was not selected). The status is `pass` only when every row passes. A check of a part is never `pass`.
 
 ## Layout
 

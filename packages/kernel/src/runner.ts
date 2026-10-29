@@ -86,7 +86,7 @@ function hashTree(dir: string): FileHash[] {
 	return out;
 }
 
-function gitState(root: string): ExperimentRecord["design"] {
+export function gitState(root: string): ExperimentRecord["design"] {
 	const git = (args: string[]) =>
 		execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
 	try {
