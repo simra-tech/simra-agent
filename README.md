@@ -99,7 +99,7 @@ Example:
 }
 ```
 
-1. Write `requirements.json` in the design root. If the file is missing, `simra check` prints an example.
+1. Write `requirements.json` in the design root.
 2. Run `npx simra check`. To check a part, add `--only <id,...>` or `--conditions <name,...>`.
 3. Read the verdict. The command exits with 0 only when the status is `pass`.
 

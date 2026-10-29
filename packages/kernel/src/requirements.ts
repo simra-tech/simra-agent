@@ -226,40 +226,9 @@ export function evaluateRow(
 	return { ...row, margin, margin_rel, status: margin >= 0 ? "pass" : "fail" };
 }
 
-/** A valid file, shown when the file is missing, so that the author does not need to read this source. */
-export const REQUIREMENTS_EXAMPLE: RequirementsFile = {
-	schema: REQUIREMENTS_SCHEMA,
-	conditions: { tt: { description: "typical corner" }, ss: { description: "slow corner, 85 C" } },
-	experiments: {
-		ac: { adapter: "ngspice", operation: "simulate", inputs: { deck: "tb_ac_{condition}.spice", measurements: { gain_db: "dB", ugf_hz: "Hz" } } },
-	},
-	requirements: [
-		{ id: "dc_gain", experiment: "ac", measurement: "gain_db", unit: "dB", op: ">=", limit: 40, conditions: ["tt", "ss"] },
-		{ id: "ugf", experiment: "ac", measurement: "ugf_hz", unit: "Hz", op: ">=", limit: { tt: 1e7, ss: 8e6 }, conditions: ["tt", "ss"] },
-	],
-};
-
-/** One line per top-level key and per requirement: short enough for an error message, still valid JSON. */
-function compactJson(file: RequirementsFile): string {
-	const { requirements, ...rest } = file;
-	const head = Object.entries(rest).map(([k, v]) => ` ${JSON.stringify(k)}: ${JSON.stringify(v)},`);
-	return ["{", ...head, ' "requirements": [', requirements.map((r) => `  ${JSON.stringify(r)}`).join(",\n"), " ]", "}"].join("\n");
-}
-
 export function loadRequirements(root: string, file = REQUIREMENTS_FILE): { path: string; file: RequirementsFile } {
 	const path = resolve(root, file);
-	if (!existsSync(path)) {
-		throw new Error(
-			[
-				`requirements file not found: ${path}`,
-				"This file is the test suite of the design. Write it from the spec: one requirement per spec row, with the",
-				"spec limit and the conditions (corners) the spec names. Then run the check again. Example:",
-				compactJson(REQUIREMENTS_EXAMPLE),
-				'Each condition can add "inputs" that replace experiment inputs of the same name; "{condition}" in a string',
-				'input is replaced with the condition name. op is "<=", ">=" or "between" (limit [low, high]).',
-			].join("\n"),
-		);
-	}
+	if (!existsSync(path)) throw new Error(`requirements file not found: ${relative(root, path) || path}`);
 	const parsed = readJson<RequirementsFile>(path);
 	const errors = validateRequirements(parsed);
 	if (errors.length) throw new Error(`invalid requirements file ${relative(root, path)}:\n- ${errors.join("\n- ")}`);
