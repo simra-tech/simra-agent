@@ -37,6 +37,19 @@ function adapterCatalog(): string {
 	return lines.join("\n");
 }
 
+/** The example in the check_requirements description: two corners, one AC experiment (one deck per corner), two requirements. */
+export const REQUIREMENTS_EXAMPLE = JSON.stringify({
+	schema: "simra.requirements/0",
+	conditions: { tt: { description: "typical, 27 C" }, ss: { description: "slow, 125 C" } },
+	experiments: {
+		ac: { adapter: "ngspice", operation: "simulate", environment: "eda", inputs: { deck: "tb_{condition}.spice", measurements: { gain_db: "dB", pm_deg: "deg" } } },
+	},
+	requirements: [
+		{ id: "gain", experiment: "ac", measurement: "gain_db", unit: "dB", op: ">=", limit: 48, conditions: ["tt", "ss"] },
+		{ id: "pm", experiment: "ac", measurement: "pm_deg", unit: "deg", op: "between", limit: [60, 90], conditions: ["tt", "ss"] },
+	],
+});
+
 const NETLIST = /\.(spice|cir|sp|net|inc)$/i;
 
 /** The netlist files that a tool call names and that exist: the path of read, write and edit, the words of bash. */
@@ -130,6 +143,17 @@ export default function (pi: ExtensionAPI) {
 			"condition with the same runner as run_experiment, compares every measurement with its limit, and writes",
 			"simra/checks/<id>/verdict.json. Each row is pass, fail, not measured or not run, with its margin and experiment id.",
 			"The status is pass only when every row of every requirement passes. A check of a selection is never a pass.",
+			"",
+			"Format of requirements.json:",
+			"- schema: \"simra.requirements/0\".",
+			"- conditions: {name: {description?, inputs?}}. A condition input replaces the experiment input of the same name.",
+			"- experiments: {name: {adapter, operation, inputs, environment?, timeout_s?}}, with the same inputs as",
+			"  run_experiment. In each input string, \"{condition}\" is replaced with the condition name.",
+			"- requirements: [{id, description?, experiment, measurement, unit?, op, limit, conditions}]. op is \"<=\", \">=\" or",
+			"  \"between\". limit is a number, [low, high] for between, or {condition: limit}. measurement is a key of",
+			"  inputs.measurements. conditions lists the condition names to check.",
+			"Example:",
+			REQUIREMENTS_EXAMPLE,
 		].join("\n"),
 		promptSnippet: "check_requirements: run the experiments in requirements.json and compare each measurement with its limit",
 		promptGuidelines: [

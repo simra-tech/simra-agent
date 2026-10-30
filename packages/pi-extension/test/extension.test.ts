@@ -6,7 +6,8 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import extension, { netlistsOf } from "../index.ts";
+import { validateRequirements } from "@simra-tech/kernel";
+import extension, { netlistsOf, REQUIREMENTS_EXAMPLE } from "../index.ts";
 
 const fakeAdapters = new URL("../../kernel/test/fixtures/adapters", import.meta.url).pathname;
 
@@ -40,6 +41,9 @@ test("check_requirements runs the check and gives the verdict", async (t) => {
 	extension({ registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand: () => {}, on: () => {} } as any);
 	const tool = tools.get("check_requirements");
 	assert.ok(tool, "check_requirements is not registered");
+	// The description gives the file format with a valid example.
+	assert.ok(tool.description.includes(REQUIREMENTS_EXAMPLE));
+	assert.deepEqual(validateRequirements(JSON.parse(REQUIREMENTS_EXAMPLE)), []);
 
 	const root = mkdtempSync(join(tmpdir(), "simra-ext-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
