@@ -1,0 +1,11 @@
+     device m.xdut.xm7.msky130_fd m.xdut.xm6.msky130_fd m.xdut.xm4.msky130_fd m.xdut.xm3.msky130_fd m.xdut.xm2.msky130_fd m.xdut.xm1.msky130_fd m.xdut.xm5.msky130_fd m.xdut.xm8.msky130_fd
+      model xdut.xm7:sky130_fd_pr xdut.xm6:sky130_fd_pr xdut.xm4:sky130_fd_pr xdut.xm3:sky130_fd_pr xdut.xm2:sky130_fd_pr xdut.xm1:sky130_fd_pr xdut.xm5:sky130_fd_pr xdut.xm8:sky130_fd_pr
+        vgs              0.813435                1.1247               1.10997               1.10997              0.786729              0.786508              0.813435              0.813435
+        vth               0.61228               1.01137               1.00505                1.0051              0.708494              0.708453               0.61228              0.622299
+        vds              0.999778              0.800222                1.1247               1.10997              0.462032              0.476764              0.213271              0.813435
+      vdsat               0.18425              0.144593              0.139914              0.139879              0.105161              0.105055               0.18425              0.185294
+         id           4.23413e-05           4.23413e-05           9.45002e-06           9.43821e-06           9.45002e-06           9.43821e-06           1.88882e-05                 1e-05
+         gm           0.000378617           0.000507026           0.000112792           0.000112673           0.000144509           0.000144451           0.000161238           9.10628e-05
+        gds           2.58757e-06           3.99888e-06            8.0004e-07           8.03995e-07            1.3926e-06           1.35588e-06           1.60355e-05           8.08558e-07
+
+Note: Simulation executed from .control section 

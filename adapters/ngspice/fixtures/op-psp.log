@@ -1,0 +1,11 @@
+     device n.xdut.xm7.nsg13_lv_n n.xdut.xm6.nsg13_lv_p n.xdut.xm4.nsg13_lv_p n.xdut.xm3.nsg13_lv_p n.xdut.xm2.nsg13_lv_n n.xdut.xm1.nsg13_lv_n n.xdut.xm5.nsg13_lv_n n.xdut.xm8.nsg13_lv_n
+      model xdut.xm7:sg13g2_lv_nm xdut.xm6:sg13g2_lv_pm xdut.xm4:sg13g2_lv_pm xdut.xm3:sg13g2_lv_pm xdut.xm2:sg13g2_lv_nm xdut.xm1:sg13g2_lv_nm xdut.xm5:sg13g2_lv_nm xdut.xm8:sg13g2_lv_nm
+        vgs              0.466599              0.590997              0.565792              0.565792              0.410689              0.409355              0.466599              0.466599
+        vth              0.285853              0.408975              0.408735              0.408753              0.352265              0.352265              0.285853              0.297647
+        vds              0.548666              0.651334              0.590997              0.565792              0.469691              0.494897              0.139311              0.466599
+       vdss              0.190882              0.193108              0.178991              0.178981              0.131577              0.131102              0.190882              0.184246
+        ids           4.65344e-05           4.65344e-05           9.28496e-06            9.2562e-06           9.28497e-06            9.2562e-06           1.85412e-05           9.99999e-06
+         gm           0.000443084           0.000441902           9.81509e-05           9.78742e-05           0.000152449           0.000152105           0.000170458            0.00010044
+        gds           1.46282e-05           4.99997e-06           1.11606e-06           1.16728e-06           7.01582e-06           6.82089e-06           4.43756e-05            3.6073e-06
+
+Note: Simulation executed from .control section 

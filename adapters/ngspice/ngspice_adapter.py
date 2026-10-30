@@ -16,6 +16,15 @@ The adapter hashes every file that the simulation reads (deck, includes, librari
 and every file that it writes. It never decides whether a result is good: it reports execution status only.
 It gives a warning for each simulator option that changes the circuit (see OPTION_RULES), with its file and line.
 
+Operation "operating_point". Inputs: deck and libs, as for simulate, and technology (optional, the name of a
+technology pack; the default is the pack whose "pdks" has $PDK). The adapter writes op.cir in the work directory:
+the circuit lines of the deck without its .control blocks, analyses and .meas lines, then "op" and "show" for the
+MOS devices. The technology pack gives the device letter and the parameter names of the MOS model (see
+technologies/README.md). The operating point uses the DC values of the netlist sources. The response has, for
+each MOS device, the measurements <device>.vgs, .vth, .vds, .vdsat, .id, .gm, .gds, .vov (|vgs| - |vth|) and
+.sat_margin (|vds| - |vdsat|), and a warning for each device that is not in saturation. work/operating_point.json
+has the same data with the region of each device.
+
 Operation "lint". Inputs:
   files         list of netlist paths, relative to the design root. The adapter reads each file and the files
                 that it includes from the design root, and gives the same option warnings. It runs no simulation.
@@ -283,39 +292,53 @@ def pdk_facts():
     return facts
 
 
-def simulate(request):
-    root = request["root"]
-    work_dir = request["work_dir"]
-    inputs = request.get("inputs") or {}
-    diagnostics = []
-    tool = {"name": "ngspice", "version": ngspice_version(), "pdk": pdk_facts()}
-
+def deck_and_libs(root, inputs):
+    """(deck path, [(lib path, section)], None), or (None, None, error message)."""
     deck = inputs.get("deck")
     if not isinstance(deck, str):
-        return failure(tool, "input 'deck' is required (path of the testbench, relative to the design root)")
+        return None, None, "input 'deck' is required (path of the testbench, relative to the design root)"
     deck_path = os.path.join(root, deck)
     if not os.path.isfile(deck_path):
-        return failure(tool, "deck not found: {}".format(deck))
+        return None, None, "deck not found: {}".format(deck)
     libs = []
     for lib in inputs.get("libs") or []:
         path = os.path.expandvars(lib.get("path", ""))
         if not os.path.isabs(path):
             path = os.path.join(root, path)
         if not os.path.isfile(path):
-            return failure(tool, "library not found: {} (expanded: {})".format(lib.get("path"), path))
+            return None, None, "library not found: {} (expanded: {})".format(lib.get("path"), path)
         libs.append((path, lib.get("section")))
-    wanted = inputs.get("measurements") or {}
+    return deck_path, libs, None
 
-    top = os.path.join(work_dir, "top.cir")
+
+def simulate(request):
+    root = request["root"]
+    inputs = request.get("inputs") or {}
+    tool = {"name": "ngspice", "version": ngspice_version(), "pdk": pdk_facts()}
+    deck_path, libs, error = deck_and_libs(root, inputs)
+    if error:
+        return failure(tool, error)
+    top = os.path.join(request["work_dir"], "top.cir")
     with open(top, "w") as f:
         f.write("* simra ngspice adapter: top level for experiment {}\n".format(request.get("experiment")))
         for path, section in libs:
             f.write('.lib "{}"{}\n'.format(path, " " + section if section else ""))
         f.write('.include "{}"\n.end\n'.format(os.path.realpath(deck_path)))
+    return run(request, tool, "top.cir", deck_path, libs, inputs.get("measurements") or {})
 
+
+def run(request, tool, top_name, deck_path, libs, wanted, extra_inputs=()):
+    """Hash the inputs, run ngspice on work_dir/top_name, and parse its output. Returns the response.
+
+    wanted is the map of measurements as for simulate, or None for no "name = value" measurements."""
+    root = request["root"]
+    work_dir = request["work_dir"]
+    diagnostics = []
     spiceinit = find_spiceinit(work_dir)
     closure = Closure(root, sourcepath(spiceinit) if spiceinit else ())
     closure.add_netlist(deck_path, "deck", "include")
+    for path, role in extra_inputs:
+        closure.add(path, role)
     for path, _ in libs:
         closure.add_netlist(path, "model", "model")
     if spiceinit:
@@ -330,11 +353,13 @@ def simulate(request):
     log_path = os.path.join(work_dir, "ngspice.log")
     with open(log_path, "w") as log:
         try:
-            code = subprocess.call(["ngspice", "-b", "top.cir"], cwd=work_dir, stdout=log, stderr=subprocess.STDOUT)
+            code = subprocess.call(["ngspice", "-b", top_name], cwd=work_dir, stdout=log, stderr=subprocess.STDOUT)
         except OSError as e:
             return failure(tool, "could not start ngspice: {}".format(e))
     with open(log_path, errors="replace") as f:
-        measurements, log_diagnostics = parse_log(f.read().splitlines(), wanted)
+        measurements, log_diagnostics = parse_log(f.read().splitlines(), wanted or {})
+    if wanted is None:
+        measurements = {}
     diagnostics.extend(log_diagnostics)
     if code != 0:
         diagnostics.insert(0, {"severity": "error", "message": "ngspice exited with code {}".format(code), "source": "adapter"})
@@ -354,6 +379,164 @@ def simulate(request):
         "measurements": measurements,
         "diagnostics": diagnostics,
     }
+
+
+# Lines of a deck that operating_point removes: analyses, measurements, output requests and the end line.
+ANALYSIS_LINE = re.compile(r"^\s*\.(ac|dc|tran|op|noise|tf|pz|sens|disto|sp|pss|meas|measure|print|plot|probe|save|four|end)\b",
+                           re.IGNORECASE)
+CONTROL_START = re.compile(r"^\s*\.control\b", re.IGNORECASE)
+CONTROL_END = re.compile(r"^\s*\.endc\b", re.IGNORECASE)
+OP_QUANTITIES = ("vgs", "vth", "vds", "vdsat", "id", "gm", "gds")
+
+
+def technology_dir():
+    return os.environ.get("SIMRA_TECHNOLOGY_DIR") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))), "technologies")
+
+
+def find_technology(name, pdk):
+    """(path, pack, None) for the pack with this name, or else the pack for this PDK; or (None, None, message)."""
+    base = technology_dir()
+    packs = []
+    for entry in sorted(os.listdir(base)) if os.path.isdir(base) else []:
+        path = os.path.join(base, entry, "technology.json")
+        if os.path.isfile(path):
+            with open(path) as f:
+                packs.append((path, json.load(f)))
+    for path, pack in packs:
+        if (name and pack.get("name") == name) or (not name and pdk in (pack.get("pdks") or [])):
+            if "operating_point" not in (pack.get("ngspice") or {}):
+                return None, None, "technology pack {} has no ngspice.operating_point".format(pack.get("name"))
+            return path, pack, None
+    known = ", ".join("{} ({})".format(p.get("name"), ", ".join(p.get("pdks") or [])) for _, p in packs) or "none"
+    wanted = "technology pack '{}'".format(name) if name else "technology pack for PDK '{}'".format(pdk)
+    return None, None, "no {} in {}; known packs: {}. Give input 'technology', or add a pack (see technologies/README.md)".format(
+        wanted, base, known)
+
+
+def circuit_lines(deck_path):
+    """The deck lines without .control blocks and analyses. Relative include paths become absolute."""
+    base = os.path.dirname(os.path.realpath(deck_path))
+    lines, in_control = [], False
+    with open(deck_path, errors="replace") as f:
+        for line in f.read().splitlines():
+            if in_control:
+                in_control = not CONTROL_END.match(line)
+                continue
+            if CONTROL_START.match(line):
+                in_control = True
+                continue
+            if ANALYSIS_LINE.match(line):
+                continue
+            m = INCLUDE_LINE.match(line)
+            words = split_args(m.group(2)) if m else []
+            if words and not (m.group(1).lower() == "lib" and len(words) < 2):
+                name = os.path.expandvars(words[0])
+                if not os.path.isabs(name) and os.path.isfile(os.path.join(base, name)):
+                    rest = " ".join(words[1:])
+                    line = '.{} "{}"{}'.format(m.group(1), os.path.join(base, name), " " + rest if rest else "")
+            lines.append(line)
+    return lines
+
+
+def parse_show(lines, letter, params):
+    """The devices of an ngspice "show" table: [{"device", "instance", "values": {quantity: value}}], warnings.
+
+    The "device" row has the instance names and the "model" row has "<path>:<model>" for each column. ngspice
+    shortens the names to about 21 characters, so the path comes from the model row when it has a ":".
+    """
+    by_name = {v: k for k, v in params.items()}
+    devices, warnings = [], []
+    columns = []
+    for line in lines:
+        words = line.split()
+        if not words:
+            continue
+        if words[0] == "device" and all(w.lower().startswith(letter + ".") for w in words[1:]) and len(words) > 1:
+            columns = [{"instance": w, "values": {}} for w in words[1:]]
+            devices.extend(columns)
+        elif words[0] == "model" and columns and len(words) == len(columns) + 1:
+            for c, w in zip(columns, words[1:]):
+                c["path"] = w.split(":")[0] if ":" in w else None
+        elif columns and words[0] in by_name and len(words) == len(columns) + 1:
+            for c, w in zip(columns, words[1:]):
+                try:
+                    c["values"][by_name[words[0]]] = float(w)
+                except ValueError:
+                    c["values"][by_name[words[0]]] = None
+    for c in devices:
+        c["device"] = c.pop("path", None) or c["instance"]
+        if c["device"] == c["instance"]:
+            warnings.append("{}: the device name may be shortened by ngspice".format(c["instance"]))
+    return devices, warnings
+
+
+def classify(values):
+    """vov, sat_margin and the region of one device from its operating point. PMOS values may be negative."""
+    vgs, vth, vds, vdsat = (values.get(k) for k in ("vgs", "vth", "vds", "vdsat"))
+    if None in (vgs, vth, vds, vdsat):
+        return None, None, None
+    vov = abs(vgs) - abs(vth)
+    margin = abs(vds) - abs(vdsat)
+    region = "subthreshold" if vov < 0 else "triode" if margin < 0 else "saturation"
+    return vov, margin, region
+
+
+def operating_point(request):
+    root = request["root"]
+    work_dir = request["work_dir"]
+    inputs = request.get("inputs") or {}
+    tool = {"name": "ngspice", "version": ngspice_version(), "pdk": pdk_facts()}
+    deck_path, libs, error = deck_and_libs(root, inputs)
+    if error:
+        return failure(tool, error)
+    pack_path, pack, error = find_technology(inputs.get("technology"), os.environ.get("PDK"))
+    if error:
+        return failure(tool, error)
+    op = pack["ngspice"]["operating_point"]
+    letter, params = op["device_letter"].lower(), op["params"]
+    missing = [q for q in OP_QUANTITIES if q not in params]
+    if missing:
+        return failure(tool, "technology pack {}: no parameter name for {}".format(pack["name"], ", ".join(missing)))
+    tool["technology"] = pack["name"]
+
+    with open(os.path.join(work_dir, "op.cir"), "w") as f:
+        f.write("* simra ngspice adapter: operating point for experiment {}\n".format(request.get("experiment")))
+        for path, section in libs:
+            f.write('.lib "{}"{}\n'.format(path, " " + section if section else ""))
+        f.write("\n".join(circuit_lines(deck_path)))
+        f.write("\n.control\nop\nset width=10000\nshow {} : {}\n.endc\n.end\n".format(
+            letter, " ".join(params[q] for q in OP_QUANTITIES)))
+    response = run(request, tool, "op.cir", deck_path, libs, None, [(pack_path, "technology")])
+    with open(os.path.join(work_dir, "ngspice.log"), errors="replace") as f:
+        devices, warnings = parse_show(f.read().splitlines(), letter, params)
+    if response["status"] == "completed" and not devices:
+        response["status"] = "failed"
+        response["diagnostics"].insert(0, {"severity": "error", "source": "work/ngspice.log", "message": (
+            "no MOS devices in the 'show {}' output. Make sure the deck has the circuit and the testbench "
+            "(not only a subcircuit), and that technology pack {} is correct for the models").format(letter, pack["name"])})
+    for w in warnings:
+        response["diagnostics"].append({"severity": "warning", "message": w, "source": "work/ngspice.log"})
+    units = {"vgs": "V", "vth": "V", "vds": "V", "vdsat": "V", "id": "A", "gm": "S", "gds": "S", "vov": "V", "sat_margin": "V"}
+    table = []
+    for d in devices:
+        v = d["values"]
+        v["vov"], v["sat_margin"], region = classify(v)
+        table.append({"device": d["device"], "region": region, "values": v})
+        for q, value in v.items():
+            response["measurements"]["{}.{}".format(d["device"], q)] = {
+                "value": value, "unit": units[q], "status": "measured" if value is not None else "missing",
+                "source": "work/ngspice.log"}
+        if region and region != "saturation":
+            response["diagnostics"].append({"severity": "warning", "source": "work/ngspice.log", "message": (
+                "{} is in {}: vov = {:.3f} V, vds = {:.3f} V, vdsat = {:.3f} V, margin = {:.3f} V").format(
+                    d["device"], region, v["vov"], abs(v["vds"]), abs(v["vdsat"]), v["sat_margin"])})
+    path = os.path.join(work_dir, "operating_point.json")
+    with open(path, "w") as f:
+        json.dump({"technology": pack["name"], "devices": table}, f, indent=2)
+        f.write("\n")
+    response["outputs"].append({"path": display_path(path, root), "sha256": sha256(path), "bytes": os.path.getsize(path)})
+    return response
 
 
 def lint(request):
@@ -386,7 +569,7 @@ def main(argv):
     if request.get("contract") != CONTRACT:
         sys.stderr.write("unsupported contract: {}\n".format(request.get("contract")))
         return 2
-    operation = {"simulate": simulate, "lint": lint}.get(request.get("operation"))
+    operation = {"simulate": simulate, "operating_point": operating_point, "lint": lint}.get(request.get("operation"))
     if operation is None:
         response = failure(None, "unknown operation: {}".format(request.get("operation")))
     else:

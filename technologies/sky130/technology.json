@@ -1,0 +1,12 @@
+{
+  "schema": "simra.technology/0",
+  "name": "sky130",
+  "description": "SkyWater SKY130 MOS devices (BSIM4).",
+  "pdks": ["sky130A", "sky130B"],
+  "ngspice": {
+    "operating_point": {
+      "device_letter": "m",
+      "params": { "vgs": "vgs", "vth": "vth", "vds": "vds", "vdsat": "vdsat", "id": "id", "gm": "gm", "gds": "gds" }
+    }
+  }
+}

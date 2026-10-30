@@ -84,6 +84,22 @@ for `rshunt`, `cshunt` and a `gmin` above 1e-12:
 In pi, the extension adds these warnings to the result of a `read`, `write`, `edit` or `bash` call that names a
 netlist. It adds each warning one time per session.
 
+## Operating point
+
+The operation `operating_point` of the ngspice adapter shows the DC operating point of each MOS device of a
+testbench, and whether the device is in saturation. Use it to find why a design fails.
+
+1. Give the inputs `deck` and `libs`, as for `simulate`. Set the DC values of the sources for the condition to
+   check, for example one input common-mode voltage.
+2. The adapter removes the `.control` blocks, the analyses and the `.meas` lines of the deck, and runs `op`.
+3. The response has the measurements `<device>.vgs`, `.vth`, `.vds`, `.vdsat`, `.id`, `.gm`, `.gds`, `.vov`
+   (|vgs| − |vth|) and `.sat_margin` (|vds| − |vdsat|) for each MOS device. It has a warning for each device
+   in triode or in subthreshold.
+
+The parameter names of the MOS models are different in each PDK. They are in the technology packs in
+[technologies/](technologies/README.md). The adapter selects the pack for `$PDK`, or the pack in the input
+`technology`. Packs exist for IHP SG13G2, IHP SG13CMOS5L and SKY130.
+
 ## Check requirements
 
 `requirements.json` in the design root (schema `simra.requirements/0`) has three parts:
@@ -126,6 +142,7 @@ or the row was not selected). The status is `pass` only when every row passes. A
 | `packages/kernel/` | runner, experiment records, environments, `simra` CLI (no pi dependency) |
 | `packages/pi-extension/` | the pi extension (the only package that imports pi) |
 | `adapters/ngspice/` | ngspice adapter (Python) and its tests |
+| `technologies/` | technology packs: the PDK facts that adapters need |
 | `examples/ota-sg13g2/` | two-stage OTA for IHP SG13G2 |
 | `evals/` | demo evaluations for the inner development loop (not decision benchmarks): the OTA at 3 corners, the OTA against a PVT spec, their scorers and an arm runner |
 | `container/` | environment image: Containerfile, build and check scripts |

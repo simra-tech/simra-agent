@@ -106,3 +106,8 @@ Rules:
   omitted.
 - `tool` records the exact tool and version, so that a result can be traced.
 - The adapter writes logs to files in `work_dir` or to stderr. It does not write results to stdout.
+- The adapter does not contain PDK facts (for example the parameter names of a MOS model). It reads them from
+  a technology pack in the directory that `SIMRA_TECHNOLOGY_DIR` gives (see
+  [technologies/README.md](technologies/README.md)). The runner sets this variable, and a container
+  environment mounts the directory read-only. The adapter adds the pack file to `input_files` with the role
+  `technology`.

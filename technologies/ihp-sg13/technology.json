@@ -1,0 +1,12 @@
+{
+  "schema": "simra.technology/0",
+  "name": "ihp-sg13",
+  "description": "IHP SG13G2 and SG13CMOS5L low-voltage and high-voltage MOS devices (PSP 103, OSDI).",
+  "pdks": ["ihp-sg13g2", "ihp-sg13cmos5l"],
+  "ngspice": {
+    "operating_point": {
+      "device_letter": "n",
+      "params": { "vgs": "vgs", "vth": "vth", "vds": "vds", "vdsat": "vdss", "id": "ids", "gm": "gm", "gds": "gds" }
+    }
+  }
+}

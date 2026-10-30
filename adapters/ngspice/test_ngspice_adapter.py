@@ -167,5 +167,118 @@ class SimulateInputTest(unittest.TestCase):
         self.assertEqual([(d["severity"], d["source"]) for d in r["diagnostics"]], [("warning", "tb.spice:2")])
 
 
+class OperatingPointTest(unittest.TestCase):
+    """The show tables in fixtures/op-*.log are from ngspice 47: the OTA of evals/ota-sizing at ss, IHP SG13CMOS5L
+    (PSP, VCM = 0.55 V) and SKY130 (BSIM4, VCM = 1.0 V)."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.work = os.path.join(self.root, "work")
+        os.mkdir(self.work)
+        self.saved = {k: os.environ.get(k) for k in ("PATH", "PDK", "SIMRA_TECHNOLOGY_DIR")}
+        os.environ.pop("SIMRA_TECHNOLOGY_DIR", None)
+
+    def tearDown(self):
+        shutil.rmtree(self.root)
+        for k, v in self.saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def pack(self, pdk):
+        return adapter.find_technology(None, pdk)[1]["ngspice"]["operating_point"]
+
+    def show(self, name, pdk):
+        op = self.pack(pdk)
+        with open(os.path.join(FIXTURES, name)) as f:
+            return adapter.parse_show(f.read().splitlines(), op["device_letter"], op["params"])
+
+    def test_the_packs_of_the_repository(self):
+        self.assertEqual(adapter.find_technology(None, "ihp-sg13cmos5l")[1]["name"], "ihp-sg13")
+        self.assertEqual(adapter.find_technology(None, "ihp-sg13g2")[1]["name"], "ihp-sg13")
+        self.assertEqual(adapter.find_technology(None, "sky130A")[1]["name"], "sky130")
+        self.assertEqual(adapter.find_technology("sky130", "ihp-sg13g2")[1]["name"], "sky130")
+        _, _, error = adapter.find_technology(None, "gf180mcuD")
+        self.assertIn("no technology pack for PDK 'gf180mcuD'", error)
+        self.assertIn("sky130 (sky130A, sky130B)", error)
+        for pdk in ("ihp-sg13g2", "sky130A"):
+            self.assertEqual(sorted(self.pack(pdk)["params"]), sorted(adapter.OP_QUANTITIES))
+
+    def test_psp_show_table(self):
+        devices, warnings = self.show("op-psp.log", "ihp-sg13cmos5l")
+        self.assertEqual(warnings, [])
+        self.assertEqual([d["device"] for d in devices], ["xdut.xm" + n for n in "76432158"])
+        xm5 = devices[6]["values"]
+        self.assertEqual((xm5["vds"], xm5["vdsat"], xm5["id"]), (0.139311, 0.190882, 1.85412e-05))
+        vov, margin, region = adapter.classify(xm5)
+        self.assertEqual(region, "triode")
+        self.assertAlmostEqual(margin, 0.139311 - 0.190882)
+        self.assertAlmostEqual(vov, 0.466599 - 0.285853)
+        self.assertEqual([adapter.classify(d["values"])[2] for d in devices].count("saturation"), 7)
+
+    def test_bsim4_show_table(self):
+        devices, warnings = self.show("op-bsim4.log", "sky130A")
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(devices), 8)
+        self.assertEqual({adapter.classify(d["values"])[2] for d in devices}, {"saturation"})
+        self.assertEqual(sorted(devices[0]["values"]), sorted(adapter.OP_QUANTITIES))
+
+    def test_regions_use_magnitudes(self):
+        pmos = {"vgs": -0.5, "vth": -0.4, "vds": -0.05, "vdsat": -0.1}
+        self.assertEqual(adapter.classify(pmos)[2], "triode")
+        self.assertEqual(adapter.classify(dict(pmos, vgs=-0.3))[2], "subthreshold")
+        self.assertEqual(adapter.classify(dict(pmos, vds=-0.5))[2], "saturation")
+        self.assertEqual(adapter.classify({"vgs": 0.5}), (None, None, None))
+
+    def test_a_name_without_path_gives_a_warning(self):
+        lines = ["device m.xverylongname_abcdefgh", "model sky130_fd_pr__nfet_", "vgs 0.7", "vth 0.5", "vds 0.1",
+                 "vdsat 0.2", "id 1e-6", "gm 1e-5", "gds 1e-7"]
+        devices, warnings = adapter.parse_show(lines, "m", self.pack("sky130A")["params"])
+        self.assertEqual(devices[0]["device"], "m.xverylongname_abcdefgh")
+        self.assertIn("shortened", warnings[0])
+
+    def test_operating_point_removes_the_analyses(self):
+        os.mkdir(os.path.join(self.root, "tb"))
+        with open(os.path.join(self.root, "ota.spice"), "w") as f:
+            f.write("* ota\n")
+        with open(os.path.join(self.root, "tb", "tb.spice"), "w") as f:
+            f.write("* tb\n.include \"../ota.spice\"\n.param vcm=0.55\nVinp inp 0 dc {vcm} ac 1\n.op\n"
+                    ".ac dec 10 1 1G\n.meas ac gain max vdb(out)\n.control\nac dec 10 1 1G\nmeas ac g max vdb(out)\n"
+                    ".endc\n.options gmin=1e-12\n.end\n")
+        bin_dir = os.path.join(self.root, "bin")
+        os.mkdir(bin_dir)
+        with open(os.path.join(bin_dir, "ngspice"), "w") as f:
+            f.write("#!/bin/sh\ncat '{}'\n".format(os.path.join(FIXTURES, "op-psp.log")))
+        os.chmod(os.path.join(bin_dir, "ngspice"), 0o755)
+        os.environ["PATH"] = bin_dir + os.pathsep + os.environ["PATH"]
+        os.environ["PDK"] = "ihp-sg13cmos5l"
+        r = adapter.operating_point({"contract": adapter.CONTRACT, "experiment": "t", "operation": "operating_point",
+                                     "root": self.root, "work_dir": self.work, "inputs": {"deck": "tb/tb.spice"}})
+        self.assertEqual(r["status"], "completed")
+        self.assertEqual(r["tool"]["technology"], "ihp-sg13")
+        with open(os.path.join(self.work, "op.cir")) as f:
+            body = f.read().splitlines()
+        self.assertEqual(body[1:5], ["* tb", '.include "{}"'.format(os.path.join(self.root, "tb", "../ota.spice")),
+                                     ".param vcm=0.55", "Vinp inp 0 dc {vcm} ac 1"])
+        self.assertEqual(body[5:], [".options gmin=1e-12", ".control", "op", "set width=10000",
+                                    "show n : vgs vth vds vdss ids gm gds", ".endc", ".end"])
+        self.assertEqual(len(r["measurements"]), 8 * 9)
+        self.assertEqual(r["measurements"]["xdut.xm5.vdsat"], {"value": 0.190882, "unit": "V", "status": "measured",
+                                                                "source": "work/ngspice.log"})
+        warnings = [d["message"] for d in r["diagnostics"] if d["severity"] == "warning"]
+        self.assertEqual(warnings, ["xdut.xm5 is in triode: vov = 0.181 V, vds = 0.139 V, vdsat = 0.191 V, margin = -0.052 V"])
+        self.assertIn("technology", [f["role"] for f in r["input_files"]["files"]])
+        self.assertIn("work/operating_point.json", [o["path"] for o in r["outputs"]])
+
+    def test_operating_point_without_a_pack(self):
+        with open(os.path.join(self.root, "tb.spice"), "w") as f:
+            f.write("* tb\n")
+        os.environ["PDK"] = "gf180mcuD"
+        r = adapter.operating_point({"root": self.root, "work_dir": self.work, "inputs": {"deck": "tb.spice"}})
+        self.assertEqual(r["status"], "failed")
+        self.assertIn("no technology pack for PDK 'gf180mcuD'", r["diagnostics"][0]["message"])
+
+
 if __name__ == "__main__":
     unittest.main()

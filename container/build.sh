@@ -9,7 +9,7 @@ engine=${SIMRA_ENGINE:-docker}
 commit=$(git -C "$repo" rev-parse --short HEAD)
 tag=${1:-simra-agent-env:$commit}
 git -C "$repo" diff --quiet HEAD -- || echo "note: uncommitted changes are not in the image" >&2
-runtime="package.json package-lock.json .npmrc packages adapters container LICENSE NOTICE"
+runtime="package.json package-lock.json .npmrc packages adapters technologies container LICENSE NOTICE"
 ctx=$(mktemp -d)
 trap 'rm -rf "$ctx"' EXIT
 git -C "$repo" archive HEAD -- $runtime | tar -x -C "$ctx"
