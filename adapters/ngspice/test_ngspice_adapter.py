@@ -76,6 +76,20 @@ class ClosureTest(unittest.TestCase):
         self.assertEqual(c.missing, [])
         self.assertEqual([f["role"] for f in c.files], ["deck", "include"])
 
+    def test_root_through_a_link(self):
+        # On macOS the temporary directory /var/folders is a link to /private/var/folders.
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        os.makedirs(os.path.join(d, "real"))
+        os.symlink(os.path.join(d, "real"), os.path.join(d, "link"))
+        root = os.path.join(d, "link")
+        with open(os.path.join(root, "deck.spice"), "w") as f:
+            f.write("* deck\n.option rshunt=5e5\n")
+        c = adapter.Closure(root)
+        c.add_netlist(os.path.join(root, "deck.spice"), "deck", "include")
+        self.assertEqual([f["path"] for f in c.files], ["deck.spice"])
+        self.assertEqual([w["source"] for w in adapter.lint_netlist(os.path.join(root, "deck.spice"), root)], ["deck.spice:2"])
+
 
 class LintTest(unittest.TestCase):
     def setUp(self):

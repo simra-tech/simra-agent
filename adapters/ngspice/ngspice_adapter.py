@@ -148,7 +148,8 @@ def split_args(text):
 
 
 def display_path(path, root):
-    rel = os.path.relpath(path, root)
+    # Compare real paths: on macOS the temporary directory /var/folders is a link to /private/var/folders.
+    rel = os.path.relpath(os.path.realpath(path), os.path.realpath(root))
     return path if rel.startswith("..") else rel
 
 
