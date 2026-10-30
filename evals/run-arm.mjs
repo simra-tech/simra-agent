@@ -26,6 +26,8 @@
 // The sandbox: no network, a read-only root file system, no capabilities, and only ws/ (at /work),
 // state/ (at /state) and proxy/ (at /proxy) mounted. The agent gets a dummy key. A small forwarder in the
 // container connects 127.0.0.1:8080 to the proxy socket; the proxy puts the real key in each request.
+// On macOS, a relay container makes the proxy socket (see startProxy), because a unix socket on the host does not
+// reach a container in the engine's virtual machine.
 // The image must not hold the answers: container/build.sh copies only the runtime files.
 //
 // The model key comes from the key variable of the model in MODELS (environment or .env in the repository root).
@@ -34,7 +36,9 @@
 //        [--upstream <url>]
 
 import { spawn, spawnSync, execFileSync } from "node:child_process";
-import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
+import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync, chmodSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { connect, createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { loadConfig } from "@simra-tech/kernel";
@@ -185,18 +189,103 @@ export function sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar
 	];
 }
 
-/** Start the model proxy on <run>/proxy/model.sock. It gets the key in its environment, not on its command line. */
-export async function startProxy(run, key, upstream) {
-	const proxyDir = join(run, "proxy");
-	mkdirSync(proxyDir, { recursive: true });
-	const socket = join(proxyDir, "model.sock");
-	// A unix socket path has a limit of 107 bytes on Linux (103 on macOS).
-	if (Buffer.byteLength(socket) > 103) throw new Error(`socket path is too long (${Buffer.byteLength(socket)} bytes, limit 103): ${socket}. Use a shorter --runs directory.`);
-	const args = [join(repo, "evals", "model-proxy.mjs"), socket, join(run, "models.jsonl"), ...(upstream ? [upstream] : [])];
-	const proxy = spawn(process.execPath, args, { env: { PATH: process.env.PATH, MODEL_API_KEY: key }, stdio: ["ignore", "ignore", "inherit"] });
-	for (let i = 0; i < 100 && !existsSync(socket); i++) await new Promise((r) => setTimeout(r, 50));
-	if (!existsSync(socket)) throw new Error("model proxy did not start");
-	return { proxy, proxyDir };
+/**
+ * Use a relay for the proxy socket. On macOS the container engine runs in a virtual machine, and its file share
+ * (virtiofs) does not carry unix sockets: a container cannot connect to a socket on the host. SIMRA_PROXY_RELAY=1
+ * or 0 overrides the choice.
+ */
+export const PROXY_RELAY = process.env.SIMRA_PROXY_RELAY ? process.env.SIMRA_PROXY_RELAY === "1" : process.platform === "darwin";
+
+/** The relay: a unix socket in /proxy, each connection forwarded to host:port. It runs as root, so it makes the socket usable by all. */
+const RELAY = `const net = require("node:net"), fs = require("node:fs");
+const [socket, host, port] = process.argv.slice(1);
+net.createServer((c) => { const u = net.connect(Number(port), host); c.pipe(u).pipe(c); u.on("error", () => c.destroy()); c.on("error", () => u.destroy()); })
+	.listen(socket, () => fs.chmodSync(socket, 0o666));`;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** A TCP port on 127.0.0.1 that is free now. */
+function freePort() {
+	return new Promise((resolvePort, reject) => {
+		const srv = createNetServer().on("error", reject);
+		srv.listen(0, "127.0.0.1", () => {
+			const { port } = srv.address();
+			srv.close(() => resolvePort(port));
+		});
+	});
+}
+
+/** True when something accepts a TCP connection on 127.0.0.1:port. */
+function accepts(port) {
+	return new Promise((r) => {
+		const c = connect(port, "127.0.0.1", () => (c.destroy(), r(true))).on("error", () => r(false));
+	});
+}
+
+/** The environment of the engine client: no key, only PATH and the variables that select the engine. */
+export function engineEnv() {
+	return Object.fromEntries(Object.entries(process.env).filter(([k]) => k === "PATH" || k.startsWith("DOCKER_") || k.startsWith("CONTAINER") || k === "XDG_RUNTIME_DIR" || k === "HOME"));
+}
+
+/**
+ * Start the model proxy. It gets the key in its environment, not on its command line. Returns { proxy, proxyDir,
+ * stop }: proxyDir is the source of the mount at /proxy in the sandbox, which holds model.sock.
+ *
+ * Without a relay: the proxy listens on <run>/proxy/model.sock, and proxyDir is that host directory.
+ * With a relay (engine and imageId are needed): the proxy listens on 127.0.0.1:<free port> on this host. A relay
+ * container (no key, no host files) makes model.sock in a new engine volume and forwards it to the proxy through
+ * the engine's host address. proxyDir is the volume. The sandbox itself still has no network. The relay has the
+ * default network but no key and no host files. While the run lasts, any process on this host can use the proxy port.
+ */
+export async function startProxy(run, key, upstream, { engine, imageId, relay = PROXY_RELAY } = {}) {
+	const log = join(run, "models.jsonl");
+	const spawnProxy = (where) =>
+		spawn(process.execPath, [join(repo, "evals", "model-proxy.mjs"), where, log, ...(upstream ? [upstream] : [])], {
+			env: { PATH: process.env.PATH, MODEL_API_KEY: key },
+			stdio: ["ignore", "ignore", "inherit"],
+		});
+	if (!relay) {
+		const proxyDir = join(run, "proxy");
+		mkdirSync(proxyDir, { recursive: true });
+		const socket = join(proxyDir, "model.sock");
+		// A unix socket path has a limit of 107 bytes on Linux (103 on macOS).
+		if (Buffer.byteLength(socket) > 103) throw new Error(`socket path is too long (${Buffer.byteLength(socket)} bytes, limit 103): ${socket}. Use a shorter --runs directory.`);
+		const proxy = spawnProxy(socket);
+		for (let i = 0; i < 100 && !existsSync(socket); i++) await sleep(50);
+		if (!existsSync(socket)) throw new Error("model proxy did not start");
+		return { proxy, proxyDir, stop: () => proxy.kill("SIGTERM") };
+	}
+
+	if (!engine || !imageId) throw new Error("the proxy relay needs the engine and the image");
+	const port = await freePort();
+	const proxy = spawnProxy(String(port));
+	let up = false;
+	for (let i = 0; i < 100 && !(up = await accepts(port)); i++) await sleep(50);
+	const volume = `simra-proxy-${randomBytes(6).toString("hex")}`;
+	const cli = (args) => spawnSync(engine, args, { env: engineEnv(), encoding: "utf8" });
+	const stop = () => {
+		proxy.kill("SIGTERM");
+		cli(["rm", "-f", volume]);
+		cli(["volume", "rm", "-f", volume]);
+	};
+	if (!up) {
+		stop();
+		throw new Error("model proxy did not start");
+	}
+	const host = engine === "podman" ? "host.containers.internal" : "host.docker.internal";
+	const r = cli(["run", "-d", "--rm", "--name", volume, "--init", "--pull", "never", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+		"-u", "0:0", "-v", `${volume}:${PROXY_DIR}`, imageId, "node", "-e", RELAY, `${PROXY_DIR}/model.sock`, host, String(port)]);
+	if (r.status !== 0) {
+		stop();
+		throw new Error(`the proxy relay did not start: ${r.stderr.trim()}`);
+	}
+	let ready = false;
+	for (let i = 0; i < 100 && !(ready = cli(["exec", volume, "test", "-S", `${PROXY_DIR}/model.sock`]).status === 0); i++) await sleep(100);
+	if (!ready) {
+		stop();
+		throw new Error("the proxy relay made no socket");
+	}
+	return { proxy, proxyDir: volume, stop };
 }
 
 const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -263,7 +352,10 @@ async function main() {
 	const task = JSON.parse(readFileSync(join(taskDir, "task.json"), "utf8"));
 	const { score } = await import(resolve(taskDir, task.score));
 	const opt = (name, dflt) => (args.includes(name) ? args[args.indexOf(name) + 1] : dflt);
-	const runs = resolve(opt("--runs", process.env.SIMRA_EVAL_RUNS ?? join(tmpdir(), "simra-evals")));
+	// The real path: on macOS, tmpdir() is under the /var link, which the container engine VM may not have.
+	const runsArg = resolve(opt("--runs", process.env.SIMRA_EVAL_RUNS ?? join(tmpdir(), "simra-evals")));
+	mkdirSync(runsArg, { recursive: true });
+	const runs = realpathSync(runsArg);
 	const timeoutMin = Number(opt("--timeout-min", "30"));
 	const modelId = opt("--model", DEFAULT_MODEL);
 	const model = MODELS[modelId];
@@ -282,7 +374,7 @@ async function main() {
 
 	const key = process.env[model.keyVar] ?? loadDotEnv()[model.keyVar];
 	if (!key) throw new Error(`${model.keyVar} is not set`);
-	const { proxy, proxyDir } = await startProxy(run, key, upstream);
+	const { proxyDir, stop: stopProxy } = await startProxy(run, key, upstream, { engine, imageId });
 
 	const prompt = readFileSync(join(taskDir, task.prompt), "utf8");
 	const cmd = armCommand(arm, state, prompt, modelId);
@@ -292,13 +384,11 @@ async function main() {
 	const deadline = new Date(Date.now() + timeoutMin * 60_000).toISOString();
 	const argv = sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar: model.keyVar, env: { ...toolEnv, ...cmd.env, SIMRA_SESSION_DEADLINE: deadline }, command: cmd.command });
 	const started = new Date();
-	// The engine client gets no key: only PATH and the variables that select the engine.
-	const clientEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => k === "PATH" || k.startsWith("DOCKER_") || k.startsWith("CONTAINER") || k === "XDG_RUNTIME_DIR" || k === "HOME"));
-	const child = spawn(engine, argv, { env: clientEnv, stdio: ["ignore", "pipe", "pipe"] });
+	const child = spawn(engine, argv, { env: engineEnv(), stdio: ["ignore", "pipe", "pipe"] });
 	child.stdout.pipe(createWriteStream(join(run, "transcript.jsonl")));
 	child.stderr.pipe(createWriteStream(join(run, "stderr.log")));
 	const exit = await waitExit(child, timeoutMin * 60_000, () => spawnSync(engine, ["kill", name], { stdio: "ignore" }));
-	proxy.kill("SIGTERM");
+	stopProxy();
 
 	const log = join(run, "models.jsonl");
 	const calls = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];

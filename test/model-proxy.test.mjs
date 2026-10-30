@@ -60,7 +60,7 @@ test("model proxy: logs Chat Completions and Responses API calls", async () => {
 	const up = await fakeUpstream();
 	let proxy;
 	try {
-		({ proxy } = await startProxy(dir, key, up.url));
+		({ proxy } = await startProxy(dir, key, up.url, { relay: false }));
 		const socket = join(dir, "proxy", "model.sock");
 		const chat = await post(socket, "/chat/completions", { model: "deepseek-flash", stream: true, reasoning_effort: "high", messages: [{}, {}], tools: [{ type: "function", function: { name: "bash" } }] });
 		assert.equal(chat.status, 200);
@@ -112,5 +112,5 @@ test("model proxy: logs Chat Completions and Responses API calls", async () => {
 test("model proxy: a socket path that is too long gives a clear error", async (t) => {
 	const dir = mkdtempSync(join(tmpdir(), "simra-proxy-"));
 	t.after(() => rmSync(dir, { recursive: true, force: true }));
-	await assert.rejects(startProxy(join(dir, "x".repeat(100)), "key", "http://127.0.0.1:9"), /socket path is too long .* Use a shorter --runs directory/);
+	await assert.rejects(startProxy(join(dir, "x".repeat(100)), "key", "http://127.0.0.1:9", { relay: false }), /socket path is too long .* Use a shorter --runs directory/);
 });

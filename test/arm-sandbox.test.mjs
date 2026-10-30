@@ -13,18 +13,20 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { containerImageId } from "../packages/kernel/src/environments.ts";
-import { DUMMY_KEY, MODELS, sandboxArgs, startProxy } from "../evals/run-arm.mjs";
+import { DUMMY_KEY, engineEnv, MODELS, sandboxArgs, startProxy } from "../evals/run-arm.mjs";
 
 const repo = new URL("../", import.meta.url).pathname;
 const engine = process.env.SIMRA_TEST_ENGINE ?? "podman";
 const image = process.env.SIMRA_TEST_IMAGE;
 const skip = !image && "SIMRA_TEST_IMAGE is not set";
+// The real path: on macOS, tmpdir() is under the /var link, which the container engine VM may not have.
+const realTmp = () => realpathSync(tmpdir());
 
 /** Run a command without blocking this process (it serves the fake model API). */
 function runAsync(command, args, env) {
@@ -99,7 +101,9 @@ function answerPattern() {
 	const cases = [...Object.values(expected.corners), ...Object.values(expected.variants)];
 	const values = cases.flatMap((c) => ["gain_db", "ugf_hz", "pm_deg", "vn_1k_nv"].map((k) => c.values[k]));
 	const digits = values.flatMap((v) => [v.toExponential(6).replace(".", "").slice(0, 5), v.toPrecision(5).replace(".", "").slice(0, 5)]);
-	return ["cross_check", ...[...new Set(digits)].map((d) => d.split("").join("\\.?"))].join("|");
+	// A value starts a number: "0.000152105" (a gm in an adapter fixture) does not match the gain 52.1052 dB.
+	const numbers = [...new Set(digits)].map((d) => `(^|[^0-9.])${d.split("").join("\\.?")}`);
+	return ["cross_check", ...numbers].join("|");
 }
 
 const PROBE = `
@@ -121,10 +125,10 @@ test("probe: the sandbox reads its workspace and nothing else on the host", { sk
 	const realKey = `sk-test-${randomBytes(16).toString("hex")}`;
 	const token = randomBytes(8).toString("hex");
 	const secret = randomBytes(8).toString("hex");
-	const dir = mkdtempSync(join(tmpdir(), "simra-sandbox-"));
-	const hostOnly = mkdtempSync(join(tmpdir(), "simra-canary-"));
+	const dir = mkdtempSync(join(realTmp(), "simra-sandbox-"));
+	const hostOnly = mkdtempSync(join(realTmp(), "simra-canary-"));
 	const api = await fakeModelApi();
-	let proxy;
+	let stopProxy;
 	try {
 		const ws = join(dir, "ws");
 		const state = join(dir, "state");
@@ -133,11 +137,12 @@ test("probe: the sandbox reads its workspace and nothing else on the host", { sk
 		writeFileSync(join(ws, "task.txt"), token);
 		const canary = join(hostOnly, "canary.txt");
 		writeFileSync(canary, secret);
-		({ proxy } = await startProxy(dir, realKey, api.url));
-		const proxyDir = join(dir, "proxy");
 		const imageId = containerImageId(engine, image);
+		const started = await startProxy(dir, realKey, api.url, { engine, imageId });
+		stopProxy = started.stop;
+		const proxyDir = started.proxyDir;
 		const args = sandboxArgs({ engine, imageId, name: `simra-test-${token}`, ws, state, proxyDir, command: ["sh", "-c", PROBE, "probe", canary, answerPattern(), join(repo, "evals/ota-corners/expected.json")] });
-		const r = await runAsync(engine, args, { PATH: process.env.PATH, HOME: process.env.HOME });
+		const r = await runAsync(engine, args, engineEnv());
 		assert.equal(r.status, 0, r.stderr);
 		const out = r.stdout;
 		const [facts, env] = out.split("--- env\n");
@@ -163,7 +168,7 @@ test("probe: the sandbox reads its workspace and nothing else on the host", { sk
 		assert.ok(!log.includes(realKey), "the key is in the model call log");
 		assert.equal(JSON.parse(log.trim().split("\n")[0]).status, 200);
 	} finally {
-		proxy?.kill("SIGTERM");
+		stopProxy?.();
 		api.close();
 		rmSync(dir, { recursive: true, force: true });
 		rmSync(hostOnly, { recursive: true, force: true });
@@ -180,7 +185,7 @@ const cases = [
 for (const { arm, model } of cases) {
 	test(`arm ${arm}, ${model}: one model call through the proxy`, { skip, timeout: 300_000 }, async () => {
 		const realKey = `sk-test-${randomBytes(16).toString("hex")}`;
-		const tmp = mkdtempSync(join(tmpdir(), "simra-arm-test-"));
+		const tmp = mkdtempSync(join(realTmp(), "simra-arm-test-"));
 		const api = await fakeModelApi();
 		try {
 			const task = join(tmp, "task");
@@ -192,7 +197,7 @@ for (const { arm, model } of cases) {
 			writeFileSync(join(task, "simra.local.json"), JSON.stringify({ environments: { eda: { engine, image } } }));
 			const runs = join(tmp, "runs");
 			// Run the arm as a separate process, as a user does, with the test key in its environment.
-			const r = await runAsync(process.execPath, [join(repo, "evals/run-arm.mjs"), task, arm, "--model", model, "--runs", runs, "--timeout-min", "4", "--upstream", api.url], { PATH: process.env.PATH, HOME: process.env.HOME, [MODELS[model].keyVar]: realKey });
+			const r = await runAsync(process.execPath, [join(repo, "evals/run-arm.mjs"), task, arm, "--model", model, "--runs", runs, "--timeout-min", "4", "--upstream", api.url], { ...engineEnv(), [MODELS[model].keyVar]: realKey });
 			assert.equal(r.status, 0, r.stderr);
 			const [run] = readdirSync(runs);
 			const summary = JSON.parse(readFileSync(join(runs, run, "score.json"), "utf8"));
