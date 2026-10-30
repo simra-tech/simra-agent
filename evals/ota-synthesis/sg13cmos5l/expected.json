@@ -1,0 +1,1392 @@
+{
+  "task": "ota-synthesis-sg13cmos5l",
+  "generated_by": "evals/ota-synthesis/reference.mjs",
+  "provenance": {
+    "image_id": "sha256:b1f9f45d7893dc348dd4f323819117c71e9472e85a95a8eb100d2086346d2265",
+    "ngspice": "47",
+    "pdk": {
+      "PDK_ROOT": "/foss/pdks",
+      "PDK": "ihp-sg13cmos5l",
+      "commit": "a49358cc0b20635fcb53c0940505e3563763fc7a"
+    }
+  },
+  "spec": {
+    "range": [
+      0.4,
+      0.7
+    ],
+    "lib": "$PDK_ROOT/ihp-sg13cmos5l/libs.tech/ngspice/models/cornerMOSlv.lib",
+    "corners": {
+      "tt": {
+        "section": "mos_tt",
+        "vdd": 1.2,
+        "temp": 27
+      },
+      "ss": {
+        "section": "mos_ss",
+        "vdd": 1.08,
+        "temp": 125
+      },
+      "ff": {
+        "section": "mos_ff",
+        "vdd": 1.32,
+        "temp": -40
+      }
+    },
+    "limits": {
+      "gain_db": {
+        "op": ">=",
+        "value": 48
+      },
+      "ugf_hz": {
+        "op": ">=",
+        "value": 13000000
+      },
+      "pm_deg": {
+        "op": ">=",
+        "value": 60
+      },
+      "idd_a": {
+        "op": "<=",
+        "value": 0.00008499999999999999
+      }
+    },
+    "design": {
+      "file": "ota.spice",
+      "subckt": "ota",
+      "pins": [
+        "inp",
+        "inn",
+        "out",
+        "vdd",
+        "vss",
+        "ibias"
+      ],
+      "devices": [
+        "sg13_lv_nmos",
+        "sg13_lv_pmos"
+      ],
+      "area_um2": 60,
+      "r_ohm": 1000000,
+      "c_f": 2e-12
+    }
+  },
+  "tolerance": {
+    "gain_db": {
+      "abs": 0.5
+    },
+    "ugf_hz": {
+      "rel": 0.05
+    },
+    "pm_deg": {
+      "abs": 2
+    },
+    "idd_a": {
+      "rel": 0.02
+    }
+  },
+  "fix": {
+    "design_check": {
+      "status": "pass",
+      "errors": [],
+      "gate_area_um2": 50,
+      "mos_count": 8
+    },
+    "rows_pass": true,
+    "meets_spec": true,
+    "corners": {
+      "tt": {
+        "experiment": "20261030-212823-e501ae",
+        "worst": {
+          "gain_db": {
+            "value": 53.4775,
+            "vcm": 0.7,
+            "pass": true
+          },
+          "ugf_hz": {
+            "value": 28673200,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "pm_deg": {
+            "value": 78.3797,
+            "vcm": 0.44,
+            "pass": true
+          },
+          "idd_a": {
+            "value": 0.0000804202,
+            "vcm": 0.7,
+            "pass": true
+          }
+        },
+        "sweep": [
+          {
+            "vcm": 0.4,
+            "idd_a": 0.0000719883,
+            "gain_db": 56.0407,
+            "ugf_hz": 28673200,
+            "pm_deg": 78.5779
+          },
+          {
+            "vcm": 0.42,
+            "idd_a": 0.0000730944,
+            "gain_db": 55.9298,
+            "ugf_hz": 29488400,
+            "pm_deg": 78.4361
+          },
+          {
+            "vcm": 0.44,
+            "idd_a": 0.000073995,
+            "gain_db": 55.815,
+            "ugf_hz": 30070300,
+            "pm_deg": 78.3797
+          },
+          {
+            "vcm": 0.46,
+            "idd_a": 0.0000747334,
+            "gain_db": 55.6943,
+            "ugf_hz": 30477700,
+            "pm_deg": 78.3877
+          },
+          {
+            "vcm": 0.48,
+            "idd_a": 0.0000753598,
+            "gain_db": 55.5662,
+            "ugf_hz": 30770300,
+            "pm_deg": 78.4376
+          },
+          {
+            "vcm": 0.5,
+            "idd_a": 0.0000759166,
+            "gain_db": 55.4291,
+            "ugf_hz": 30996000,
+            "pm_deg": 78.5104
+          },
+          {
+            "vcm": 0.52,
+            "idd_a": 0.0000764319,
+            "gain_db": 55.2824,
+            "ugf_hz": 31184300,
+            "pm_deg": 78.594
+          },
+          {
+            "vcm": 0.54,
+            "idd_a": 0.0000769214,
+            "gain_db": 55.1255,
+            "ugf_hz": 31347900,
+            "pm_deg": 78.683
+          },
+          {
+            "vcm": 0.56,
+            "idd_a": 0.0000773936,
+            "gain_db": 54.9583,
+            "ugf_hz": 31494900,
+            "pm_deg": 78.7742
+          },
+          {
+            "vcm": 0.58,
+            "idd_a": 0.0000778527,
+            "gain_db": 54.7804,
+            "ugf_hz": 31629800,
+            "pm_deg": 78.8659
+          },
+          {
+            "vcm": 0.6,
+            "idd_a": 0.0000783013,
+            "gain_db": 54.5918,
+            "ugf_hz": 31757500,
+            "pm_deg": 78.9564
+          },
+          {
+            "vcm": 0.62,
+            "idd_a": 0.0000787407,
+            "gain_db": 54.3921,
+            "ugf_hz": 31876600,
+            "pm_deg": 79.0464
+          },
+          {
+            "vcm": 0.64,
+            "idd_a": 0.0000791717,
+            "gain_db": 54.1812,
+            "ugf_hz": 31988200,
+            "pm_deg": 79.1354
+          },
+          {
+            "vcm": 0.66,
+            "idd_a": 0.000079595,
+            "gain_db": 53.9587,
+            "ugf_hz": 32093200,
+            "pm_deg": 79.2231
+          },
+          {
+            "vcm": 0.68,
+            "idd_a": 0.0000800111,
+            "gain_db": 53.7243,
+            "ugf_hz": 32192200,
+            "pm_deg": 79.3093
+          },
+          {
+            "vcm": 0.7,
+            "idd_a": 0.0000804202,
+            "gain_db": 53.4775,
+            "ugf_hz": 32285800,
+            "pm_deg": 79.3936
+          }
+        ]
+      },
+      "ss": {
+        "experiment": "20261030-212823-0c94b3",
+        "worst": {
+          "gain_db": {
+            "value": 49.2597,
+            "vcm": 0.7,
+            "pass": true
+          },
+          "ugf_hz": {
+            "value": 19643400,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "pm_deg": {
+            "value": 74.2059,
+            "vcm": 0.48,
+            "pass": true
+          },
+          "idd_a": {
+            "value": 0.0000784356,
+            "vcm": 0.7,
+            "pass": true
+          }
+        },
+        "sweep": [
+          {
+            "vcm": 0.4,
+            "idd_a": 0.0000703898,
+            "gain_db": 52.4505,
+            "ugf_hz": 19643400,
+            "pm_deg": 74.6064
+          },
+          {
+            "vcm": 0.42,
+            "idd_a": 0.0000714478,
+            "gain_db": 52.3768,
+            "ugf_hz": 20178100,
+            "pm_deg": 74.4159
+          },
+          {
+            "vcm": 0.44,
+            "idd_a": 0.0000723734,
+            "gain_db": 52.2802,
+            "ugf_hz": 20605700,
+            "pm_deg": 74.2924
+          },
+          {
+            "vcm": 0.46,
+            "idd_a": 0.000073173,
+            "gain_db": 52.1647,
+            "ugf_hz": 20938000,
+            "pm_deg": 74.2261
+          },
+          {
+            "vcm": 0.48,
+            "idd_a": 0.0000738602,
+            "gain_db": 52.0323,
+            "ugf_hz": 21192400,
+            "pm_deg": 74.2059
+          },
+          {
+            "vcm": 0.5,
+            "idd_a": 0.0000744542,
+            "gain_db": 51.8841,
+            "ugf_hz": 21382800,
+            "pm_deg": 74.2221
+          },
+          {
+            "vcm": 0.52,
+            "idd_a": 0.0000749759,
+            "gain_db": 51.7206,
+            "ugf_hz": 21529800,
+            "pm_deg": 74.2632
+          },
+          {
+            "vcm": 0.54,
+            "idd_a": 0.0000754451,
+            "gain_db": 51.5417,
+            "ugf_hz": 21644500,
+            "pm_deg": 74.3213
+          },
+          {
+            "vcm": 0.56,
+            "idd_a": 0.0000758771,
+            "gain_db": 51.3472,
+            "ugf_hz": 21737400,
+            "pm_deg": 74.3898
+          },
+          {
+            "vcm": 0.58,
+            "idd_a": 0.0000762829,
+            "gain_db": 51.1358,
+            "ugf_hz": 21815300,
+            "pm_deg": 74.4642
+          },
+          {
+            "vcm": 0.6,
+            "idd_a": 0.0000766698,
+            "gain_db": 50.9057,
+            "ugf_hz": 21882400,
+            "pm_deg": 74.5418
+          },
+          {
+            "vcm": 0.62,
+            "idd_a": 0.0000770424,
+            "gain_db": 50.6539,
+            "ugf_hz": 21941800,
+            "pm_deg": 74.6209
+          },
+          {
+            "vcm": 0.64,
+            "idd_a": 0.0000774037,
+            "gain_db": 50.3753,
+            "ugf_hz": 21992500,
+            "pm_deg": 74.7018
+          },
+          {
+            "vcm": 0.66,
+            "idd_a": 0.0000777556,
+            "gain_db": 50.0614,
+            "ugf_hz": 22033400,
+            "pm_deg": 74.7855
+          },
+          {
+            "vcm": 0.68,
+            "idd_a": 0.0000780993,
+            "gain_db": 49.698,
+            "ugf_hz": 22060600,
+            "pm_deg": 74.8751
+          },
+          {
+            "vcm": 0.7,
+            "idd_a": 0.0000784356,
+            "gain_db": 49.2597,
+            "ugf_hz": 22066300,
+            "pm_deg": 74.9771
+          }
+        ]
+      },
+      "ff": {
+        "experiment": "20261030-212824-2211e5",
+        "worst": {
+          "gain_db": {
+            "value": 56.9267,
+            "vcm": 0.7,
+            "pass": true
+          },
+          "ugf_hz": {
+            "value": 41991300,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "pm_deg": {
+            "value": 80.9213,
+            "vcm": 0.44,
+            "pass": true
+          },
+          "idd_a": {
+            "value": 0.0000821466,
+            "vcm": 0.7,
+            "pass": true
+          }
+        },
+        "sweep": [
+          {
+            "vcm": 0.4,
+            "idd_a": 0.00007366,
+            "gain_db": 59.0043,
+            "ugf_hz": 41991300,
+            "pm_deg": 81.0306
+          },
+          {
+            "vcm": 0.42,
+            "idd_a": 0.0000745361,
+            "gain_db": 58.9204,
+            "ugf_hz": 42822400,
+            "pm_deg": 80.9333
+          },
+          {
+            "vcm": 0.44,
+            "idd_a": 0.0000752535,
+            "gain_db": 58.8351,
+            "ugf_hz": 43399900,
+            "pm_deg": 80.9213
+          },
+          {
+            "vcm": 0.46,
+            "idd_a": 0.0000758877,
+            "gain_db": 58.7441,
+            "ugf_hz": 43850100,
+            "pm_deg": 80.9495
+          },
+          {
+            "vcm": 0.48,
+            "idd_a": 0.0000764801,
+            "gain_db": 58.6453,
+            "ugf_hz": 44239600,
+            "pm_deg": 80.9924
+          },
+          {
+            "vcm": 0.5,
+            "idd_a": 0.0000770491,
+            "gain_db": 58.5376,
+            "ugf_hz": 44591300,
+            "pm_deg": 81.0429
+          },
+          {
+            "vcm": 0.52,
+            "idd_a": 0.0000776024,
+            "gain_db": 58.4207,
+            "ugf_hz": 44922100,
+            "pm_deg": 81.0944
+          },
+          {
+            "vcm": 0.54,
+            "idd_a": 0.0000781435,
+            "gain_db": 58.2944,
+            "ugf_hz": 45232800,
+            "pm_deg": 81.1478
+          },
+          {
+            "vcm": 0.56,
+            "idd_a": 0.0000786741,
+            "gain_db": 58.1585,
+            "ugf_hz": 45524400,
+            "pm_deg": 81.2034
+          },
+          {
+            "vcm": 0.58,
+            "idd_a": 0.0000791951,
+            "gain_db": 58.0129,
+            "ugf_hz": 45800300,
+            "pm_deg": 81.2599
+          },
+          {
+            "vcm": 0.6,
+            "idd_a": 0.0000797071,
+            "gain_db": 57.8574,
+            "ugf_hz": 46063300,
+            "pm_deg": 81.3161
+          },
+          {
+            "vcm": 0.62,
+            "idd_a": 0.0000802107,
+            "gain_db": 57.692,
+            "ugf_hz": 46310400,
+            "pm_deg": 81.374
+          },
+          {
+            "vcm": 0.64,
+            "idd_a": 0.0000807061,
+            "gain_db": 57.5164,
+            "ugf_hz": 46542200,
+            "pm_deg": 81.4336
+          },
+          {
+            "vcm": 0.66,
+            "idd_a": 0.0000811937,
+            "gain_db": 57.3304,
+            "ugf_hz": 46759500,
+            "pm_deg": 81.4946
+          },
+          {
+            "vcm": 0.68,
+            "idd_a": 0.0000816738,
+            "gain_db": 57.134,
+            "ugf_hz": 46967000,
+            "pm_deg": 81.5546
+          },
+          {
+            "vcm": 0.7,
+            "idd_a": 0.0000821466,
+            "gain_db": 56.9267,
+            "ugf_hz": 47161400,
+            "pm_deg": 81.6156
+          }
+        ]
+      }
+    }
+  },
+  "original": {
+    "design_check": {
+      "status": "pass",
+      "errors": [],
+      "gate_area_um2": 30,
+      "mos_count": 8
+    },
+    "rows_pass": false,
+    "meets_spec": false,
+    "corners": {
+      "tt": {
+        "experiment": "20261030-212823-00aea9",
+        "worst": {
+          "gain_db": {
+            "value": 51.161,
+            "vcm": 0.7,
+            "pass": true
+          },
+          "ugf_hz": {
+            "value": 16412800,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "pm_deg": {
+            "value": 75.9295,
+            "vcm": 0.52,
+            "pass": true
+          },
+          "idd_a": {
+            "value": 0.000079783,
+            "vcm": 0.7,
+            "pass": true
+          }
+        },
+        "sweep": [
+          {
+            "vcm": 0.4,
+            "idd_a": 0.0000673915,
+            "gain_db": 53.1119,
+            "ugf_hz": 16412800,
+            "pm_deg": 77.3399
+          },
+          {
+            "vcm": 0.42,
+            "idd_a": 0.0000691411,
+            "gain_db": 53.0358,
+            "ugf_hz": 17409600,
+            "pm_deg": 76.8606
+          },
+          {
+            "vcm": 0.44,
+            "idd_a": 0.0000707393,
+            "gain_db": 52.9613,
+            "ugf_hz": 18251500,
+            "pm_deg": 76.4956
+          },
+          {
+            "vcm": 0.46,
+            "idd_a": 0.0000721594,
+            "gain_db": 52.8847,
+            "ugf_hz": 18940600,
+            "pm_deg": 76.2322
+          },
+          {
+            "vcm": 0.48,
+            "idd_a": 0.0000733843,
+            "gain_db": 52.8026,
+            "ugf_hz": 19481600,
+            "pm_deg": 76.0588
+          },
+          {
+            "vcm": 0.5,
+            "idd_a": 0.0000744112,
+            "gain_db": 52.7129,
+            "ugf_hz": 19888900,
+            "pm_deg": 75.9627
+          },
+          {
+            "vcm": 0.52,
+            "idd_a": 0.0000752568,
+            "gain_db": 52.6137,
+            "ugf_hz": 20183500,
+            "pm_deg": 75.9295
+          },
+          {
+            "vcm": 0.54,
+            "idd_a": 0.0000759563,
+            "gain_db": 52.504,
+            "ugf_hz": 20392800,
+            "pm_deg": 75.9424
+          },
+          {
+            "vcm": 0.56,
+            "idd_a": 0.0000765528,
+            "gain_db": 52.383,
+            "ugf_hz": 20548900,
+            "pm_deg": 75.9844
+          },
+          {
+            "vcm": 0.58,
+            "idd_a": 0.0000770842,
+            "gain_db": 52.2503,
+            "ugf_hz": 20672300,
+            "pm_deg": 76.0427
+          },
+          {
+            "vcm": 0.6,
+            "idd_a": 0.0000775761,
+            "gain_db": 52.1052,
+            "ugf_hz": 20776600,
+            "pm_deg": 76.1088
+          },
+          {
+            "vcm": 0.62,
+            "idd_a": 0.0000780436,
+            "gain_db": 51.947,
+            "ugf_hz": 20869100,
+            "pm_deg": 76.1786
+          },
+          {
+            "vcm": 0.64,
+            "idd_a": 0.0000784947,
+            "gain_db": 51.7747,
+            "ugf_hz": 20954700,
+            "pm_deg": 76.2495
+          },
+          {
+            "vcm": 0.66,
+            "idd_a": 0.0000789336,
+            "gain_db": 51.5873,
+            "ugf_hz": 21034500,
+            "pm_deg": 76.3209
+          },
+          {
+            "vcm": 0.68,
+            "idd_a": 0.0000793625,
+            "gain_db": 51.3833,
+            "ugf_hz": 21108700,
+            "pm_deg": 76.3921
+          },
+          {
+            "vcm": 0.7,
+            "idd_a": 0.000079783,
+            "gain_db": 51.161,
+            "ugf_hz": 21177500,
+            "pm_deg": 76.4631
+          }
+        ]
+      },
+      "ss": {
+        "experiment": "20261030-212823-f8a10b",
+        "worst": {
+          "gain_db": {
+            "value": 46.4119,
+            "vcm": 0.7,
+            "pass": false
+          },
+          "ugf_hz": {
+            "value": 11618000,
+            "vcm": 0.4,
+            "pass": false
+          },
+          "pm_deg": {
+            "value": 72.4402,
+            "vcm": 0.6,
+            "pass": true
+          },
+          "idd_a": {
+            "value": 0.0000777315,
+            "vcm": 0.7,
+            "pass": true
+          }
+        },
+        "sweep": [
+          {
+            "vcm": 0.4,
+            "idd_a": 0.0000653816,
+            "gain_db": 49.9275,
+            "ugf_hz": 11618000,
+            "pm_deg": 75.0842
+          },
+          {
+            "vcm": 0.42,
+            "idd_a": 0.0000668208,
+            "gain_db": 49.9242,
+            "ugf_hz": 12259800,
+            "pm_deg": 74.4879
+          },
+          {
+            "vcm": 0.44,
+            "idd_a": 0.0000681925,
+            "gain_db": 49.8952,
+            "ugf_hz": 12835700,
+            "pm_deg": 73.9822
+          },
+          {
+            "vcm": 0.46,
+            "idd_a": 0.0000694832,
+            "gain_db": 49.8431,
+            "ugf_hz": 13345800,
+            "pm_deg": 73.5603
+          },
+          {
+            "vcm": 0.48,
+            "idd_a": 0.0000706807,
+            "gain_db": 49.7683,
+            "ugf_hz": 13789200,
+            "pm_deg": 73.2161
+          },
+          {
+            "vcm": 0.5,
+            "idd_a": 0.0000717749,
+            "gain_db": 49.6704,
+            "ugf_hz": 14168600,
+            "pm_deg": 72.9434
+          },
+          {
+            "vcm": 0.52,
+            "idd_a": 0.0000727586,
+            "gain_db": 49.5482,
+            "ugf_hz": 14484400,
+            "pm_deg": 72.7367
+          },
+          {
+            "vcm": 0.54,
+            "idd_a": 0.0000736288,
+            "gain_db": 49.3997,
+            "ugf_hz": 14740300,
+            "pm_deg": 72.5901
+          },
+          {
+            "vcm": 0.56,
+            "idd_a": 0.000074388,
+            "gain_db": 49.2226,
+            "ugf_hz": 14941100,
+            "pm_deg": 72.4969
+          },
+          {
+            "vcm": 0.58,
+            "idd_a": 0.0000750454,
+            "gain_db": 49.0131,
+            "ugf_hz": 15092800,
+            "pm_deg": 72.4497
+          },
+          {
+            "vcm": 0.6,
+            "idd_a": 0.0000756156,
+            "gain_db": 48.7658,
+            "ugf_hz": 15204700,
+            "pm_deg": 72.4402
+          },
+          {
+            "vcm": 0.62,
+            "idd_a": 0.0000761167,
+            "gain_db": 48.4726,
+            "ugf_hz": 15284000,
+            "pm_deg": 72.4615
+          },
+          {
+            "vcm": 0.64,
+            "idd_a": 0.0000765662,
+            "gain_db": 48.1199,
+            "ugf_hz": 15335500,
+            "pm_deg": 72.5092
+          },
+          {
+            "vcm": 0.66,
+            "idd_a": 0.0000769786,
+            "gain_db": 47.6863,
+            "ugf_hz": 15360800,
+            "pm_deg": 72.583
+          },
+          {
+            "vcm": 0.68,
+            "idd_a": 0.0000773646,
+            "gain_db": 47.1361,
+            "ugf_hz": 15356200,
+            "pm_deg": 72.6892
+          },
+          {
+            "vcm": 0.7,
+            "idd_a": 0.0000777315,
+            "gain_db": 46.4119,
+            "ugf_hz": 15310700,
+            "pm_deg": 72.8431
+          }
+        ]
+      },
+      "ff": {
+        "experiment": "20261030-212824-5431a8",
+        "worst": {
+          "gain_db": {
+            "value": 54.0629,
+            "vcm": 0.7,
+            "pass": true
+          },
+          "ugf_hz": {
+            "value": 23155300,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "pm_deg": {
+            "value": 79.4501,
+            "vcm": 0.46,
+            "pass": true
+          },
+          "idd_a": {
+            "value": 0.0000815512,
+            "vcm": 0.7,
+            "pass": true
+          }
+        },
+        "sweep": [
+          {
+            "vcm": 0.4,
+            "idd_a": 0.0000704098,
+            "gain_db": 55.6054,
+            "ugf_hz": 23155300,
+            "pm_deg": 79.8175
+          },
+          {
+            "vcm": 0.42,
+            "idd_a": 0.0000721349,
+            "gain_db": 55.5105,
+            "ugf_hz": 24264900,
+            "pm_deg": 79.594
+          },
+          {
+            "vcm": 0.44,
+            "idd_a": 0.0000735554,
+            "gain_db": 55.4296,
+            "ugf_hz": 25078200,
+            "pm_deg": 79.4776
+          },
+          {
+            "vcm": 0.46,
+            "idd_a": 0.0000746767,
+            "gain_db": 55.3566,
+            "ugf_hz": 25634800,
+            "pm_deg": 79.4501
+          },
+          {
+            "vcm": 0.48,
+            "idd_a": 0.0000755517,
+            "gain_db": 55.2863,
+            "ugf_hz": 25999700,
+            "pm_deg": 79.488
+          },
+          {
+            "vcm": 0.5,
+            "idd_a": 0.0000762634,
+            "gain_db": 55.2142,
+            "ugf_hz": 26246800,
+            "pm_deg": 79.5646
+          },
+          {
+            "vcm": 0.52,
+            "idd_a": 0.0000768852,
+            "gain_db": 55.1371,
+            "ugf_hz": 26437300,
+            "pm_deg": 79.6579
+          },
+          {
+            "vcm": 0.54,
+            "idd_a": 0.0000774613,
+            "gain_db": 55.0531,
+            "ugf_hz": 26600300,
+            "pm_deg": 79.7568
+          },
+          {
+            "vcm": 0.56,
+            "idd_a": 0.0000780125,
+            "gain_db": 54.9613,
+            "ugf_hz": 26748300,
+            "pm_deg": 79.8565
+          },
+          {
+            "vcm": 0.58,
+            "idd_a": 0.0000785477,
+            "gain_db": 54.8611,
+            "ugf_hz": 26886700,
+            "pm_deg": 79.9557
+          },
+          {
+            "vcm": 0.6,
+            "idd_a": 0.0000790709,
+            "gain_db": 54.7522,
+            "ugf_hz": 27020300,
+            "pm_deg": 80.0532
+          },
+          {
+            "vcm": 0.62,
+            "idd_a": 0.0000795839,
+            "gain_db": 54.6342,
+            "ugf_hz": 27148300,
+            "pm_deg": 80.1493
+          },
+          {
+            "vcm": 0.64,
+            "idd_a": 0.000080088,
+            "gain_db": 54.5067,
+            "ugf_hz": 27270800,
+            "pm_deg": 80.244
+          },
+          {
+            "vcm": 0.66,
+            "idd_a": 0.0000805836,
+            "gain_db": 54.3694,
+            "ugf_hz": 27388100,
+            "pm_deg": 80.3373
+          },
+          {
+            "vcm": 0.68,
+            "idd_a": 0.0000810712,
+            "gain_db": 54.2216,
+            "ugf_hz": 27500400,
+            "pm_deg": 80.429
+          },
+          {
+            "vcm": 0.7,
+            "idd_a": 0.0000815512,
+            "gain_db": 54.0629,
+            "ugf_hz": 27609400,
+            "pm_deg": 80.5192
+          }
+        ]
+      }
+    }
+  },
+  "cheat": {
+    "design_check": {
+      "status": "fail",
+      "errors": [
+        {
+          "message": "E1: a controlled source (E) is not allowed in the design; use only MOS devices of the technology pack (X), ideal resistors (R), ideal capacitors (C)",
+          "source": "ota.spice:3"
+        },
+        {
+          "message": "Co: node 0 is the global ground; connect the design only through its pins",
+          "source": "ota.spice:5"
+        }
+      ],
+      "gate_area_um2": 0,
+      "mos_count": 0
+    },
+    "rows_pass": true,
+    "meets_spec": false,
+    "corners": {
+      "tt": {
+        "experiment": "20261030-212824-3e29f5",
+        "worst": {
+          "gain_db": {
+            "value": 80,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "ugf_hz": {
+            "value": 397890000,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "pm_deg": {
+            "value": 90.0057,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "idd_a": {
+            "value": 0.00001,
+            "vcm": 0.4,
+            "pass": true
+          }
+        },
+        "sweep": [
+          {
+            "vcm": 0.4,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.42,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.44,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.46,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.48,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.5,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.52,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.54,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.56,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.58,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.6,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.62,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.64,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.66,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.68,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.7,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          }
+        ]
+      },
+      "ss": {
+        "experiment": "20261030-212824-46b691",
+        "worst": {
+          "gain_db": {
+            "value": 80,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "ugf_hz": {
+            "value": 397890000,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "pm_deg": {
+            "value": 90.0057,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "idd_a": {
+            "value": 0.00001,
+            "vcm": 0.4,
+            "pass": true
+          }
+        },
+        "sweep": [
+          {
+            "vcm": 0.4,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.42,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.44,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.46,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.48,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.5,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.52,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.54,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.56,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.58,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.6,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.62,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.64,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.66,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.68,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.7,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          }
+        ]
+      },
+      "ff": {
+        "experiment": "20261030-212824-7a842f",
+        "worst": {
+          "gain_db": {
+            "value": 80,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "ugf_hz": {
+            "value": 397890000,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "pm_deg": {
+            "value": 90.0057,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "idd_a": {
+            "value": 0.00001,
+            "vcm": 0.4,
+            "pass": true
+          }
+        },
+        "sweep": [
+          {
+            "vcm": 0.4,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.42,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.44,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.46,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.48,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.5,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.52,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.54,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.56,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.58,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.6,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.62,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.64,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.66,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.68,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          },
+          {
+            "vcm": 0.7,
+            "idd_a": 0.00001,
+            "gain_db": 80,
+            "ugf_hz": 397890000,
+            "pm_deg": 90.0057
+          }
+        ]
+      }
+    }
+  },
+  "cheat_score": {
+    "answer": "the verified worst values, meets_spec true",
+    "design": 0,
+    "requirements": 0,
+    "claim": 0,
+    "values": 12
+  },
+  "same_as": "evals/ota-sizing/sg13cmos5l/expected.json: the same worst values, VCM and gate area for fix and original"
+}

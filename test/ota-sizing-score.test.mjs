@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { FIXES, resize } from "../evals/ota-sizing/reference.mjs";
-import { validateRequirements } from "@simra-tech/kernel";
+import { assertBenchMatchesSpec } from "./ota-bench-consistency.mjs";
 import { checkTopology, gateArea, loadTask, METRICS, scoreSizing, sweep } from "../evals/ota-sizing/sizing.mjs";
 
 const repo = new URL("../", import.meta.url).pathname;
@@ -131,27 +131,7 @@ for (const name of Object.keys(TASKS)) {
 		const { spec } = loadTask(taskDir(name));
 		const bench = readFileSync(join(taskDir(name), "verify.spice"), "utf8");
 		const req = JSON.parse(readFileSync(join(taskDir(name), "requirements.json"), "utf8"));
-		assert.deepEqual(validateRequirements(req), []);
-		// The bench sweeps the VCM range of the spec and prints one ROW line per point. The corner gives the model
-		// library, VDD and the temperature, so the bench has no .lib line and only defaults for vdd and .temp.
-		assert.match(bench, new RegExp(`^foreach vcm ${sweep(spec.range).join(" ")}$`, "m"));
-		assert.match(bench, /^\s*echo ROW vcm=\$vcm idd_a=.* gain_db=.* ugf_hz=.* pm_deg=/m);
-		assert.doesNotMatch(bench, /^\.lib/im);
-		assert.match(bench, new RegExp(`^\\.param vdd=${spec.corners.tt.vdd}$`, "m"));
-		assert.match(bench, new RegExp(`^\\.temp ${spec.corners.tt.temp}$`, "m"));
-		// Each corner of the spec is a condition: its library section, VDD and temperature.
-		assert.deepEqual(Object.keys(req.conditions), Object.keys(spec.corners));
-		for (const [c, k] of Object.entries(spec.corners)) {
-			assert.deepEqual(req.conditions[c].inputs, { libs: [{ path: spec.lib, section: k.section }], params: { vdd: k.vdd }, temp_c: k.temp });
-		}
-		// One sweep experiment with the bench, and each requirement of the spec with its limit at every corner.
-		assert.equal(req.experiments.sweep.inputs.deck, "verify.spice");
-		assert.deepEqual(Object.keys(req.experiments.sweep.inputs.measurements), METRICS);
-		for (const m of METRICS) {
-			const r = req.requirements.find((x) => x.id === m);
-			assert.deepEqual([r.measurement, r.unit, r.op, r.conditions], [m, req.experiments.sweep.inputs.measurements[m], spec.limits[m].op, Object.keys(spec.corners)]);
-			assert.ok(Math.abs(r.limit / spec.limits[m].value - 1) < 1e-12, `${m}: limit ${r.limit}, spec ${spec.limits[m].value}`);
-		}
+		assertBenchMatchesSpec(spec, bench, req);
 		// The design contract: the OTA pins and the design limits of the spec (gate area and Cc).
 		assert.deepEqual([req.design.file, req.design.subckt, req.design.pins], ["ota.spice", "ota", ["inp", "inn", "out", "vdd", "vss", "ibias"]]);
 		assert.equal(req.design.limits.gate_area_um2, spec.design.area_um2);

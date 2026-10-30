@@ -35,8 +35,8 @@ export function spiceNumber(text) {
 	return m ? Number(m[1]) * (m[2] ? SI[m[2].toLowerCase()] : 1) : Number.NaN;
 }
 
-/** The conditions, corners, requirements and design limits of spec.md. */
-export function parseSpec(text) {
+/** The conditions, corners and requirements of spec.md (without the design limits). */
+export function parseConditions(text) {
 	const range = text.match(/Input common-mode voltage: VCM from ([\d.]+) V to ([\d.]+) V\./);
 	const lib = text.match(/^- Models: `([^`]+)`/m);
 	const corners = {};
@@ -48,12 +48,18 @@ export function parseSpec(text) {
 		if (!(m[4] in UNIT_SCALE)) throw new Error(`spec.md: unknown unit ${m[4]}`);
 		limits[m[1]] = { op: m[2], value: Number(m[3]) * UNIT_SCALE[m[4]] };
 	}
+	if (!range || !lib || Object.keys(corners).length !== 3 || METRICS.some((k) => !limits[k])) {
+		throw new Error("spec.md: range, models, corners or requirements not found");
+	}
+	return { range: [Number(range[1]), Number(range[2])], lib: lib[1], corners, limits };
+}
+
+/** The conditions, corners, requirements and design limits of spec.md. */
+export function parseSpec(text) {
 	const area = text.match(/sum of W × L over the MOS devices is <= ([\d.]+) µm²/);
 	const cc = text.match(/Cc is <= ([\d.]+) pF/);
-	if (!range || !lib || Object.keys(corners).length !== 3 || METRICS.some((k) => !limits[k]) || !area || !cc) {
-		throw new Error("spec.md: range, models, corners, requirements or design limits not found");
-	}
-	return { range: [Number(range[1]), Number(range[2])], lib: lib[1], corners, limits, design: { area_um2: Number(area[1]), cc_f: Number(cc[1]) * 1e-12 } };
+	if (!area || !cc) throw new Error("spec.md: design limits not found");
+	return { ...parseConditions(text), design: { area_um2: Number(area[1]), cc_f: Number(cc[1]) * 1e-12 } };
 }
 
 /** The VCM values of the sweep: the range in steps of STEP, both ends included. */
@@ -149,14 +155,15 @@ export function loadTask(taskDir) {
 /**
  * Verify a design (the text of ota.spice) with the bench and the requirements of the task: the kernel check of
  * requirements.json, one sweep experiment per corner, in a new design root at root. The configuration files
- * come from the task. environment (optional) replaces the environment of the experiments; local (optional)
- * replaces simra.local.json. Returns { corner: { experiment, status, errors, provenance, points, worst } }:
- * points are the rows of the sweep, and worst[m] is { value, vcm, pass } from the verdict row of requirement m
- * at the corner (the worst point over the sweep; a missing point is never a pass). The key design has the
- * design contract check of the verdict: { experiment, status, errors, gate_area_um2 }.
+ * come from the task (task.json names them; the task needs no original ota.spice). environment (optional)
+ * replaces the environment of the experiments; local (optional) replaces simra.local.json.
+ * Returns { corner: { experiment, status, errors, provenance, points, worst } }: points are the rows of the
+ * sweep, and worst[m] is { value, vcm, pass } from the verdict row of requirement m at the corner (the worst
+ * point over the sweep; a missing point is never a pass). The key design has the design contract check of the
+ * verdict: { experiment, status, errors, gate_area_um2, mos_count }.
  */
 export async function verify(taskDir, designText, root, environment, local) {
-	const { task } = loadTask(taskDir);
+	const task = JSON.parse(readFileSync(join(taskDir, "task.json"), "utf8"));
 	rmSync(root, { recursive: true, force: true });
 	mkdirSync(root, { recursive: true });
 	for (const f of ["simra.config.json", "simra.local.json", "verify.spice", "requirements.json"]) {
@@ -188,7 +195,7 @@ export async function verify(taskDir, designText, root, environment, local) {
 		out[corner] = { experiment: e?.id ?? null, status: e?.status ?? "not_run", errors: run?.result?.errors ?? [], provenance, points, worst };
 	}
 	const d = verdict.design_check;
-	out.design = { experiment: d?.experiment ?? null, status: d?.status ?? "not_run", errors: d?.errors ?? [], gate_area_um2: d?.measurements.gate_area_um2 ?? null };
+	out.design = { experiment: d?.experiment ?? null, status: d?.status ?? "not_run", errors: d?.errors ?? [], gate_area_um2: d?.measurements.gate_area_um2 ?? null, mos_count: d?.measurements.mos_count ?? null };
 	return out;
 }
 

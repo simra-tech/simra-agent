@@ -1,0 +1,148 @@
+{
+  "schema": "simra.requirements/0",
+  "design": {
+    "file": "ota.spice",
+    "subckt": "ota",
+    "pins": [
+      "inp",
+      "inn",
+      "out",
+      "vdd",
+      "vss",
+      "ibias"
+    ],
+    "elements": [
+      "mos",
+      "r",
+      "c"
+    ],
+    "limits": {
+      "gate_area_um2": 80,
+      "r_ohm": 1000000,
+      "c_f": 2e-12
+    },
+    "technology": "sky130",
+    "environment": "eda"
+  },
+  "conditions": {
+    "tt": {
+      "description": "tt, VDD = 1.80 V, 27 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/sky130A/libs.tech/ngspice/sky130.lib.spice",
+            "section": "tt"
+          }
+        ],
+        "params": {
+          "vdd": 1.8
+        },
+        "temp_c": 27
+      }
+    },
+    "ss": {
+      "description": "ss, VDD = 1.62 V, 125 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/sky130A/libs.tech/ngspice/sky130.lib.spice",
+            "section": "ss"
+          }
+        ],
+        "params": {
+          "vdd": 1.62
+        },
+        "temp_c": 125
+      }
+    },
+    "ff": {
+      "description": "ff, VDD = 1.98 V, -40 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/sky130A/libs.tech/ngspice/sky130.lib.spice",
+            "section": "ff"
+          }
+        ],
+        "params": {
+          "vdd": 1.98
+        },
+        "temp_c": -40
+      }
+    }
+  },
+  "experiments": {
+    "sweep": {
+      "adapter": "ngspice",
+      "operation": "simulate",
+      "environment": "eda",
+      "inputs": {
+        "deck": "verify.spice",
+        "measurements": {
+          "gain_db": "dB",
+          "ugf_hz": "Hz",
+          "pm_deg": "deg",
+          "idd_a": "A"
+        }
+      }
+    }
+  },
+  "requirements": [
+    {
+      "id": "gain_db",
+      "description": "DC open-loop gain, at 1 Hz",
+      "experiment": "sweep",
+      "measurement": "gain_db",
+      "unit": "dB",
+      "op": ">=",
+      "limit": 65,
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    },
+    {
+      "id": "ugf_hz",
+      "description": "Unity-gain frequency",
+      "experiment": "sweep",
+      "measurement": "ugf_hz",
+      "unit": "Hz",
+      "op": ">=",
+      "limit": 15000000,
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    },
+    {
+      "id": "pm_deg",
+      "description": "Phase margin",
+      "experiment": "sweep",
+      "measurement": "pm_deg",
+      "unit": "deg",
+      "op": ">=",
+      "limit": 60,
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    },
+    {
+      "id": "idd_a",
+      "description": "Supply current, into vdd",
+      "experiment": "sweep",
+      "measurement": "idd_a",
+      "unit": "A",
+      "op": "<=",
+      "limit": 8e-5,
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    }
+  ]
+}
