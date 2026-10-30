@@ -26,7 +26,7 @@ import { numbersIn, readTexts, shown, within } from "../ota-corners/score.mjs";
 export const METRICS = ["gain_db", "ugf_hz", "pm_deg", "idd_a"];
 export const STEP = 0.02;
 export const TOLERANCE = { gain_db: { abs: 0.5 }, ugf_hz: { rel: 0.05 }, pm_deg: { abs: 2 }, idd_a: { rel: 0.02 } };
-const UNIT_SCALE = { dB: 1, Hz: 1, kHz: 1e3, MHz: 1e6, "°": 1, deg: 1, A: 1, mA: 1e-3, uA: 1e-6, µA: 1e-6 };
+const UNIT_SCALE = { "": 1, dB: 1, Hz: 1, kHz: 1e3, MHz: 1e6, "°": 1, deg: 1, A: 1, mA: 1e-3, uA: 1e-6, µA: 1e-6, s: 1, ns: 1e-9, V: 1, mV: 1e-3 };
 const SI = { t: 1e12, g: 1e9, meg: 1e6, k: 1e3, m: 1e-3, u: 1e-6, n: 1e-9, p: 1e-12, f: 1e-15 };
 
 /** A SPICE number ("4u", "0.5", "1p", "5k", "1meg"), or NaN. */
@@ -35,8 +35,18 @@ export function spiceNumber(text) {
 	return m ? Number(m[1]) * (m[2] ? SI[m[2].toLowerCase()] : 1) : Number.NaN;
 }
 
-/** The conditions, corners and requirements of spec.md (without the design limits). */
-export function parseConditions(text) {
+/** A number of spec.md with its unit, in SI units. */
+function specValue(number, unit) {
+	if (!(unit in UNIT_SCALE)) throw new Error(`spec.md: unknown unit ${unit}`);
+	return Number(number) * UNIT_SCALE[unit];
+}
+
+/**
+ * The conditions, corners and requirements of spec.md (without the design limits). A limit is ">= x unit",
+ * "<= x unit" or "between x unit and y unit" (the unit is optional); metrics are the requirement ids that spec.md
+ * must give.
+ */
+export function parseConditions(text, metrics = METRICS) {
 	const range = text.match(/Input common-mode voltage: VCM from ([\d.]+) V to ([\d.]+) V\./);
 	const lib = text.match(/^- Models: `([^`]+)`/m);
 	const corners = {};
@@ -44,11 +54,11 @@ export function parseConditions(text) {
 		corners[m[1]] = { section: m[2], vdd: Number(m[3]), temp: Number(m[4]) };
 	}
 	const limits = {};
-	for (const m of text.matchAll(/^\|[^|]*\|\s*`(\w+)`\s*\|\s*(>=|<=)\s*([\d.]+)\s*(\S+)\s*\|$/gm)) {
-		if (!(m[4] in UNIT_SCALE)) throw new Error(`spec.md: unknown unit ${m[4]}`);
-		limits[m[1]] = { op: m[2], value: Number(m[3]) * UNIT_SCALE[m[4]] };
+	const limit = /^\|[^|]*\|\s*`(\w+)`\s*\|\s*(?:(>=|<=)\s*(-?[\d.]+)\s*(\S*)|between\s+(-?[\d.]+)\s*(\S*)\s+and\s+(-?[\d.]+)\s*(\S*))\s*\|$/gm;
+	for (const m of text.matchAll(limit)) {
+		limits[m[1]] = m[2] ? { op: m[2], value: specValue(m[3], m[4]) } : { op: "between", value: [specValue(m[5], m[6]), specValue(m[7], m[8])] };
 	}
-	if (!range || !lib || Object.keys(corners).length !== 3 || METRICS.some((k) => !limits[k])) {
+	if (!range || !lib || Object.keys(corners).length !== 3 || metrics.some((k) => !limits[k])) {
 		throw new Error("spec.md: range, models, corners or requirements not found");
 	}
 	return { range: [Number(range[1]), Number(range[2])], lib: lib[1], corners, limits };
@@ -144,6 +154,15 @@ export function changedSizes(originalText, designText) {
 	return out;
 }
 
+/** The requirements.json of a task directory (task.json names the file). */
+export function taskRequirements(taskDir) {
+	const task = JSON.parse(readFileSync(join(taskDir, "task.json"), "utf8"));
+	return JSON.parse(readFileSync(resolve(taskDir, task.files["requirements.json"]), "utf8"));
+}
+
+/** The metric ids of a requirements file: the requirement ids, in order, each one time. */
+export const metricsOf = (requirements) => [...new Set(requirements.requirements.map((r) => r.id))];
+
 /** The task data: task.json, spec.md and the original ota.spice of a task directory. */
 export function loadTask(taskDir) {
 	const task = JSON.parse(readFileSync(join(taskDir, "task.json"), "utf8"));
@@ -153,16 +172,18 @@ export function loadTask(taskDir) {
 }
 
 /**
- * Verify a design (the text of ota.spice) with the bench and the requirements of the task: the kernel check of
- * requirements.json, one sweep experiment per corner, in a new design root at root. The configuration files
- * come from the task (task.json names them; the task needs no original ota.spice). environment (optional)
- * replaces the environment of the experiments; local (optional) replaces simra.local.json.
+ * Verify a design (the text of the design netlist) with the bench and the requirements of the task: the kernel
+ * check of requirements.json, one sweep experiment per corner, in a new design root at root. The configuration
+ * files come from the task (task.json names them; the task needs no original netlist). environment (optional)
+ * replaces the environment of the experiments; local (optional) replaces simra.local.json. file (optional) is
+ * the name of the design netlist (default: the design file of requirements.json, else ota.spice); metrics
+ * (optional) are the requirement ids to report (default: the requirement ids of requirements.json).
  * Returns { corner: { experiment, status, errors, provenance, points, worst } }: points are the rows of the
  * sweep, and worst[m] is { value, vcm, pass } from the verdict row of requirement m at the corner (the worst
  * point over the sweep; a missing point is never a pass). The key design has the design contract check of the
  * verdict: { experiment, status, errors, gate_area_um2, mos_count }.
  */
-export async function verify(taskDir, designText, root, environment, local) {
+export async function verify(taskDir, designText, root, environment, local, { file, metrics } = {}) {
 	const task = JSON.parse(readFileSync(join(taskDir, "task.json"), "utf8"));
 	rmSync(root, { recursive: true, force: true });
 	mkdirSync(root, { recursive: true });
@@ -171,8 +192,8 @@ export async function verify(taskDir, designText, root, environment, local) {
 		if (existsSync(from)) copyFileSync(from, join(root, f));
 	}
 	if (local) writeFileSync(join(root, "simra.local.json"), JSON.stringify(local));
-	writeFileSync(join(root, "ota.spice"), designText);
 	const requirements = JSON.parse(readFileSync(join(root, "requirements.json"), "utf8"));
+	writeFileSync(join(root, file ?? requirements.design?.file ?? "ota.spice"), designText);
 	if (environment) {
 		for (const e of Object.values(requirements.experiments)) e.environment = environment;
 		if (requirements.design) requirements.design.environment = environment;
@@ -187,7 +208,7 @@ export async function verify(taskDir, designText, root, environment, local) {
 		const points = table && existsSync(table) ? JSON.parse(readFileSync(table, "utf8")).rows : [];
 		const provenance = { image_id: run?.experiment.environment?.image_id ?? null, ngspice: run?.result?.tool?.version ?? null, pdk: run?.result?.tool?.pdk ?? null };
 		const worst = Object.fromEntries(
-			METRICS.map((m) => {
+			(metrics ?? metricsOf(requirements)).map((m) => {
 				const row = verdict.rows.find((r) => r.requirement === m && r.condition === corner);
 				return [m, { value: row?.value ?? null, vcm: row?.at?.vcm ?? null, pass: row?.status === "pass" }];
 			}),

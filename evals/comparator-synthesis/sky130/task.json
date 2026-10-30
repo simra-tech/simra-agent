@@ -1,0 +1,13 @@
+{
+  "name": "comparator-synthesis-sky130",
+  "prompt": "task.md",
+  "score": "score.mjs",
+  "environment": "eda",
+  "files": {
+    "spec.md": "spec.md",
+    "verify.spice": "verify.spice",
+    "requirements.json": "requirements.json",
+    "simra.config.json": "simra.config.json",
+    "simra.local.json": "../../../examples/ota-sg13g2/simra.local.json"
+  }
+}

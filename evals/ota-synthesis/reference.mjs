@@ -41,9 +41,9 @@ export function designs(name) {
 	return { fix: resize(original, FIXES[name]), original, cheat: CHEAT };
 }
 
-/** The results of one design: the design part, the worst values and whether it meets the spec. */
-function summary({ design, ...corners }) {
-	const rows_pass = Object.values(corners).every((v) => METRICS.every((m) => v.worst[m].pass));
+/** The results of one design (a result of verify): the design part, the worst values and whether it meets the spec. */
+export function summary({ design, ...corners }, metrics = METRICS) {
+	const rows_pass = Object.values(corners).every((v) => metrics.every((m) => v.worst[m].pass));
 	return {
 		design_check: { status: design.status, errors: design.errors, gate_area_um2: design.gate_area_um2, mos_count: design.mos_count },
 		rows_pass,
@@ -52,11 +52,11 @@ function summary({ design, ...corners }) {
 	};
 }
 
-/** An answer with the verified worst values of a result. */
-export const answerOf = (result, meets = result.meets_spec) => ({
+/** An answer with the verified worst values of a result (of summary) for the requirement ids metrics. */
+export const answerOf = (result, meets = result.meets_spec, metrics = METRICS) => ({
 	meets_spec: meets,
 	area_um2: result.design_check.gate_area_um2,
-	rows: Object.entries(result.corners).flatMap(([corner, v]) => METRICS.map((m) => ({ corner, requirement: m, value: v.worst[m].value, vcm: v.worst[m].vcm, pass: v.worst[m].pass }))),
+	rows: Object.entries(result.corners).flatMap(([corner, v]) => metrics.map((m) => ({ corner, requirement: m, value: v.worst[m].value, vcm: v.worst[m].vcm, pass: v.worst[m].pass }))),
 });
 
 async function main() {

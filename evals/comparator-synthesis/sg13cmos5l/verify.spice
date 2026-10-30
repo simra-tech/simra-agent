@@ -1,0 +1,41 @@
+* comparator-synthesis verification bench. The conditions of spec.md: VDD and the temperature of the corner, a
+* 10 uA current into ibias, CL = 50 fF, and 5 points of VCM over the range. One transient analysis and one ROW
+* line per VCM. VCM is the DC voltage of inn; Vd gives the differential input v(inp) - v(inn):
+*   0 to 100 ns: -10 mV (out low). 100 ns: step to +10 mV (rise delay). 590 ns: voh_rel.
+*   600 ns: step to -10 mV (fall delay). 1.09 us: vol_rel and idd_a (settled low state).
+*   1.2 us to 11.2 us: ramp from -50 mV to +50 mV. 11.2 us to 21.2 us: ramp back to -50 mV (vos_v, hyst_v).
+* A measurement that does not exist (no crossing) prints no value.
+* The model library is not in this file. requirements.json gives the library section, vdd and the
+* temperature of each corner. The values below are the tt corner.
+.param vdd=1.2
+.temp 27
+.include "cmp.spice"
+Vdd vdd 0 {vdd}
+Vss vss 0 0
+Ib vdd ibias 10u
+Vcm inn 0 dc 0.4
+Vd inp inn dc 0 pwl(0 -10m 100n -10m 100.1n 10m 600n 10m 600.1n -10m 1.1u -10m 1.2u -50m 11.2u 50m 21.2u -50m)
+CL out 0 50f
+Xdut inp inn out vdd vss ibias cmp
+.control
+foreach vcm 0.4 0.475 0.55 0.625 0.7
+  alter vcm dc = $vcm
+  tran 0.1n 21.2u 0 0.5n
+  let vd = v(inp) - v(inn)
+  let half = v(vdd)[0] / 2
+  let ivdd = -i(vdd)
+  meas tran tpd_r_s trig vd val=0 rise=1 targ v(out) val=$&half rise=1
+  meas tran tpd_f_s trig vd val=0 fall=1 targ v(out) val=$&half fall=1
+  meas tran vhigh find v(out) at=590n
+  meas tran vlow find v(out) at=1.09u
+  meas tran idd_a find ivdd at=1.09u
+  meas tran vup find vd when v(out)=$&half rise=1 td=1.2u
+  meas tran vdown find vd when v(out)=$&half fall=1 td=1.2u
+  let voh_rel = vhigh / v(vdd)[0]
+  let vol_rel = vlow / v(vdd)[0]
+  let vos_v = (vup + vdown) / 2
+  let hyst_v = vup - vdown
+  echo ROW vcm=$vcm tpd_r_s=$&tpd_r_s tpd_f_s=$&tpd_f_s voh_rel=$&voh_rel vol_rel=$&vol_rel vos_v=$&vos_v hyst_v=$&hyst_v idd_a=$&idd_a
+  destroy all
+end
+.endc

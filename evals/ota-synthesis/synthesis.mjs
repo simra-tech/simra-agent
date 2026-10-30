@@ -4,7 +4,8 @@
 // writes the OTA in ota.spice; the topology is free. The scorer does not trust the answer: it runs the check of
 // requirements.json on the final ota.spice through the kernel (the verify() of ../ota-sizing/sizing.mjs). The
 // check lints ota.spice against the design section of requirements.json (the design part of the verdict) and
-// simulates it with the bench at each corner and at each VCM of the range.
+// simulates it with the bench at each corner and at each VCM of the range. scoreSynthesis() takes the corners, the
+// metrics and the design file from requirements.json, so other synthesis tasks (comparator-synthesis) use it too.
 //
 // Score:
 // - design (2): the design part of the verdict passes (the contract, the element rules and the limits).
@@ -20,20 +21,20 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { numbersIn, readTexts, shown, within } from "../ota-corners/score.mjs";
-import { METRICS, parseConditions, TOLERANCE, verify } from "../ota-sizing/sizing.mjs";
+import { METRICS, metricsOf, parseConditions, TOLERANCE, taskRequirements, verify } from "../ota-sizing/sizing.mjs";
 
 export { METRICS, TOLERANCE, verify };
 
-/** The conditions, corners, requirements and design rules of spec.md. */
-export function parseSpec(text) {
-	const pins = text.match(/The OTA is the subcircuit `(\w+)` in `([\w.]+)`, with the pins `([\w ]+)`, in this order\./);
+/** The conditions, corners, requirements (the ids metrics) and design rules of spec.md. */
+export function parseSpec(text, metrics = METRICS) {
+	const pins = text.match(/The \w+ is the subcircuit `(\w+)` in `([\w.]+)`, with the pins `([\w ]+)`, in this order\./);
 	const models = text.match(/^\s*1\. MOS devices of the model library of the corner: ((?:`\w+`,?\s*)+)\./m);
 	const area = text.match(/sum of W × L over the MOS devices is <= ([\d.]+) µm²/);
 	const r = text.match(/Ideal resistors \(R\): each resistor is <= ([\d.]+) MΩ\./);
 	const c = text.match(/Ideal capacitors \(C\): each capacitor is <= ([\d.]+) pF\./);
 	if (!pins || !models || !area || !r || !c) throw new Error("spec.md: pins, devices or design limits not found");
 	return {
-		...parseConditions(text),
+		...parseConditions(text, metrics),
 		design: {
 			file: pins[2],
 			subckt: pins[1],
@@ -54,18 +55,24 @@ export function loadTask(taskDir) {
 }
 
 /**
- * Score a workspace of an ota-synthesis task. The verification goes to verifyRoot (default: next to ws). A test can
- * give its own verifier, with the arguments of verify.
+ * Score a workspace of a synthesis task. The verification goes to verifyRoot (default: next to ws). A test can
+ * give its own verifier, with the arguments of verify. The corners, the metrics (the requirement ids) and the
+ * design file come from requirements.json of the task; tolerance gives the value tolerance of each metric
+ * (default: the OTA tolerance), and file (optional) replaces the design file name.
  */
-export async function scoreSynthesis(ws, taskDir, { verifyRoot = join(dirname(ws), "verify"), verifier = verify } = {}) {
-	const { spec } = loadTask(taskDir);
+export async function scoreSynthesis(ws, taskDir, { verifyRoot = join(dirname(ws), "verify"), verifier = verify, tolerance = TOLERANCE, file } = {}) {
+	const requirements = taskRequirements(taskDir);
+	const metrics = metricsOf(requirements);
+	const corners = Object.keys(requirements.conditions);
+	const designFile = file ?? requirements.design.file;
+	const rowCount = corners.length * metrics.length;
 	const report = {
 		workspace: ws,
 		design: 0,
 		requirements: 0,
 		claim: 0,
 		values: 0,
-		max: { design: 2, requirements: 12, claim: 4, values: 12 },
+		max: { design: 2, requirements: rowCount, claim: 4, values: rowCount },
 		meets_spec: null,
 		verified_meets_spec: false,
 		design_status: "not_run",
@@ -77,10 +84,10 @@ export async function scoreSynthesis(ws, taskDir, { verifyRoot = join(dirname(ws
 		verification: null,
 		errors: [],
 	};
-	const designPath = join(ws, spec.design.file);
-	if (!existsSync(designPath)) report.errors.push(`${spec.design.file} not found`);
+	const designPath = join(ws, designFile);
+	if (!existsSync(designPath)) report.errors.push(`${designFile} not found`);
 	else {
-		report.verification = await verifier(taskDir, readFileSync(designPath, "utf8"), verifyRoot);
+		report.verification = await verifier(taskDir, readFileSync(designPath, "utf8"), verifyRoot, undefined, undefined, { file: designFile, metrics });
 		const d = report.verification.design;
 		report.design_status = d.status;
 		report.area_um2 = d.gate_area_um2;
@@ -103,15 +110,15 @@ export async function scoreSynthesis(ws, taskDir, { verifyRoot = join(dirname(ws
 	}
 	const evidence = numbersIn(
 		readTexts(ws)
-			.filter((f) => !["answer.json", spec.design.file].includes(relative(ws, f.path)))
+			.filter((f) => !["answer.json", designFile].includes(relative(ws, f.path)))
 			.map((f) => f.text)
 			.join("\n"),
 	);
 	const rows = Array.isArray(answer?.rows) ? answer.rows : [];
 	const designPass = report.design === 2;
 	let allPass = designPass;
-	for (const corner of Object.keys(spec.corners)) {
-		for (const m of METRICS) {
+	for (const corner of corners) {
+		for (const m of metrics) {
 			const key = `${corner} ${m}`;
 			const v = report.verification?.[corner]?.worst[m] ?? { value: null, vcm: null, pass: false };
 			const r = rows.find((x) => x?.corner === corner && x?.requirement === m);
@@ -120,7 +127,7 @@ export async function scoreSynthesis(ws, taskDir, { verifyRoot = join(dirname(ws
 			allPass &&= v.pass;
 			if (designPass) report.requirements += Number(v.pass);
 			if (!r || v.value === null) continue;
-			s.value = within(r.value, v.value, TOLERANCE[m]);
+			s.value = within(r.value, v.value, tolerance[m]);
 			s.supported = shown(evidence, m, r.value);
 			report.values += Number(s.value);
 			report.supported += Number(s.supported);
@@ -133,10 +140,10 @@ export async function scoreSynthesis(ws, taskDir, { verifyRoot = join(dirname(ws
 }
 
 /** The command line of the score.mjs of a task directory: node <task>/score.mjs <workspace>. */
-export async function scoreMain(taskDir, argv) {
+export async function scoreMain(taskDir, argv, options = {}) {
 	if (!argv[2]) {
 		console.error(`usage: node ${relative(process.cwd(), join(taskDir, "score.mjs"))} <workspace>`);
 		process.exit(2);
 	}
-	console.log(JSON.stringify(await scoreSynthesis(resolve(argv[2]), taskDir), null, 2));
+	console.log(JSON.stringify(await scoreSynthesis(resolve(argv[2]), taskDir, options), null, 2));
 }
