@@ -1,0 +1,245 @@
+{
+  "task": "ota-conditions",
+  "generated_by": "evals/ota-conditions/reference.mjs",
+  "provenance": {
+    "image_id": "sha256:006c1f30b1b12e56ef9c9a682329acb62f44616b37958409e06a8dd44aae549b",
+    "ngspice": "47",
+    "pdk_commit": "a49358cc0b20635fcb53c0940505e3563763fc7a",
+    "design_files": [
+      {
+        "path": "ota.spice",
+        "sha256": "24914a1280b729850f0927faa91df3af2c8f4cfe9f4af56522f988653048f13a",
+        "bytes": 799,
+        "role": "include"
+      }
+    ]
+  },
+  "limits": {
+    "gain_db": {
+      "op": ">=",
+      "value": 48
+    },
+    "ugf_hz": {
+      "op": ">=",
+      "value": 12000000
+    },
+    "pm_deg": {
+      "op": ">=",
+      "value": 75
+    }
+  },
+  "meets_spec": false,
+  "variant_meets_spec": {
+    "team_testbench": true,
+    "cl_fixed_only": false,
+    "vcm_fixed_only": true
+  },
+  "tolerance": {
+    "gain_db": {
+      "abs": 0.5
+    },
+    "ugf_hz": {
+      "rel": 0.05
+    },
+    "pm_deg": {
+      "abs": 2
+    }
+  },
+  "corners": {
+    "tt": {
+      "conditions": {
+        "section": "mos_tt",
+        "vdd": 1.2,
+        "temp": 27,
+        "vcm": 0.6,
+        "cl": "2p"
+      },
+      "experiment": "20261030-104853-6b20b8",
+      "values": {
+        "gain_db": 52.1052,
+        "ugf_hz": 20776600,
+        "pm_deg": 76.10883
+      },
+      "v_out": 0.5989898,
+      "pass": {
+        "gain_db": true,
+        "ugf_hz": true,
+        "pm_deg": true
+      },
+      "cross_check": {
+        "gain_db": 52.1051578172049,
+        "ugf_hz": 20775536.71016092,
+        "pm_deg": 76.10884694609356
+      },
+      "team_testbench": {
+        "experiment": "20261030-104858-fa637a",
+        "values": {
+          "gain_db": 53.1119,
+          "ugf_hz": 18454300,
+          "pm_deg": 96.62725
+        },
+        "pass": {
+          "gain_db": true,
+          "ugf_hz": true,
+          "pm_deg": true
+        }
+      },
+      "cl_fixed_only": {
+        "experiment": "20261030-104900-c61b48",
+        "values": {
+          "gain_db": 53.1119,
+          "ugf_hz": 16412800,
+          "pm_deg": 77.33989
+        },
+        "pass": {
+          "gain_db": true,
+          "ugf_hz": true,
+          "pm_deg": true
+        }
+      },
+      "vcm_fixed_only": {
+        "experiment": "20261030-104901-442b07",
+        "values": {
+          "gain_db": 52.1052,
+          "ugf_hz": 24813100,
+          "pm_deg": 99.19966
+        },
+        "pass": {
+          "gain_db": true,
+          "ugf_hz": true,
+          "pm_deg": true
+        }
+      }
+    },
+    "ss": {
+      "conditions": {
+        "section": "mos_ss",
+        "vdd": 1.08,
+        "temp": 125,
+        "vcm": 0.54,
+        "cl": "2p"
+      },
+      "experiment": "20261030-104903-b37e8c",
+      "values": {
+        "gain_db": 49.3998,
+        "ugf_hz": 14740300,
+        "pm_deg": 72.59012
+      },
+      "v_out": 0.5381242,
+      "pass": {
+        "gain_db": true,
+        "ugf_hz": true,
+        "pm_deg": false
+      },
+      "cross_check": {
+        "gain_db": 49.39975325189966,
+        "ugf_hz": 14739770.576002061,
+        "pm_deg": 72.59014141633529
+      },
+      "team_testbench": {
+        "experiment": "20261030-104909-d3dfd8",
+        "values": {
+          "gain_db": 49.9275,
+          "ugf_hz": 12721000,
+          "pm_deg": 91.31742
+        },
+        "pass": {
+          "gain_db": true,
+          "ugf_hz": true,
+          "pm_deg": true
+        }
+      },
+      "cl_fixed_only": {
+        "experiment": "20261030-104910-91a906",
+        "values": {
+          "gain_db": 49.9275,
+          "ugf_hz": 11618000,
+          "pm_deg": 75.08415
+        },
+        "pass": {
+          "gain_db": true,
+          "ugf_hz": false,
+          "pm_deg": true
+        }
+      },
+      "vcm_fixed_only": {
+        "experiment": "20261030-104912-970846",
+        "values": {
+          "gain_db": 49.3998,
+          "ugf_hz": 16871900,
+          "pm_deg": 92.0861
+        },
+        "pass": {
+          "gain_db": true,
+          "ugf_hz": true,
+          "pm_deg": true
+        }
+      }
+    },
+    "ff": {
+      "conditions": {
+        "section": "mos_ff",
+        "vdd": 1.32,
+        "temp": -40,
+        "vcm": 0.66,
+        "cl": "2p"
+      },
+      "experiment": "20261030-104914-3a5b93",
+      "values": {
+        "gain_db": 54.3694,
+        "ugf_hz": 27388100,
+        "pm_deg": 80.33726
+      },
+      "v_out": 0.6592818,
+      "pass": {
+        "gain_db": true,
+        "ugf_hz": true,
+        "pm_deg": true
+      },
+      "cross_check": {
+        "gain_db": 54.36937296080466,
+        "ugf_hz": 27386765.739765644,
+        "pm_deg": 80.3372372056887
+      },
+      "team_testbench": {
+        "experiment": "20261030-104917-c129be",
+        "values": {
+          "gain_db": 55.6054,
+          "ugf_hz": 27586900,
+          "pm_deg": 103.458
+        },
+        "pass": {
+          "gain_db": true,
+          "ugf_hz": true,
+          "pm_deg": true
+        }
+      },
+      "cl_fixed_only": {
+        "experiment": "20261030-104919-ded9f1",
+        "values": {
+          "gain_db": 55.6054,
+          "ugf_hz": 23155300,
+          "pm_deg": 79.81747
+        },
+        "pass": {
+          "gain_db": true,
+          "ugf_hz": true,
+          "pm_deg": true
+        }
+      },
+      "vcm_fixed_only": {
+        "experiment": "20261030-104920-412e5e",
+        "values": {
+          "gain_db": 54.3694,
+          "ugf_hz": 34845100,
+          "pm_deg": 106.923
+        },
+        "pass": {
+          "gain_db": true,
+          "ugf_hz": true,
+          "pm_deg": true
+        }
+      }
+    }
+  }
+}
