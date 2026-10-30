@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { validateRequirements } from "@simra-tech/kernel";
-import extension, { netlistsOf, REQUIREMENTS_EXAMPLE } from "../index.ts";
+import extension, { netlistsOf, REQUIREMENTS_EXAMPLE, sessionClock } from "../index.ts";
 
 const fakeAdapters = new URL("../../kernel/test/fixtures/adapters", import.meta.url).pathname;
 
@@ -92,4 +92,32 @@ test("netlistsOf finds the netlists that a call names", (t) => {
 	assert.deepEqual(netlistsOf(bash, root), [join(root, "a.spice"), join(root, "b.cir")]);
 	assert.deepEqual(netlistsOf({ toolName: "write", input: { path: join(root, "a.spice") } } as any, "/"), [join(root, "a.spice")]);
 	assert.deepEqual(netlistsOf({ toolName: "grep", input: { path: "a.spice" } } as any, root), []);
+});
+
+test("the session clock gives a time note once after 50 % and once after 80 %", () => {
+	const min = 60_000;
+	const note = sessionClock(0, 30 * min);
+	assert.equal(note(10 * min), null);
+	assert.match(note(15 * min) ?? "", /15 of 30 min used, 15 min left\.\nWrite the output files/);
+	assert.equal(note(16 * min), null);
+	assert.match(note(25 * min) ?? "", /25 of 30 min used, 5 min left/);
+	assert.equal(note(29 * min), null);
+	// A first call after both marks gives one note, not two.
+	const late = sessionClock(0, 30 * min);
+	assert.match(late(27 * min) ?? "", /27 of 30 min used/);
+	assert.equal(late(28 * min), null);
+});
+
+test("the tool_result hook adds the time note when SIMRA_SESSION_DEADLINE is set", async (t) => {
+	const saved = process.env.SIMRA_SESSION_DEADLINE;
+	t.after(() => (saved === undefined ? delete process.env.SIMRA_SESSION_DEADLINE : (process.env.SIMRA_SESSION_DEADLINE = saved)));
+	process.env.SIMRA_SESSION_DEADLINE = new Date(Date.now() + 50).toISOString();
+	let hook: any;
+	extension({ registerTool: () => {}, registerCommand: () => {}, on: (event: string, fn: any) => event === "tool_result" && (hook = fn) } as any);
+	await new Promise((r) => setTimeout(r, 80));
+	const content = [{ type: "text", text: "ok" }];
+	const r = await hook({ toolName: "bash", input: { command: "ls" }, content, isError: false }, { cwd: tmpdir() });
+	assert.deepEqual(r.content[0], content[0]);
+	assert.match(r.content[1].text, /Simra session time: .* 0 min left\./);
+	assert.equal(await hook({ toolName: "bash", input: { command: "ls" }, content, isError: false }, { cwd: tmpdir() }), undefined);
 });

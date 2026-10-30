@@ -3,6 +3,8 @@
 // against the design), and the command /simra-version.
 // After a read, write, edit or bash call that names a netlist, it adds the ngspice adapter's netlist check
 // (operation "lint") to the tool result: for example a warning about ".option rshunt".
+// When SIMRA_SESSION_DEADLINE (an ISO 8601 time) is set, it adds a time note to the first tool result after 50 %
+// and after 80 % of the session time: the agent must write its output files before the session ends.
 // All logic lives in @simra-tech/kernel, which works without pi.
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
@@ -62,24 +64,57 @@ export function netlistsOf(event: Pick<ToolResultEvent, "toolName" | "input">, c
 	return [...new Set(files)].filter((f) => existsSync(f));
 }
 
+export const TIME_MARKS = [0.5, 0.8];
+
+/**
+ * The session clock: note(now) gives a time note the first time that the used fraction of the session passes a
+ * mark, else null. start is when the extension loads; deadline is the end of the session.
+ */
+export function sessionClock(start: number, deadline: number) {
+	let passed = 0;
+	return (now: number): string | null => {
+		const total = deadline - start;
+		const used = (now - start) / total;
+		let mark = passed;
+		while (mark < TIME_MARKS.length && used >= TIME_MARKS[mark]) mark++;
+		if (mark === passed || total <= 0) return null;
+		passed = mark;
+		const min = (ms: number) => Math.max(0, Math.round(ms / 60_000));
+		return [
+			"",
+			`Simra session time: ${min(now - start)} of ${min(total)} min used, ${min(deadline - now)} min left.`,
+			"Write the output files that the task asks for now (the changed design, the answer file), with the best result so far.",
+			"Then continue, and update the files when you find a better result.",
+		].join("\n");
+	};
+}
+
 export default function (pi: ExtensionAPI) {
 	// A finding is added once per session, at the first call that shows it.
 	const reported = new Set<string>();
-	pi.on("tool_result", async (event, ctx) => {
-		const files = netlistsOf(event, ctx.cwd);
-		if (files.length === 0) return;
-		const root = findRoot(ctx.cwd) ?? ctx.cwd;
+	const deadline = Date.parse(process.env.SIMRA_SESSION_DEADLINE ?? "");
+	const clock = Number.isFinite(deadline) ? sessionClock(Date.now(), deadline) : null;
+
+	async function netlistNote(event: ToolResultEvent, cwd: string): Promise<string | null> {
+		const files = netlistsOf(event, cwd);
+		if (files.length === 0) return null;
+		const root = findRoot(cwd) ?? cwd;
 		let found;
 		try {
 			found = await queryAdapter({ root, adapter: "ngspice", operation: "lint", inputs: { files } });
 		} catch {
-			return;
+			return null;
 		}
 		const fresh = found.diagnostics.filter((d) => d.severity === "warning" && !reported.has(formatDiagnostic(d)));
-		if (fresh.length === 0) return;
+		if (fresh.length === 0) return null;
 		for (const d of fresh) reported.add(formatDiagnostic(d));
-		const note = ["", "Simra netlist check (ngspice adapter, operation lint):", ...fresh.map(formatDiagnostic)].join("\n");
-		return { content: [...event.content, { type: "text", text: note }], structuredContent: event.structuredContent };
+		return ["", "Simra netlist check (ngspice adapter, operation lint):", ...fresh.map(formatDiagnostic)].join("\n");
+	}
+
+	pi.on("tool_result", async (event, ctx) => {
+		const notes = [await netlistNote(event, ctx.cwd), clock?.(Date.now()) ?? null].filter((n): n is string => n !== null);
+		if (notes.length === 0) return;
+		return { content: [...event.content, ...notes.map((text) => ({ type: "text" as const, text }))], structuredContent: event.structuredContent };
 	});
 
 

@@ -84,6 +84,13 @@ for `rshunt`, `cshunt` and a `gmin` above 1e-12:
 In pi, the extension adds these warnings to the result of a `read`, `write`, `edit` or `bash` call that names a
 netlist. It adds each warning one time per session.
 
+## Session time
+
+Set `SIMRA_SESSION_DEADLINE` to an ISO 8601 time, for example `2026-10-30T15:00:00Z`, to give pi a time limit.
+After 50 % and after 80 % of the time, the extension adds a note to the next tool result. The note gives the
+time that is left and tells the agent to write its output files with the best result so far. The eval runner
+`evals/run-arm.mjs` sets this variable from `--timeout-min`.
+
 ## Operating point
 
 The operation `operating_point` of the ngspice adapter shows the DC operating point of each MOS device of a

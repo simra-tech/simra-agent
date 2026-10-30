@@ -288,7 +288,9 @@ async function main() {
 	const cmd = armCommand(arm, state, prompt, modelId);
 	const name = `simra-arm-${runName}`;
 	const toolEnv = Object.fromEntries(Object.entries(env.env ?? {}).filter(([k]) => k !== "HOME"));
-	const argv = sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar: model.keyVar, env: { ...toolEnv, ...cmd.env }, command: cmd.command });
+	// The Simra extension tells the agent how much session time is left (other arms ignore the variable).
+	const deadline = new Date(Date.now() + timeoutMin * 60_000).toISOString();
+	const argv = sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar: model.keyVar, env: { ...toolEnv, ...cmd.env, SIMRA_SESSION_DEADLINE: deadline }, command: cmd.command });
 	const started = new Date();
 	// The engine client gets no key: only PATH and the variables that select the engine.
 	const clientEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => k === "PATH" || k.startsWith("DOCKER_") || k.startsWith("CONTAINER") || k === "XDG_RUNTIME_DIR" || k === "HOME"));
