@@ -189,7 +189,7 @@ class OperatingPointTest(unittest.TestCase):
     (PSP, VCM = 0.55 V) and SKY130 (BSIM4, VCM = 1.0 V)."""
 
     def setUp(self):
-        self.root = tempfile.mkdtemp()
+        self.root = os.path.realpath(tempfile.mkdtemp())  # macOS: /var/folders is a link
         self.work = os.path.join(self.root, "work")
         os.mkdir(self.work)
         self.saved = {k: os.environ.get(k) for k in ("PATH", "PDK", "SIMRA_TECHNOLOGY_DIR")}
