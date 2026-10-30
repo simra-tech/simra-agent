@@ -1,0 +1,14 @@
+{
+  "environments": {
+    "eda": {
+      "kind": "container",
+      "image": "docker.io/hpretl/iic-osic-tools:2026.10",
+      "env": {
+        "PDK_ROOT": "/foss/pdks",
+        "PDK": "ihp-sg13cmos5l",
+        "SPICE_USERINIT_DIR": "/foss/pdks/ihp-sg13cmos5l/libs.tech/ngspice",
+        "HOME": "/tmp"
+      }
+    }
+  }
+}

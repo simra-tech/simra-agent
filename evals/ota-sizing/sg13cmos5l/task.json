@@ -1,0 +1,13 @@
+{
+  "name": "ota-sizing-sg13cmos5l",
+  "prompt": "task.md",
+  "score": "score.mjs",
+  "environment": "eda",
+  "length_unit_m": 1,
+  "files": {
+    "ota.spice": "ota.spice",
+    "spec.md": "spec.md",
+    "simra.config.json": "simra.config.json",
+    "simra.local.json": "../../../examples/ota-sg13g2/simra.local.json"
+  }
+}

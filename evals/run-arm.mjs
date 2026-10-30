@@ -4,7 +4,7 @@
 //   { "name", "prompt": "task.md", "score": "score.mjs", "environment": "eda",
 //     "files": { "<name in the workspace>": "<path relative to the task directory>" } }
 // A file that does not exist is not copied (for example simra.local.json). score.mjs exports score(ws), which
-// returns the points of each part and "max": { part: maximum points }.
+// returns (or resolves to) the points of each part and "max": { part: maximum points }.
 //
 // Arms (all use the same model, chosen with --model, and the same thinking level):
 //   simra     pi with the Simra Agent extension (tool run_experiment)
@@ -114,7 +114,7 @@ function simScript(env) {
 	const vars = Object.entries(env.env ?? {}).map(([k, v]) => `${k}=${v}`).join(" ");
 	const pin = env.cpus ? `taskset -c ${env.cpus} ` : "";
 	return `#!/bin/sh
-# Run ngspice in batch mode (IHP SG13G2 PDK at $PDK_ROOT/ihp-sg13g2).
+# Run ngspice in batch mode (PDK ${env.env?.PDK ?? "not set"} at $PDK_ROOT/${env.env?.PDK ?? ""}).
 # Usage: ./sim.sh <deck> [more ngspice arguments].
 exec env ${vars} ${pin}ngspice -b "$@"
 `;
@@ -327,7 +327,7 @@ async function main() {
 		exit,
 		sandbox: { engine, image: env.image, image_id: imageId, network: "none", read_only_root: true, mounts: { [WORK]: "ws", [STATE]: "state", [PROXY_DIR]: "proxy" } },
 		contamination,
-		score: score(ws, undefined, WORK),
+		score: await score(ws, undefined, WORK),
 	};
 	writeFileSync(join(run, "score.json"), `${JSON.stringify(summary, null, 2)}\n`);
 	const s = summary.score;
