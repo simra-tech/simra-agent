@@ -44,6 +44,9 @@ test("check_requirements runs the check and gives the verdict", async (t) => {
 	// The description gives the file format with a valid example.
 	assert.ok(tool.description.includes(REQUIREMENTS_EXAMPLE));
 	assert.deepEqual(validateRequirements(JSON.parse(REQUIREMENTS_EXAMPLE)), []);
+	// It names the condition inputs of ngspice and the sweep convention.
+	assert.match(tool.description, /params .* and temp_c/);
+	assert.match(tool.description, /'ROW <sweep>=<v> <name>=<value> \.\.\.'/);
 
 	const root = mkdtempSync(join(tmpdir(), "simra-ext-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));

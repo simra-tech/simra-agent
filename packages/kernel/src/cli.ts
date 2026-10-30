@@ -4,7 +4,8 @@
 //   simra run <spec.json>     run one experiment; spec = { adapter, operation, inputs, environment?, purpose?, timeout_s? }
 //   simra show <id>           print the experiment and result records
 //   simra list                list experiments, oldest first
-//   simra check               check requirements.json; options --file <path>, --only <id,...>, --conditions <name,...>
+//   simra check               check requirements.json; options --file <path>, --only <id,...>, --conditions <name,...>,
+//                             --parallel <n> (experiments at the same time, default 4)
 //
 // Option: --root <dir> (default: the nearest directory upward with simra.config.json, else the current directory)
 
@@ -18,7 +19,7 @@ import { formatOutcome, formatVerdict } from "./summary.ts";
 
 function usage(): never {
 	console.error(
-		"usage: simra run <spec.json> | simra show <id> | simra list | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>]   [--root <dir>]",
+		"usage: simra run <spec.json> | simra show <id> | simra list | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>]   [--root <dir>]",
 	);
 	process.exit(2);
 }
@@ -28,9 +29,10 @@ async function main(argv: string[]): Promise<number> {
 	const args: string[] = [];
 	const options: Record<string, string> = {};
 	const list = (value?: string) => value?.split(",").filter(Boolean);
+	const positive = (value: string) => (/^[1-9]\d*$/.test(value) ? Number(value) : usage());
 	for (let i = 0; i < argv.length; i++) {
 		if (argv[i] === "--root") root = resolve(argv[++i] ?? usage());
-		else if (["--file", "--only", "--conditions"].includes(argv[i])) options[argv[i].slice(2)] = argv[++i] ?? usage();
+		else if (["--file", "--only", "--conditions", "--parallel"].includes(argv[i])) options[argv[i].slice(2)] = argv[++i] ?? usage();
 		else args.push(argv[i]);
 	}
 	root ??= findRoot(process.cwd()) ?? process.cwd();
@@ -61,6 +63,7 @@ async function main(argv: string[]): Promise<number> {
 			file: options.file,
 			requirements: list(options.only),
 			conditions: list(options.conditions),
+			parallel: options.parallel === undefined ? undefined : positive(options.parallel),
 		});
 		console.log(formatVerdict(root, verdict));
 		return verdict.status === "pass" ? 0 : 1;

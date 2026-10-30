@@ -104,6 +104,8 @@ Rules:
   `complete` to `false` and adds a diagnostic.
 - A measurement that the tool did not give has status `failed` or `missing` and the value `null`. It is never
   omitted.
+- A measurement can have the optional field `at`: the sweep point where a reduced value (for example a minimum
+  over a sweep) occurs, such as `{"vcm": 0.4}`.
 - `tool` records the exact tool and version, so that a result can be traced.
 - The adapter writes logs to files in `work_dir` or to stderr. It does not write results to stdout.
 - The adapter does not contain PDK facts (for example the parameter names of a MOS model). It reads them from

@@ -133,3 +133,110 @@ test("an invalid requirements file names every problem and runs nothing", async 
 	await assert.rejects(runCheck({ root: designRoot(t, amplifier), requirements: ["nope"] }), /requirement "nope" is not defined/);
 	assert.equal(existsSync(join(root, "simra")), false);
 });
+
+// A sweep experiment: the fake adapter reports <name>.min and <name>.max with the sweep point in "at".
+const sweep = {
+	schema: "simra.requirements/0",
+	conditions: {
+		tt: {
+			inputs: {
+				values: { "gain_db.min": 52, "gain_db.max": 61, "idd_a.min": 1e-4, "idd_a.max": 1.4e-4, "pm_deg.min": 58, "pm_deg.max": 70 },
+				at: {
+					"gain_db.min": { vcm: 0.4 },
+					"gain_db.max": { vcm: 0.55 },
+					"idd_a.max": { vcm: 0.7 },
+					"pm_deg.min": { vcm: 0.7 },
+					"pm_deg.max": { vcm: 0.4 },
+				},
+			},
+		},
+		ss: { inputs: { values: { "gain_db.min": null, "gain_db.max": 60, "idd_a.min": 1e-4, "idd_a.max": 1.2e-4, "pm_deg.min": 62, "pm_deg.max": 89 } } },
+	},
+	experiments: {
+		dc_sweep: { adapter: "fake", operation: "run", inputs: { mode: "values", units: { "gain_db.min": "dB", "gain_db.max": "dB", "pm_deg.min": "deg", "pm_deg.max": "deg" } } },
+	},
+	requirements: [
+		{ id: "gain", experiment: "dc_sweep", measurement: "gain_db", unit: "dB", op: ">=", limit: 50, conditions: ["tt", "ss"] },
+		{ id: "idd", experiment: "dc_sweep", measurement: "idd_a", op: "<=", limit: 1.3e-4, conditions: ["tt", "ss"] },
+		{ id: "pm", experiment: "dc_sweep", measurement: "pm_deg", unit: "deg", op: "between", limit: [60, 90], conditions: ["tt", "ss"] },
+	],
+};
+
+test("a sweep row uses the worst point for its op and names the point", async (t) => {
+	const root = designRoot(t, sweep);
+	const { verdict } = await runCheck({ root });
+
+	// >= uses .min.
+	const gain = row(verdict.rows, "gain", "tt");
+	assert.deepEqual([gain.status, gain.value, gain.margin, gain.at], ["pass", 52, 2, { vcm: 0.4 }]);
+	// <= uses .max.
+	const idd = row(verdict.rows, "idd", "tt");
+	assert.deepEqual([idd.status, idd.value, idd.at], ["fail", 1.4e-4, { vcm: 0.7 }]);
+	assert.equal(row(verdict.rows, "idd", "ss").status, "pass");
+	// between uses both sides; the side with the smaller margin gives the value and the point.
+	const pm = row(verdict.rows, "pm", "tt");
+	assert.deepEqual([pm.status, pm.value, pm.margin, pm.at], ["fail", 58, -2, { vcm: 0.7 }]);
+	const pmSs = row(verdict.rows, "pm", "ss");
+	assert.deepEqual([pmSs.status, pmSs.value, pmSs.margin], ["pass", 89, 1]);
+	assert.equal(pmSs.at, null, "the fake adapter gives no point here");
+	// A sweep entry without a value is not measured, never a pass.
+	const gainSs = row(verdict.rows, "gain", "ss");
+	assert.equal(gainSs.status, "not_measured");
+	assert.match(gainSs.reason ?? "", /gave no value for gain_db\.min/);
+
+	assert.match(formatVerdict(root, verdict), /FAIL {9}pm @ tt: 58 deg @ vcm=0\.7, limit 60\.\.90/);
+	assert.match(formatVerdict(root, verdict), /PASS {9}gain @ tt: 52 dB @ vcm=0\.4, limit >= 50/);
+});
+
+test("a sweep comes before a scalar of the same name", async (t) => {
+	const root = designRoot(t, {
+		...sweep,
+		conditions: { tt: { inputs: { values: { gain_db: 60, "gain_db.min": 45, "gain_db.max": 61 }, at: { "gain_db.min": { vcm: 0.4 } } } } },
+		requirements: [sweep.requirements[0]].map((r) => ({ ...r, conditions: ["tt"] })),
+	});
+	const { verdict } = await runCheck({ root });
+	assert.deepEqual([verdict.rows[0].status, verdict.rows[0].value, verdict.rows[0].at], ["fail", 45, { vcm: 0.4 }]);
+});
+
+test("parallel runs give the same verdict and keep the experiment order", async (t) => {
+	const conditions = Object.fromEntries(
+		["c1", "c2", "c3", "c4", "c5", "c6"].map((c, i) => [c, { inputs: { values: { gain_db: 55 + i, ugf_hz: 1e7 } } }]),
+	);
+	const file = {
+		...amplifier,
+		conditions,
+		experiments: { ...amplifier.experiments, dc: { ...amplifier.experiments.ac, inputs: { ...amplifier.experiments.ac.inputs, tag: "dc_{condition}" } } },
+		requirements: [
+			{ ...amplifier.requirements[0], conditions: Object.keys(conditions) },
+			{ ...amplifier.requirements[1], experiment: "dc", limit: 1e7, conditions: Object.keys(conditions) },
+		],
+	};
+	const strip = (v: Awaited<ReturnType<typeof runCheck>>["verdict"]) => ({
+		status: v.status,
+		counts: v.counts,
+		experiments: v.experiments.map((e) => [e.experiment, e.condition, e.status]),
+		rows: v.rows.map(({ experiment: _, ...rest }) => rest),
+	});
+	const one = await runCheck({ root: designRoot(t, file), parallel: 1 });
+	const four = await runCheck({ root: designRoot(t, file), parallel: 4 });
+	assert.deepEqual(strip(four.verdict), strip(one.verdict));
+	assert.deepEqual(
+		four.verdict.experiments.map((e) => `${e.experiment}@${e.condition}`),
+		[...Object.keys(conditions).map((c) => `ac@${c}`), ...Object.keys(conditions).map((c) => `dc@${c}`)],
+	);
+	// Each row names the experiment that ran at its condition.
+	for (const r of four.verdict.rows) {
+		const e = four.verdict.experiments.find((x) => x.id === r.experiment);
+		assert.equal(e?.condition, r.condition);
+	}
+	assert.equal(four.verdict.counts.fail, 3);
+});
+
+test("an aborted check starts no new experiment", async (t) => {
+	const root = designRoot(t, amplifier);
+	const controller = new AbortController();
+	controller.abort();
+	const { verdict } = await runCheck({ root, signal: controller.signal });
+	assert.equal(verdict.experiments.length, 0);
+	assert.equal(verdict.counts.not_run, 4);
+});

@@ -1,5 +1,6 @@
 // Test adapter. inputs.mode: ok | failed | crash | invalid-json | wrong-contract | bad-exit | sleep | values
 // "values": inputs.values {name: number | null} become the measurements, with units from inputs.units.
+// "values" also takes inputs.at {name: {sweep: value}}: the "at" of that measurement (a sweep point).
 import { writeFileSync } from "node:fs";
 
 const request = JSON.parse((await import("node:fs")).readFileSync(process.argv[2], "utf8"));
@@ -21,6 +22,7 @@ else if (mode === "values") {
 	for (const [name, value] of Object.entries(request.inputs.values ?? {})) {
 		const unit = request.inputs.units?.[name] ?? null;
 		measurements[name] = value === null ? { value: null, unit, status: "missing" } : { value, unit, status: "measured" };
+		if (request.inputs.at?.[name]) measurements[name].at = request.inputs.at[name];
 	}
 	respond({ ...ok, measurements });
 }

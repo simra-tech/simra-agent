@@ -11,6 +11,19 @@ Operation "simulate". Inputs:
   measurements  optional map {name: unit}. Names are read from "name = value" lines in the ngspice output
                 (from "meas" or "print"). The unit is declared by the caller; the adapter does not check it.
                 Without this map, the adapter reports every "name = value" line it finds.
+  params        optional map {name: number or string}. Each becomes a ".param name=value" line after the deck
+                include. A string is written as is ("2p", "{vdd/2}"). ngspice uses the last definition of a
+                name, so this value replaces a ".param" of the same name in the deck.
+  temp_c        optional number. It becomes a ".temp" line after the deck include, so it replaces a ".temp" line
+                of the deck (".option temp=" does not).
+
+Sweep table. A sweep bench prints one line per sweep point from its .control block:
+  ROW <sweep>=<value> <name>=<value> ...
+for example "echo ROW vcm=$vcm gain_db=$&gain_db" in a foreach loop. The first key is the sweep variable. A value
+is a number, optionally with a SPICE scale suffix (1k); a value that is empty or not a number means "no value at this
+point". The adapter writes the table to work/sweep.json and
+reports <name>.min and <name>.max for each column, with "at" ({<sweep>: value}, where the value occurs). Each is
+"measured" only when every sweep point has a value; else it is "failed", so a missing point can never pass.
 
 The adapter hashes every file that the simulation reads (deck, includes, libraries, .spiceinit, OSDI models)
 and every file that it writes. It never decides whether a result is good: it reports execution status only.
@@ -32,6 +45,7 @@ Operation "lint". Inputs:
 
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -48,6 +62,9 @@ OSDI_LINE = re.compile(r"^\s*osdi\s+(.*)$", re.IGNORECASE)
 SOURCEPATH_LINE = re.compile(r"^\s*setcs\s+sourcepath\s*=\s*\((.*)\)", re.IGNORECASE)
 OPTION_LINE = re.compile(r"^\s*\.?options?\s+(.*)$", re.IGNORECASE)
 OPTION_ASSIGN = re.compile(r"([A-Za-z_]\w*)\s*=\s*([^\s,]+)")
+ROW_LINE = re.compile(r"^\s*ROW\s+(.*)$")
+ROW_NUMBER = re.compile(r"^(" + NUMBER + r")(meg|[tgkmunpf])?$", re.IGNORECASE)
+PARAM_NAME = re.compile(r"^[A-Za-z_]\w*$")
 MAX_DIAGNOSTICS = 50
 GMIN_DEFAULT = 1e-12
 SCALE = {"t": 1e12, "g": 1e9, "meg": 1e6, "k": 1e3, "m": 1e-3, "u": 1e-6, "n": 1e-9, "p": 1e-12, "f": 1e-15}
@@ -234,8 +251,69 @@ def add_spiceinit(closure, path):
                     closure.missing.append("{} (from {})".format(target, path))
 
 
+def row_number(text):
+    """A ROW value: a number, optionally with a SPICE scale suffix (1k), or None."""
+    m = ROW_NUMBER.match(text)
+    if not m:
+        return None
+    value = float(m.group(1)) * SCALE.get((m.group(2) or "").lower(), 1)
+    return value if math.isfinite(value) else None
+
+
+def parse_rows(lines):
+    """(table, sources) from the ROW lines of ngspice output, or (None, []) without ROW lines.
+
+    table is {"sweep", "columns", "rows"} as in work/sweep.json; sources[i] is the log line of rows[i]."""
+    sweep, columns, rows, sources = None, [], [], []
+    for number, line in enumerate(lines, 1):
+        m = ROW_LINE.match(line)
+        if not m:
+            continue
+        row = {}
+        for token in m.group(1).split():
+            key, sep, text = token.partition("=")
+            if not sep or not key:
+                continue
+            if sweep is None:
+                sweep = key
+            elif key != sweep and key not in columns:
+                columns.append(key)
+            row[key] = row_number(text)
+        rows.append(row)
+        sources.append("work/ngspice.log:{}".format(number))
+    if sweep is None:
+        return None, []
+    # A key that a line does not have is "no value" at that point.
+    rows = [dict([(sweep, r.get(sweep))] + [(c, r.get(c)) for c in columns]) for r in rows]
+    return {"sweep": sweep, "columns": columns, "rows": rows}, sources
+
+
+def sweep_measurements(table, sources, wanted):
+    """(measurements, diagnostics): <column>.min and <column>.max for each column of the sweep table that is
+    wanted (each column when wanted is empty). A column with a point without value gives "failed", not a value."""
+    measurements, diagnostics = {}, []
+    sweep, rows = table["sweep"], table["rows"]
+    for c in table["columns"]:
+        if wanted and c not in wanted:
+            continue
+        unit = wanted.get(c) if wanted else None
+        empty = [i for i, r in enumerate(rows) if r[c] is None]
+        if not rows or empty:
+            diagnostics.append({"severity": "warning", "source": sources[empty[0]] if empty else "work/ngspice.log",
+                                "message": "{}: {} of {} sweep points have no value".format(c, len(empty), len(rows))})
+            for side in ("min", "max"):
+                measurements["{}.{}".format(c, side)] = {"value": None, "unit": unit, "status": "failed",
+                                                         "source": sources[empty[0]] if empty else None, "at": None}
+            continue
+        for side, pick in (("min", min), ("max", max)):
+            i = pick(range(len(rows)), key=lambda k: rows[k][c])
+            measurements["{}.{}".format(c, side)] = {"value": rows[i][c], "unit": unit, "status": "measured",
+                                                     "source": sources[i], "at": {sweep: rows[i][sweep]}}
+    return measurements, diagnostics
+
+
 def parse_log(lines, wanted):
-    """Return (measurements, diagnostics) from ngspice output lines."""
+    """Return (measurements, diagnostics) from ngspice output lines, with the sweep measurements of ROW lines."""
     found = {}
     counts = {}
     failed = {}
@@ -255,9 +333,14 @@ def parse_log(lines, wanted):
         if m and len(diagnostics) < MAX_DIAGNOSTICS:
             diagnostics.append({"severity": m.group(1).lower(), "message": line.strip(), "source": source})
 
+    table, sources = parse_rows(lines)
+    columns = table["columns"] if table else []
     names = list(wanted.keys()) if wanted else sorted(found.keys())
     measurements = {}
     for name in names:
+        # A wanted ROW column is reported as <name>.min and <name>.max (below), not as a missing scalar.
+        if name in columns and name not in found and name not in failed:
+            continue
         unit = wanted.get(name) if wanted else None
         if name in found:
             value, source = found[name]
@@ -270,6 +353,10 @@ def parse_log(lines, wanted):
             measurements[name] = {"value": None, "unit": unit, "status": "failed", "source": failed[name][1]}
         else:
             measurements[name] = {"value": None, "unit": unit, "status": "missing"}
+    if table:
+        sweep, sweep_diagnostics = sweep_measurements(table, sources, wanted)
+        measurements.update(sweep)
+        diagnostics.extend(sweep_diagnostics)
     return measurements, diagnostics
 
 
@@ -312,6 +399,33 @@ def deck_and_libs(root, inputs):
     return deck_path, libs, None
 
 
+def spice_value(value):
+    return repr(value) if isinstance(value, float) else str(value)
+
+
+def condition_lines(inputs):
+    """(the .param and .temp lines of the inputs params and temp_c, None), or (None, error message)."""
+    params, temp_c = inputs.get("params"), inputs.get("temp_c")
+    lines = []
+    if params is not None:
+        if not isinstance(params, dict):
+            return None, "input 'params' must be an object {name: number or string}"
+        for name in sorted(params):
+            value = params[name]
+            number = isinstance(value, (int, float)) and not isinstance(value, bool)
+            if not PARAM_NAME.match(name):
+                return None, "input 'params': '{}' is not a parameter name".format(name)
+            if not (number and math.isfinite(value)) and not (isinstance(value, str) and value.strip()
+                                                               and "\n" not in value and "\r" not in value):
+                return None, "input 'params': the value of '{}' must be a finite number or a one-line string".format(name)
+            lines.append(".param {}={}".format(name, spice_value(value)))
+    if temp_c is not None:
+        if isinstance(temp_c, bool) or not isinstance(temp_c, (int, float)) or not math.isfinite(temp_c):
+            return None, "input 'temp_c' must be a finite number (degrees Celsius)"
+        lines.append(".temp {}".format(spice_value(temp_c)))
+    return lines, None
+
+
 def simulate(request):
     root = request["root"]
     inputs = request.get("inputs") or {}
@@ -319,12 +433,19 @@ def simulate(request):
     deck_path, libs, error = deck_and_libs(root, inputs)
     if error:
         return failure(tool, error)
+    settings, error = condition_lines(inputs)
+    if error:
+        return failure(tool, error)
     top = os.path.join(request["work_dir"], "top.cir")
     with open(top, "w") as f:
         f.write("* simra ngspice adapter: top level for experiment {}\n".format(request.get("experiment")))
         for path, section in libs:
             f.write('.lib "{}"{}\n'.format(path, " " + section if section else ""))
-        f.write('.include "{}"\n.end\n'.format(os.path.realpath(deck_path)))
+        f.write('.include "{}"\n'.format(os.path.realpath(deck_path)))
+        # After the include: ngspice uses the last .param and .temp line, so these replace the deck's values.
+        for line in settings:
+            f.write(line + "\n")
+        f.write(".end\n")
     return run(request, tool, "top.cir", deck_path, libs, inputs.get("measurements") or {})
 
 
@@ -362,9 +483,15 @@ def run(request, tool, top_name, deck_path, libs, wanted, extra_inputs=()):
         except OSError as e:
             return failure(tool, "could not start ngspice: {}".format(e))
     with open(log_path, errors="replace") as f:
-        measurements, log_diagnostics = parse_log(f.read().splitlines(), wanted or {})
+        log_lines = f.read().splitlines()
+    measurements, log_diagnostics = parse_log(log_lines, wanted or {})
     if wanted is None:
         measurements = {}
+    table, _ = parse_rows(log_lines)
+    if table:
+        with open(os.path.join(work_dir, "sweep.json"), "w") as f:
+            json.dump(table, f, indent=2)
+            f.write("\n")
     diagnostics.extend(log_diagnostics)
     if code != 0:
         diagnostics.insert(0, {"severity": "error", "message": "ngspice exited with code {}".format(code), "source": "adapter"})

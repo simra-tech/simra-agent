@@ -55,10 +55,11 @@ export function formatVerdict(root: string, verdict: VerdictRecord): string {
 	for (const r of rows) {
 		const unit = r.unit ? ` ${r.unit}` : "";
 		const value = r.value === null ? "-" : `${num(r.value)}${unit}`;
+		const at = r.at ? ` @ ${Object.entries(r.at).map(([k, v]) => `${k}=${typeof v === "number" ? num(v) : String(v)}`).join(" ")}` : "";
 		const margin = r.margin_rel === null ? (r.margin === null ? "" : ` margin ${num(r.margin)}${unit}`) : ` margin ${(r.margin_rel * 100).toFixed(1)}%`;
 		const source = r.experiment ? ` [${r.experiment}]` : "";
 		const reason = r.reason ? ` (${r.reason})` : "";
-		lines.push(`  ${r.status.toUpperCase().padEnd(12)} ${r.requirement} @ ${r.condition}: ${value}, limit ${limitText(r.op, r.limit)}${margin}${source}${reason}`);
+		lines.push(`  ${r.status.toUpperCase().padEnd(12)} ${r.requirement} @ ${r.condition}: ${value}${at}, limit ${limitText(r.op, r.limit)}${margin}${source}${reason}`);
 	}
 	const unselected = verdict.rows.length - rows.length;
 	if (unselected) lines.push(`  NOT_RUN      ${unselected} more row${unselected === 1 ? "" : "s"}: ${NOT_SELECTED} (listed in verdict.json)`);

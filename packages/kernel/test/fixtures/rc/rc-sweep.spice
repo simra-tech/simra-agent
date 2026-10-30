@@ -1,0 +1,14 @@
+* RC low-pass, swept resistor. Known answer: f3db = 1 / (2 pi R C) for R = 1k, 2k, 4k.
+* The default C (1n) puts f3db above the AC range: the test gives C = 1u through the input params.
+.param cval=1n
+V1 in 0 dc 0 ac 1
+R1 in out 1k
+C1 out 0 {cval}
+.control
+foreach r 1k 2k 4k
+  alter R1 $r
+  ac dec 100 1 100k
+  meas ac f3 when vdb(out)=-3.0103
+  echo ROW r=$r f3db_hz=$&f3
+end
+.endc

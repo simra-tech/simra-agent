@@ -1,5 +1,6 @@
 """Unit tests for the ngspice adapter. They do not need ngspice."""
 
+import json
 import os
 import shutil
 import tempfile
@@ -11,8 +12,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURES = os.path.join(HERE, "fixtures")
 
 
-def read_log():
-    with open(os.path.join(FIXTURES, "ngspice.log")) as f:
+def read_log(name="ngspice.log"):
+    with open(os.path.join(FIXTURES, name)) as f:
         return f.read().splitlines()
 
 
@@ -44,6 +45,54 @@ class ParseLogTest(unittest.TestCase):
     def test_analysis_banner_is_not_a_value(self):
         m, _ = adapter.parse_log(["Doing analysis at TEMP = 27.000000 and TNOM = 27.000000"], {})
         self.assertEqual(m, {})
+
+
+class SweepTest(unittest.TestCase):
+    """fixtures/sweep.log has three ROW lines (vcm = 0.4, 0.55, 0.7). pm_deg has no value at vcm = 0.55, and
+    only the last line has the key "extra"."""
+
+    def test_table(self):
+        table, sources = adapter.parse_rows(read_log("sweep.log"))
+        self.assertEqual(table["sweep"], "vcm")
+        self.assertEqual(table["columns"], ["idd_a", "gain_db", "pm_deg", "extra"])
+        self.assertEqual(table["rows"][1], {"vcm": 0.55, "idd_a": 1.25e-4, "gain_db": 50.0, "pm_deg": None, "extra": None})
+        self.assertEqual(table["rows"][2]["extra"], 1.0)
+        self.assertEqual(sources, ["work/ngspice.log:4", "work/ngspice.log:7", "work/ngspice.log:9"])
+        self.assertEqual(adapter.parse_rows(read_log()), (None, []))
+
+    def test_row_values(self):
+        self.assertEqual([adapter.row_number(t) for t in ("1k", "2.5e-3", "1meg", "", "nan", "$&x", "1e999", "4kx")],
+                         [1e3, 2.5e-3, 1e6, None, None, None, None, None])
+
+    def test_min_and_max_with_the_sweep_point(self):
+        m, diags = adapter.parse_log(read_log("sweep.log"), {"gain_db": "dB", "pm_deg": "deg"})
+        self.assertEqual(m["gain_db.min"], {"value": 48.51, "unit": "dB", "status": "measured",
+                                            "source": "work/ngspice.log:4", "at": {"vcm": 0.4}})
+        self.assertEqual(m["gain_db.max"], {"value": 50.0, "unit": "dB", "status": "measured",
+                                            "source": "work/ngspice.log:7", "at": {"vcm": 0.55}})
+        # A point without a value: never a value, and one warning.
+        self.assertEqual(m["pm_deg.min"], {"value": None, "unit": "deg", "status": "failed",
+                                           "source": "work/ngspice.log:7", "at": None})
+        self.assertEqual(m["pm_deg.max"]["status"], "failed")
+        self.assertEqual([d["message"] for d in diags], ["pm_deg: 1 of 3 sweep points have no value"])
+        # A wanted ROW column is not a missing scalar; columns that are not wanted are not reported.
+        self.assertEqual(sorted(m), ["gain_db.max", "gain_db.min", "pm_deg.max", "pm_deg.min"])
+
+    def test_all_columns_without_request(self):
+        m, diags = adapter.parse_log(read_log("sweep.log"), {})
+        self.assertEqual(sorted(m), ["extra.max", "extra.min", "gain", "gain_db.max", "gain_db.min", "idd_a.max",
+                                     "idd_a.min", "pm_deg.max", "pm_deg.min"])
+        self.assertIsNone(m["idd_a.max"]["unit"])
+        self.assertEqual(m["idd_a.max"]["at"], {"vcm": 0.7})
+        self.assertEqual(m["extra.min"]["status"], "failed")
+        self.assertIn("extra: 2 of 3 sweep points have no value", [d["message"] for d in diags])
+
+    def test_scalar_and_column_are_independent(self):
+        log = read_log("sweep.log") + ["gain_db = 4.7e+01"]
+        m, _ = adapter.parse_log(log, {"gain_db": "dB", "noise": "V"})
+        self.assertEqual(m["gain_db"]["value"], 47.0)
+        self.assertEqual(m["gain_db.min"]["value"], 48.51)
+        self.assertEqual(m["noise"]["status"], "missing")
 
 
 class ClosureTest(unittest.TestCase):
@@ -182,6 +231,63 @@ class SimulateInputTest(unittest.TestCase):
         self.assertEqual(open(os.path.join(self.work, "ngspice.log")).read().splitlines()[1],
                          "input_dir = " + os.path.realpath(self.root))
         self.assertEqual([(d["severity"], d["source"]) for d in r["diagnostics"]], [("warning", "tb.spice:2")])
+
+
+    def fake_ngspice(self, script):
+        """A stand-in for ngspice on PATH, for this test only."""
+        bin_dir = os.path.join(self.root, "bin")
+        os.mkdir(bin_dir)
+        with open(os.path.join(bin_dir, "ngspice"), "w") as f:
+            f.write("#!/bin/sh\n" + script)
+        os.chmod(os.path.join(bin_dir, "ngspice"), 0o755)
+        path = os.environ["PATH"]
+        os.environ["PATH"] = bin_dir + os.pathsep + path
+        self.addCleanup(os.environ.__setitem__, "PATH", path)
+
+    def test_params_and_temp_follow_the_include(self):
+        self.fake_ngspice("cat '{}'\n".format(os.path.join(FIXTURES, "sweep.log")))
+        with open(os.path.join(self.root, "tb.spice"), "w") as f:
+            f.write("* tb\n.param cl=1p\n.temp 27\n")
+        r = adapter.simulate(self.request({"deck": "tb.spice", "temp_c": -40,
+                                           "params": {"vdd": 1.2, "cl": "2p", "vcm": "{vdd/2}", "n": 3}}))
+        self.assertEqual(r["status"], "completed")
+        with open(os.path.join(self.work, "top.cir")) as f:
+            body = f.read().splitlines()
+        self.assertEqual(body[1:], ['.include "{}"'.format(os.path.realpath(os.path.join(self.root, "tb.spice"))),
+                                    ".param cl=2p", ".param n=3", ".param vcm={vdd/2}", ".param vdd=1.2", ".temp -40",
+                                    ".end"])
+        # The sweep table is a hashed output.
+        with open(os.path.join(self.work, "sweep.json")) as f:
+            table = json.load(f)
+        self.assertEqual(table, adapter.parse_rows(read_log("sweep.log"))[0])
+        self.assertIn("work/sweep.json", [o["path"] for o in r["outputs"]])
+        self.assertEqual(r["measurements"]["gain_db.min"]["at"], {"vcm": 0.4})
+
+    def test_no_sweep_table_without_rows(self):
+        self.fake_ngspice("echo 'gain_db = 46.1'\n")
+        with open(os.path.join(self.root, "tb.spice"), "w") as f:
+            f.write("* tb\n")
+        r = adapter.simulate(self.request({"deck": "tb.spice"}))
+        self.assertEqual(r["status"], "completed")
+        self.assertFalse(os.path.exists(os.path.join(self.work, "sweep.json")))
+        with open(os.path.join(self.work, "top.cir")) as f:
+            self.assertEqual(f.read().splitlines()[-1], ".end")
+
+    def test_bad_params_and_temp_are_a_failed_run(self):
+        with open(os.path.join(self.root, "tb.spice"), "w") as f:
+            f.write("* tb\n")
+        for inputs, message in (({"params": [1]}, "input 'params' must be an object"),
+                                ({"params": {"cl": None}}, "the value of 'cl' must be a finite number"),
+                                ({"params": {"cl": True}}, "the value of 'cl' must be a finite number"),
+                                ({"params": {"cl": float("inf")}}, "the value of 'cl' must be a finite number"),
+                                ({"params": {"cl": "1p\n.option rshunt=1"}}, "one-line string"),
+                                ({"params": {"c l": 1}}, "'c l' is not a parameter name"),
+                                ({"temp_c": "27"}, "input 'temp_c' must be a finite number"),
+                                ({"temp_c": float("nan")}, "input 'temp_c' must be a finite number")):
+            r = adapter.simulate(self.request(dict(inputs, deck="tb.spice")))
+            self.assertEqual(r["status"], "failed", inputs)
+            self.assertIn(message, r["diagnostics"][0]["message"])
+            self.assertFalse(os.path.exists(os.path.join(self.work, "top.cir")))
 
 
 class OperatingPointTest(unittest.TestCase):

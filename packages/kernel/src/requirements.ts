@@ -7,12 +7,16 @@
 // A check runs the experiments that the selected requirements need (one per experiment and condition) and
 // compares each measurement with its limit. result.json keeps the execution status; only the verdict says
 // "pass" or "fail", and each verdict row names the experiment that gave its value.
+//
+// A sweep experiment reports <measurement>.min and <measurement>.max instead of one value. A row then uses the
+// worst point for its op (>=: .min, <=: .max, between: both) and gives the sweep point in "at".
 
 import { existsSync, mkdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import {
 	type ExecutionStatus,
 	type ExperimentRecord,
+	type Measurement,
 	newExperimentId,
 	readJson,
 	type ResultRecord,
@@ -82,6 +86,8 @@ export interface VerdictRow {
 	status: RowStatus;
 	experiment: string | null;
 	reason: string | null;
+	/** The sweep point of the value, when it is the worst point of a sweep (for example {"vcm": 0.4}). */
+	at: Record<string, number> | null;
 }
 
 export interface VerdictRecord {
@@ -107,6 +113,8 @@ export interface CheckOptions {
 	requirements?: string[];
 	/** Check only these conditions. The others are recorded as not run. */
 	conditions?: string[];
+	/** Number of experiments that run at the same time (default 4; 1 runs them one at a time). */
+	parallel?: number;
 	signal?: AbortSignal;
 }
 
@@ -208,22 +216,38 @@ export function evaluateRow(
 		status: "not_run",
 		experiment: run?.id ?? null,
 		reason: null,
+		at: null,
 	};
 	if (!run) return { ...row, reason: notRunReason };
 	if (run.result.status !== "completed") {
 		return { ...row, reason: `experiment ${run.id} ended with status ${run.result.status}` };
 	}
-	const m = run.result.measurements[r.measurement];
-	if (!m || m.status !== "measured" || !isNumber(m.value)) {
-		return { ...row, status: "not_measured", reason: `experiment ${run.id} gave no value for ${r.measurement}` };
+	const measurements = run.result.measurements;
+	const valid = (m: Measurement | undefined): m is Measurement & { value: number } =>
+		!!m && m.status === "measured" && isNumber(m.value);
+	// A sweep gives <measurement>.min and .max. The row uses the worst point: .min for >=, .max for <=, both for
+	// between. The sweep comes before a scalar of the same name, which a bench can print at each point (the last wins).
+	const sweep = `${r.measurement}.min` in measurements || `${r.measurement}.max` in measurements;
+	const names = !sweep ? [r.measurement] : r.op === ">=" ? [`${r.measurement}.min`] : r.op === "<=" ? [`${r.measurement}.max`] : [`${r.measurement}.min`, `${r.measurement}.max`];
+	for (const name of names) {
+		const m = measurements[name];
+		if (!valid(m)) return { ...row, status: "not_measured", reason: `experiment ${run.id} gave no value for ${name}` };
+		if (r.unit && m.unit && r.unit !== m.unit) {
+			return { ...row, value: m.value, unit: m.unit, status: "not_measured", reason: `unit is ${m.unit}, the requirement expects ${r.unit}` };
+		}
 	}
-	row.value = m.value;
-	row.unit = m.unit ?? r.unit ?? null;
-	if (r.unit && m.unit && r.unit !== m.unit) {
-		return { ...row, status: "not_measured", reason: `unit is ${m.unit}, the requirement expects ${r.unit}` };
-	}
-	const { margin, margin_rel } = compare(r.op, limit, m.value);
-	return { ...row, margin, margin_rel, status: margin >= 0 ? "pass" : "fail" };
+	// The entry with the smallest margin decides the row ("between": the side nearer to its limit).
+	const scored = names.map((name) => ({ m: measurements[name], ...compare(r.op, limit, measurements[name].value as number) }));
+	const worst = scored.reduce((a, b) => (b.margin < a.margin ? b : a));
+	return {
+		...row,
+		value: worst.m.value,
+		unit: worst.m.unit ?? r.unit ?? null,
+		margin: worst.margin,
+		margin_rel: worst.margin_rel,
+		status: worst.margin >= 0 ? "pass" : "fail",
+		at: sweep ? (worst.m.at ?? null) : null,
+	};
 }
 
 export function loadRequirements(root: string, file = REQUIREMENTS_FILE): { path: string; file: RequirementsFile } {
@@ -235,7 +259,7 @@ export function loadRequirements(root: string, file = REQUIREMENTS_FILE): { path
 	return { path, file: parsed };
 }
 
-/** Run the experiments that the selected rows need, one at a time, and write the verdict. */
+/** Run the experiments that the selected rows need, a few at a time (opts.parallel), and write the verdict. */
 export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: string; verdict: VerdictRecord }> {
 	const root = resolve(opts.root);
 	const { path, file } = loadRequirements(root, opts.file);
@@ -254,23 +278,33 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 
 	const id = newExperimentId();
 	const runs = new Map<string, { id: string; result: ResultRecord }>();
-	const experiments: VerdictRecord["experiments"] = [];
-	for (const [key, { experiment, condition }] of pairs) {
-		if (opts.signal?.aborted) break;
-		const t = file.experiments[experiment];
-		const outcome = await runExperiment({
-			root,
-			adapter: t.adapter,
-			operation: t.operation,
-			inputs: experimentInputs(file, experiment, condition),
-			environment: t.environment,
-			timeoutS: t.timeout_s,
-			purpose: `check ${id}: ${experiment} at ${condition}`,
-			signal: opts.signal,
-		});
-		runs.set(key, { id: outcome.id, result: outcome.result });
-		experiments.push({ id: outcome.id, experiment, condition, status: outcome.result.status });
-	}
+	const list = [...pairs];
+	const done: (VerdictRecord["experiments"][number] | null)[] = list.map(() => null);
+	// A few workers take the pairs in order. After an abort, no worker starts a new run.
+	let next = 0;
+	const worker = async () => {
+		while (next < list.length && !opts.signal?.aborted) {
+			const i = next++;
+			const [key, { experiment, condition }] = list[i];
+			const t = file.experiments[experiment];
+			const outcome = await runExperiment({
+				root,
+				adapter: t.adapter,
+				operation: t.operation,
+				inputs: experimentInputs(file, experiment, condition),
+				environment: t.environment,
+				timeoutS: t.timeout_s,
+				purpose: `check ${id}: ${experiment} at ${condition}`,
+				signal: opts.signal,
+			});
+			runs.set(key, { id: outcome.id, result: outcome.result });
+			done[i] = { id: outcome.id, experiment, condition, status: outcome.result.status };
+		}
+	};
+	const parallel = isNumber(opts.parallel) ? Math.max(1, Math.floor(opts.parallel)) : 4;
+	await Promise.all(Array.from({ length: Math.min(parallel, list.length) }, worker));
+	// The experiments in the order of the pairs, as in a run one at a time.
+	const experiments = done.filter((e) => e !== null);
 
 	const rows: VerdictRow[] = [];
 	for (const r of file.requirements) {

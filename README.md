@@ -68,6 +68,15 @@ In pi:
 1. Run `npx pi -e ./packages/pi-extension` in the design root.
 2. Ask for a simulation. The agent calls `run_experiment` and cites the experiment id.
 
+The `simulate` operation of the ngspice adapter takes two optional inputs for the condition of a run:
+
+- `params`: an object `{name: value}`. Each entry becomes a `.param name=value` line after the deck. A number is
+  written as a number. A string is written as is, for example `"2p"` or `"{vdd/2}"`.
+- `temp_c`: a number. It becomes a `.temp` line after the deck.
+
+ngspice uses the last `.param` line of a name and the last `.temp` line, so these lines replace the values in the
+deck. The adapter does not use `.option temp=`, because it does not replace a `.temp` line of the deck.
+
 The design root is the nearest directory upward with `simra.config.json`. It defines the execution
 environments. Put machine-specific settings (image ID, CPU list) in `simra.local.json`, which git ignores.
 See [examples/ota-sg13g2](examples/ota-sg13g2/README.md).
@@ -138,9 +147,40 @@ Example:
 2. Run `npx simra check`. To check a part, add `--only <id,...>` or `--conditions <name,...>`.
 3. Read the verdict. The command exits with 0 only when the status is `pass`.
 
+The check runs 4 experiments at the same time. To change this number, add `--parallel <n>`. With
+`--parallel 1`, the experiments run one at a time.
+
+A condition can give the verification bench its values: for ngspice, put `params` and `temp_c` in the `inputs`
+of the condition (see [Run a simulation](#run-a-simulation)). The bench then comes from the requirements, not
+from a testbench that the agent writes.
+
 The check runs each experiment once per condition, also when more than one requirement reads it. Each row is
 `pass`, `fail`, `not_measured` (no value, or a different unit) or `not_run` (the experiment did not complete,
 or the row was not selected). The status is `pass` only when every row passes. A check of a part is never `pass`.
+
+### Sweeps
+
+A sweep bench checks a requirement over an input range, for example the input common-mode voltage. Its
+`.control` block prints one line per sweep point:
+
+```
+ROW <sweep>=<value> <name>=<value> ...
+```
+
+For example, `echo ROW vcm=$vcm gain_db=$&gain_db pm_deg=$&pm` in a `foreach` loop. The first key is the sweep
+variable. A value is a number, optionally with a SPICE scale suffix such as `1k`. A value that is empty or not
+a number means that the point has no value.
+
+1. The ngspice adapter writes the table to `work/sweep.json`.
+2. For each column `<name>`, it reports `<name>.min` and `<name>.max`. Each has `at`, the sweep point where the
+   value occurs, for example `{"vcm": 0.4}`.
+3. `<name>.min` and `<name>.max` are `measured` only when every sweep point has a value. Otherwise they are
+   `failed`, with a warning. A missing point is never a pass.
+4. A requirement on `<name>` uses the worst point: `.min` for `>=`, `.max` for `<=`, and both for `between`.
+   The verdict row gives `at`, and the summary shows it, for example `@ vcm=0.4`.
+
+When the result has `<name>.min` or `<name>.max`, the check uses them, also when the bench prints a
+`<name> = value` line (for example from `meas` in the loop).
 
 ## Layout
 

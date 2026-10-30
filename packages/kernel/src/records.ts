@@ -27,6 +27,8 @@ export interface Measurement {
 	unit: string | null;
 	status: "measured" | "failed" | "missing";
 	source?: string;
+	/** For a value reduced over a sweep (for example gain_db.min): the sweep point where it occurs. */
+	at?: Record<string, number> | null;
 }
 
 export interface Diagnostic {

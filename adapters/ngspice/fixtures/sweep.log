@@ -1,0 +1,9 @@
+Circuit: * simra ngspice adapter: top level for experiment x
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+gain = 5.012000e+01
+ROW vcm=0.4 idd_a=1.2e-04 gain_db=4.851000e+01 pm_deg=6.500000e+01
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+gain = 5.100000e+01
+ROW vcm=0.55 idd_a=1.25e-04 gain_db=5.000000e+01 pm_deg=
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+ROW vcm=0.7 idd_a=1.3e-04 gain_db=4.900000e+01 pm_deg=6.100000e+01 extra=1
