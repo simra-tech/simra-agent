@@ -10,6 +10,10 @@
 //
 // A sweep experiment reports <measurement>.min and <measurement>.max instead of one value. A row then uses the
 // worst point for its op (>=: .min, <=: .max, between: both) and gives the sweep point in "at".
+//
+// The optional "design" section is the design contract: the design file, its subcircuit and pins, the allowed
+// element kinds and limits. The check runs one more experiment for it (adapter operation check_design, which
+// reads the netlist and the technology pack). The kernel reads no netlist and holds no PDK facts.
 
 import { existsSync, mkdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
@@ -57,8 +61,31 @@ export interface ExperimentTemplate {
 	timeout_s?: number;
 }
 
+export const DESIGN_ELEMENTS = ["mos", "r", "c"] as const;
+/** Maxima: gate_area_um2 is the sum of W x L x m over all MOS devices; r_ohm and c_f apply to each element. */
+export const DESIGN_LIMITS = ["gate_area_um2", "r_ohm", "c_f"] as const;
+/** The adapter and operation that check the design contract when the design section does not name an adapter. */
+export const DESIGN_ADAPTER = "ngspice";
+export const DESIGN_OPERATION = "check_design";
+
+export interface DesignContract {
+	/** The design netlist, relative to the root. */
+	file: string;
+	subckt: string;
+	/** The pins of the subcircuit, in order. */
+	pins: string[];
+	/** Allowed element kinds (default: all). */
+	elements?: (typeof DESIGN_ELEMENTS)[number][];
+	limits?: Partial<Record<(typeof DESIGN_LIMITS)[number], number>>;
+	/** Technology pack name (default: the pack for $PDK). */
+	technology?: string;
+	environment?: string;
+	adapter?: string;
+}
+
 export interface RequirementsFile {
 	schema: typeof REQUIREMENTS_SCHEMA;
+	design?: DesignContract;
 	/** Each condition adds its inputs to the experiment inputs (a condition input replaces an input of the same name). */
 	conditions: Record<string, { description?: string; inputs?: Record<string, unknown> }>;
 	experiments: Record<string, ExperimentTemplate>;
@@ -90,11 +117,25 @@ export interface VerdictRow {
 	at: Record<string, number> | null;
 }
 
+/**
+ * The result of the design contract check. "not_run": the experiment did not complete, or the check was a
+ * selection (requirements or conditions).
+ */
+export interface DesignCheck {
+	file: string;
+	status: "pass" | "fail" | "not_run";
+	experiment: string | null;
+	/** The error diagnostics of the experiment, with file and line. */
+	errors: { message: string; source: string | null }[];
+	measurements: { gate_area_um2?: number; mos_count?: number };
+	reason: string | null;
+}
+
 export interface VerdictRecord {
 	schema: typeof VERDICT_SCHEMA;
 	id: string;
 	created_at: string;
-	/** "pass" only when every row of every requirement passes. A partial check is never "pass". */
+	/** "pass" only when every row of every requirement passes and the design check passes. A partial check is never "pass". */
 	status: "pass" | "fail" | "incomplete";
 	counts: Record<RowStatus, number>;
 	requirements_file: { path: string; sha256: string };
@@ -103,6 +144,8 @@ export interface VerdictRecord {
 	simra: { kernel_version: string };
 	experiments: { id: string; experiment: string; condition: string; status: ExecutionStatus }[];
 	rows: VerdictRow[];
+	/** The design contract check; null when the requirements file has no design section. */
+	design_check: DesignCheck | null;
 }
 
 export interface CheckOptions {
@@ -129,6 +172,39 @@ function validLimit(op: Requirement["op"], limit: unknown): boolean {
 	return isNumber(limit);
 }
 
+const PIN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const isText = (x: unknown): x is string => typeof x === "string" && x.length > 0;
+
+function validateDesign(d: DesignContract): string[] {
+	if (!d || typeof d !== "object" || Array.isArray(d)) return ["design: give an object"];
+	const errors: string[] = [];
+	if (!isText(d.file)) errors.push("design: file is required (the design netlist, relative to the design root)");
+	if (!isText(d.subckt)) errors.push("design: subckt is required");
+	if (!Array.isArray(d.pins) || d.pins.length === 0) errors.push("design: give at least one pin");
+	else {
+		const bad = d.pins.filter((p) => typeof p !== "string" || !PIN.test(p));
+		if (bad.length) errors.push(`design: pins ${bad.map((p) => JSON.stringify(p)).join(", ")} are not identifiers`);
+		const lower = d.pins.map((p) => String(p).toLowerCase());
+		if (new Set(lower).size !== lower.length) errors.push("design: a pin is given more than once");
+	}
+	if (d.elements !== undefined) {
+		if (!Array.isArray(d.elements)) errors.push(`design: elements is a list of ${DESIGN_ELEMENTS.join(", ")}`);
+		else for (const k of d.elements) if (!DESIGN_ELEMENTS.includes(k)) errors.push(`design: element kind ${JSON.stringify(k)} is not one of ${DESIGN_ELEMENTS.join(", ")}`);
+	}
+	if (d.limits !== undefined) {
+		if (!d.limits || typeof d.limits !== "object" || Array.isArray(d.limits)) errors.push("design: limits is an object");
+		else
+			for (const [k, v] of Object.entries(d.limits)) {
+				if (!(DESIGN_LIMITS as readonly string[]).includes(k)) errors.push(`design: limit ${k} is not one of ${DESIGN_LIMITS.join(", ")}`);
+				else if (!isNumber(v) || v <= 0) errors.push(`design: limit ${k} is not a positive number`);
+			}
+	}
+	for (const k of ["technology", "environment", "adapter"] as const) {
+		if (d[k] !== undefined && !isText(d[k])) errors.push(`design: ${k} is not a name`);
+	}
+	return errors;
+}
+
 /** Every problem in the file, so that the author can fix them all at once. An empty list means valid. */
 export function validateRequirements(file: RequirementsFile): string[] {
 	const errors: string[] = [];
@@ -138,6 +214,7 @@ export function validateRequirements(file: RequirementsFile): string[] {
 	for (const [name, e] of Object.entries(experiments)) {
 		if (!e.adapter || !e.operation) errors.push(`experiment "${name}": adapter and operation are required`);
 	}
+	if (file.design !== undefined) errors.push(...validateDesign(file.design));
 	if (!Array.isArray(file.requirements) || file.requirements.length === 0) {
 		errors.push("requirements: give at least one requirement");
 		return errors;
@@ -250,6 +327,29 @@ export function evaluateRow(
 	};
 }
 
+/** The inputs of the design check experiment: the contract without the run settings. */
+export function designInputs(d: DesignContract): Record<string, unknown> {
+	const { environment: _e, adapter: _a, ...inputs } = d;
+	return inputs;
+}
+
+/** The design part of the verdict from the check_design experiment (null: not run). */
+export function evaluateDesign(d: DesignContract, run: { id: string; result: ResultRecord } | null, notRunReason: string): DesignCheck {
+	const check: DesignCheck = { file: d.file, status: "not_run", experiment: run?.id ?? null, errors: [], measurements: {}, reason: null };
+	if (!run) return { ...check, reason: notRunReason };
+	const errors = run.result.diagnostics.filter((x) => x.severity === "error").map((x) => ({ message: x.message, source: x.source ?? null }));
+	if (run.result.status !== "completed") {
+		const first = run.result.errors[0] ?? errors[0]?.message;
+		return { ...check, reason: `experiment ${run.id} ended with status ${run.result.status}${first ? `: ${first}` : ""}` };
+	}
+	const measurements: DesignCheck["measurements"] = {};
+	for (const name of ["gate_area_um2", "mos_count"] as const) {
+		const m = run.result.measurements[name];
+		if (m?.status === "measured" && isNumber(m.value)) measurements[name] = m.value;
+	}
+	return { ...check, status: errors.length ? "fail" : "pass", errors, measurements };
+}
+
 export function loadRequirements(root: string, file = REQUIREMENTS_FILE): { path: string; file: RequirementsFile } {
 	const path = resolve(root, file);
 	if (!existsSync(path)) throw new Error(`requirements file not found: ${relative(root, path) || path}`);
@@ -280,29 +380,46 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 	const runs = new Map<string, { id: string; result: ResultRecord }>();
 	const list = [...pairs];
 	const done: (VerdictRecord["experiments"][number] | null)[] = list.map(() => null);
-	// A few workers take the pairs in order. After an abort, no worker starts a new run.
-	let next = 0;
-	const worker = async () => {
-		while (next < list.length && !opts.signal?.aborted) {
-			const i = next++;
-			const [key, { experiment, condition }] = list[i];
-			const t = file.experiments[experiment];
+	const jobs = list.map(([key, { experiment, condition }], i) => async () => {
+		const t = file.experiments[experiment];
+		const outcome = await runExperiment({
+			root,
+			adapter: t.adapter,
+			operation: t.operation,
+			inputs: experimentInputs(file, experiment, condition),
+			environment: t.environment,
+			timeoutS: t.timeout_s,
+			purpose: `check ${id}: ${experiment} at ${condition}`,
+			signal: opts.signal,
+		});
+		runs.set(key, { id: outcome.id, result: outcome.result });
+		done[i] = { id: outcome.id, experiment, condition, status: outcome.result.status };
+	});
+	// The design contract is checked first, and only in a check of all rows: a selection is never a pass.
+	const partial = opts.requirements !== undefined || opts.conditions !== undefined;
+	let designRun: { id: string; result: ResultRecord } | null = null;
+	const design = file.design;
+	if (design && !partial) {
+		jobs.unshift(async () => {
 			const outcome = await runExperiment({
 				root,
-				adapter: t.adapter,
-				operation: t.operation,
-				inputs: experimentInputs(file, experiment, condition),
-				environment: t.environment,
-				timeoutS: t.timeout_s,
-				purpose: `check ${id}: ${experiment} at ${condition}`,
+				adapter: design.adapter ?? DESIGN_ADAPTER,
+				operation: DESIGN_OPERATION,
+				inputs: designInputs(design),
+				environment: design.environment,
+				purpose: `check ${id}: design check`,
 				signal: opts.signal,
 			});
-			runs.set(key, { id: outcome.id, result: outcome.result });
-			done[i] = { id: outcome.id, experiment, condition, status: outcome.result.status };
-		}
+			designRun = { id: outcome.id, result: outcome.result };
+		});
+	}
+	// A few workers take the jobs in order. After an abort, no worker starts a new run.
+	let next = 0;
+	const worker = async () => {
+		while (next < jobs.length && !opts.signal?.aborted) await jobs[next++]();
 	};
 	const parallel = isNumber(opts.parallel) ? Math.max(1, Math.floor(opts.parallel)) : 4;
-	await Promise.all(Array.from({ length: Math.min(parallel, list.length) }, worker));
+	await Promise.all(Array.from({ length: Math.min(parallel, jobs.length) }, worker));
 	// The experiments in the order of the pairs, as in a run one at a time.
 	const experiments = done.filter((e) => e !== null);
 
@@ -316,12 +433,16 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 	}
 	const counts: Record<RowStatus, number> = { pass: 0, fail: 0, not_measured: 0, not_run: 0 };
 	for (const row of rows) counts[row.status]++;
+	const designCheck = design
+		? evaluateDesign(design, designRun, partial ? "the check is a selection (requirements or conditions)" : "the check was cancelled before this experiment")
+		: null;
+	const designStatus = designCheck?.status ?? "pass";
 
 	const verdict: VerdictRecord = {
 		schema: VERDICT_SCHEMA,
 		id,
 		created_at: new Date().toISOString(),
-		status: counts.fail > 0 ? "fail" : counts.pass === rows.length ? "pass" : "incomplete",
+		status: counts.fail > 0 || designStatus === "fail" ? "fail" : counts.pass === rows.length && designStatus === "pass" ? "pass" : "incomplete",
 		counts,
 		requirements_file: { path: relative(root, path), sha256: sha256File(path) },
 		selection: { requirements: opts.requirements ?? null, conditions: opts.conditions ?? null },
@@ -329,6 +450,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 		simra: { kernel_version: KERNEL_VERSION },
 		experiments,
 		rows,
+		design_check: designCheck,
 	};
 	const dir = join(checksDir(root), id);
 	mkdirSync(dir, { recursive: true });

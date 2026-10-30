@@ -65,7 +65,7 @@ wrdata ac.txt v(out)
 }
 
 /** The results of one design: topology, limits, area, verification and whether it meets the spec. */
-function summary(spec, task, original, design, verification) {
+function summary(spec, task, original, design, { design: _check, ...verification }) {
 	const topology = checkTopology(original, design);
 	const area_um2 = Number(gateArea(design, task.length_unit_m).toFixed(3));
 	const cc_f = spiceNumber(parseOta(design).elements.CC.params.value);

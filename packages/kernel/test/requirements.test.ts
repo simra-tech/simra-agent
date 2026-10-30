@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { formatVerdict, listExperiments, loadExperiment, runCheck, type VerdictRow } from "../src/index.ts";
+import { formatVerdict, listExperiments, loadExperiment, runCheck, validateRequirements, type RequirementsFile, type VerdictRow } from "../src/index.ts";
 
 const fixtures = new URL("./fixtures/", import.meta.url).pathname;
 
@@ -239,4 +239,87 @@ test("an aborted check starts no new experiment", async (t) => {
 	const { verdict } = await runCheck({ root, signal: controller.signal });
 	assert.equal(verdict.experiments.length, 0);
 	assert.equal(verdict.counts.not_run, 4);
+});
+
+// The amplifier with every row inside its limit, and a design contract that the fake adapter checks.
+const passing = {
+	...amplifier,
+	conditions: { ...amplifier.conditions, ss: { inputs: { values: { gain_db: 60, ugf_hz: 8e6 } } } },
+	design: { file: "amp.spice", subckt: "amp", pins: ["inp", "out", "vdd", "vss"], elements: ["mos", "c"], limits: { gate_area_um2: 40 }, adapter: "fake" },
+};
+
+test("the design section is validated with the file", () => {
+	assert.deepEqual(validateRequirements(passing as RequirementsFile), []);
+	const errors = validateRequirements({
+		...passing,
+		design: { file: "", subckt: "amp", pins: ["inp", "INP", "a b"], elements: ["mos", "l"], limits: { gate_area_um2: -1, area: 2 } },
+	} as unknown as RequirementsFile);
+	assert.deepEqual(errors, [
+		"design: file is required (the design netlist, relative to the design root)",
+		'design: pins "a b" are not identifiers',
+		"design: a pin is given more than once",
+		'design: element kind "l" is not one of mos, r, c',
+		"design: limit gate_area_um2 is not a positive number",
+		"design: limit area is not one of gate_area_um2, r_ohm, c_f",
+	]);
+	assert.deepEqual(validateRequirements({ ...passing, design: { subckt: "amp" } } as unknown as RequirementsFile), [
+		"design: file is required (the design netlist, relative to the design root)",
+		"design: give at least one pin",
+	]);
+});
+
+test("the design check runs with the rows; a pass needs a design pass", async (t) => {
+	const root = designRoot(t, passing);
+	writeFileSync(join(root, "amp.spice"), "x1\nx2\nx3\n");
+	const { id, verdict } = await runCheck({ root });
+	assert.equal(verdict.status, "pass");
+	const d = verdict.design_check;
+	assert.deepEqual({ ...d, experiment: null }, {
+		file: "amp.spice", status: "pass", experiment: null, errors: [], measurements: { gate_area_um2: 7.5, mos_count: 3 }, reason: null,
+	});
+	// The design experiment has the contract as inputs, without the run settings; it is not a row experiment.
+	const source = loadExperiment(root, d?.experiment as string);
+	assert.equal(source.experiment.operation, "check_design");
+	assert.deepEqual(source.experiment.inputs, { file: "amp.spice", subckt: "amp", pins: ["inp", "out", "vdd", "vss"], elements: ["mos", "c"], limits: { gate_area_um2: 40 } });
+	assert.equal(source.experiment.purpose, `check ${id}: design check`);
+	assert.equal(verdict.experiments.length, 2);
+	assert.equal(listExperiments(root).length, 3);
+	assert.match(formatVerdict(root, verdict), new RegExp(`\n {2}DESIGN PASS {2}amp\\.spice: 3 MOS, gate area 7\\.5 um2 \\[${d?.experiment}\\]`));
+});
+
+test("a design error fails the check, also when every row passes", async (t) => {
+	const root = designRoot(t, passing);
+	writeFileSync(join(root, "amp.spice"), "x1\nerror V1: a voltage source is not allowed\n");
+	const { verdict } = await runCheck({ root });
+	assert.equal(verdict.status, "fail");
+	assert.equal(verdict.counts.pass, 4);
+	assert.equal(verdict.design_check?.status, "fail");
+	assert.deepEqual(verdict.design_check?.errors, [{ message: "V1: a voltage source is not allowed", source: "amp.spice:2" }]);
+	const text = formatVerdict(root, verdict);
+	assert.match(text, /^check \S+: FAIL \(4 pass, 0 fail/);
+	assert.match(text, /\n {2}DESIGN FAIL {2}amp\.spice: 1 MOS, gate area 2\.5 um2 \[\S+\]\n {4}error \(amp\.spice:2\): V1: a voltage source is not allowed/);
+});
+
+test("a design check that does not complete or is not selected is not run, never a pass", async (t) => {
+	const root = designRoot(t, passing);
+	writeFileSync(join(root, "amp.spice"), "failed\n");
+	const { verdict } = await runCheck({ root });
+	assert.equal(verdict.status, "incomplete");
+	assert.equal(verdict.design_check?.status, "not_run");
+	assert.match(verdict.design_check?.reason ?? "", /^experiment \S+ ended with status failed: fake design failure$/);
+
+	// A selection runs no design experiment.
+	for (const selection of [{ requirements: ["gain", "ugf"] }, { conditions: ["tt", "ss"] }]) {
+		const { verdict: partial } = await runCheck({ root, ...selection });
+		assert.equal(partial.counts.pass, 4);
+		assert.equal(partial.status, "incomplete");
+		assert.deepEqual(partial.design_check, {
+			file: "amp.spice", status: "not_run", experiment: null, errors: [], measurements: {}, reason: "the check is a selection (requirements or conditions)",
+		});
+		assert.match(formatVerdict(root, partial), /\n {2}DESIGN NOT_RUN amp\.spice \(the check is a selection/);
+	}
+	// Without a design section, the verdict has no design check.
+	const { verdict: plain } = await runCheck({ root: designRoot(t, amplifier) });
+	assert.equal(plain.design_check, null);
+	assert.doesNotMatch(formatVerdict(root, plain), /DESIGN/);
 });

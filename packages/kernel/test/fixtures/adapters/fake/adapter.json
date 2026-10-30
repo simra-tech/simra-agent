@@ -3,5 +3,8 @@
   "name": "fake",
   "version": "0.0.1",
   "command": ["node", "{adapter_dir}/fake.mjs"],
-  "operations": { "run": { "description": "Test adapter. inputs.mode selects the behaviour." } }
+  "operations": {
+    "run": { "description": "Test adapter. inputs.mode selects the behaviour." },
+    "check_design": { "description": "Test design check. Lines 'error <text>' of inputs.file are errors." }
+  }
 }

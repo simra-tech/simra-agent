@@ -7,6 +7,150 @@
     "operating_point": {
       "device_letter": "n",
       "params": { "vgs": "vgs", "vth": "vth", "vds": "vds", "vdsat": "vdss", "id": "ids", "gm": "gm", "gds": "gds" }
+    },
+    "size_unit_m": 1,
+    "size_unit_source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_mod.lib (the subcircuit defaults are w=0.35u l=0.34u; the model files set no .option scale)",
+    "devices": {
+      "sg13_lv_nmos": {
+        "kind": "nmos",
+        "terminals": ["d", "g", "s", "b"],
+        "params": {
+          "w": {
+            "role": "width",
+            "required": true,
+            "size": true,
+            "min": 1.5e-07,
+            "per_finger": true,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_mod.lib (w/ng >= 0.15u, wmin=0.15e-6); ihp-sg13g2/libs.tech/klayout/tech/drc/docs/main_rules.md (Act.a 0.15 um)"
+          },
+          "l": {
+            "role": "length",
+            "required": true,
+            "size": true,
+            "min": 1.3e-07,
+            "source": "ihp-sg13g2/libs.tech/klayout/tech/drc/docs/main_rules.md (Gat.a1 0.13 um, 1.2 V NFET)"
+          },
+          "ng": {
+            "role": "fingers",
+            "integer": true,
+            "min": 1,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_mod.lib (ng is passed to the device as nf)"
+          },
+          "m": {
+            "role": "multiplier",
+            "integer": true,
+            "min": 1,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_mod.lib (m is passed to the device as mult)"
+          }
+        },
+        "width_total": true,
+        "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_mod.lib"
+      },
+      "sg13_lv_pmos": {
+        "kind": "pmos",
+        "terminals": ["d", "g", "s", "b"],
+        "params": {
+          "w": {
+            "role": "width",
+            "required": true,
+            "size": true,
+            "min": 1.5e-07,
+            "per_finger": true,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_mod.lib (w/ng >= 0.15u, wmin=0.15e-6); ihp-sg13g2/libs.tech/klayout/tech/drc/docs/main_rules.md (Act.a 0.15 um)"
+          },
+          "l": {
+            "role": "length",
+            "required": true,
+            "size": true,
+            "min": 1.3e-07,
+            "source": "ihp-sg13g2/libs.tech/klayout/tech/drc/docs/main_rules.md (Gat.a2 0.13 um, 1.2 V PFET)"
+          },
+          "ng": {
+            "role": "fingers",
+            "integer": true,
+            "min": 1,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_mod.lib (ng is passed to the device as nf)"
+          },
+          "m": {
+            "role": "multiplier",
+            "integer": true,
+            "min": 1,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_mod.lib (m is passed to the device as mult)"
+          }
+        },
+        "width_total": true,
+        "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_mod.lib"
+      },
+      "sg13_hv_nmos": {
+        "kind": "nmos",
+        "terminals": ["d", "g", "s", "b"],
+        "params": {
+          "w": {
+            "role": "width",
+            "required": true,
+            "size": true,
+            "min": 1.5e-07,
+            "per_finger": true,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moshv_mod.lib (w/ng >= 0.15u, wmin=0.15e-6); ihp-sg13g2/libs.tech/klayout/tech/drc/docs/main_rules.md (Act.a 0.15 um)"
+          },
+          "l": {
+            "role": "length",
+            "required": true,
+            "size": true,
+            "min": 4.5e-07,
+            "source": "ihp-sg13g2/libs.tech/klayout/tech/drc/docs/extra_rules.md (Gat.a3 0.45 um, 3.3 V NFET)"
+          },
+          "ng": {
+            "role": "fingers",
+            "integer": true,
+            "min": 1,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moshv_mod.lib (ng is passed to the device as nf)"
+          },
+          "m": {
+            "role": "multiplier",
+            "integer": true,
+            "min": 1,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moshv_mod.lib (m is passed to the device as mult)"
+          }
+        },
+        "width_total": true,
+        "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moshv_mod.lib"
+      },
+      "sg13_hv_pmos": {
+        "kind": "pmos",
+        "terminals": ["d", "g", "s", "b"],
+        "params": {
+          "w": {
+            "role": "width",
+            "required": true,
+            "size": true,
+            "min": 1.5e-07,
+            "per_finger": true,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moshv_mod.lib (w/ng >= 0.15u, wmin=0.15e-6); ihp-sg13g2/libs.tech/klayout/tech/drc/docs/main_rules.md (Act.a 0.15 um)"
+          },
+          "l": {
+            "role": "length",
+            "required": true,
+            "size": true,
+            "min": 4e-07,
+            "source": "ihp-sg13g2/libs.tech/klayout/tech/drc/docs/extra_rules.md (Gat.a4 0.4 um, 3.3 V PFET)"
+          },
+          "ng": {
+            "role": "fingers",
+            "integer": true,
+            "min": 1,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moshv_mod.lib (ng is passed to the device as nf)"
+          },
+          "m": {
+            "role": "multiplier",
+            "integer": true,
+            "min": 1,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moshv_mod.lib (m is passed to the device as mult)"
+          }
+        },
+        "width_total": true,
+        "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moshv_mod.lib"
+      }
     }
   }
 }

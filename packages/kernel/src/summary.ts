@@ -49,7 +49,16 @@ export function formatVerdict(root: string, verdict: VerdictRecord): string {
 		`check ${verdict.id}: ${verdict.status.toUpperCase()} (${c.pass} pass, ${c.fail} fail, ${c.not_measured} not measured, ${c.not_run} not run; ${verdict.experiments.length} experiment${verdict.experiments.length === 1 ? "" : "s"})`,
 	);
 	lines.push(`record: ${relative(root, join(checksDir(root), verdict.id))}/verdict.json`);
-	if (verdict.status === "incomplete") lines.push("Not every row passed or ran, so this check does not show that the design meets its requirements.");
+	if (verdict.status === "incomplete") lines.push("Not every part of the check passed or ran, so this check does not show that the design meets its requirements.");
+	const d = verdict.design_check;
+	if (d) {
+		const m = d.measurements;
+		const facts = [m.mos_count === undefined ? null : `${m.mos_count} MOS`, m.gate_area_um2 === undefined ? null : `gate area ${num(m.gate_area_um2)} um2`].filter((x) => x !== null);
+		const source = d.experiment ? ` [${d.experiment}]` : "";
+		const reason = d.reason ? ` (${d.reason})` : "";
+		lines.push(`  ${`DESIGN ${d.status.toUpperCase()}`.padEnd(12)} ${d.file}${facts.length ? `: ${facts.join(", ")}` : ""}${source}${reason}`);
+		for (const e of d.errors) lines.push(`    error${e.source ? ` (${e.source})` : ""}: ${e.message}`);
+	}
 	const order: Record<VerdictRow["status"], number> = { fail: 0, not_measured: 1, not_run: 2, pass: 3 };
 	const rows = verdict.rows.filter((r) => r.reason !== NOT_SELECTED).sort((a, b) => order[a.status] - order[b.status]);
 	for (const r of rows) {

@@ -7,6 +7,180 @@
     "operating_point": {
       "device_letter": "m",
       "params": { "vgs": "vgs", "vth": "vth", "vds": "vds", "vdsat": "vdsat", "id": "id", "gm": "gm", "gds": "gds" }
+    },
+    "size_unit_m": 1e-06,
+    "size_unit_source": "sky130A/libs.tech/ngspice/all.spice (.option scale=1.0u)",
+    "devices": {
+      "sky130_fd_pr__nfet_01v8": {
+        "kind": "nmos",
+        "terminals": ["d", "g", "s", "b"],
+        "params": {
+          "w": {
+            "role": "width",
+            "required": true,
+            "size": true,
+            "min": 3.6e-07,
+            "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__nfet_01v8__tt.pm3.spice (smallest wmin of the bins)"
+          },
+          "l": {
+            "role": "length",
+            "required": true,
+            "size": true,
+            "min": 1.5e-07,
+            "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__nfet_01v8__tt.pm3.spice (smallest lmin of the bins)"
+          },
+          "nf": {
+            "role": "fingers",
+            "integer": true,
+            "min": 1,
+            "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__nfet_01v8__tt.pm3.spice (nf is passed to the device)"
+          },
+          "m": {
+            "role": "multiplier",
+            "integer": true,
+            "min": 1,
+            "source": "ngspice instance multiplier of an X line; the subcircuit parameter mult of sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__nfet_01v8__tt.pm3.spice is not passed to the device"
+          }
+        },
+        "width_total": true,
+        "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__nfet_01v8__tt.pm3.spice"
+      },
+      "sky130_fd_pr__pfet_01v8": {
+        "kind": "pmos",
+        "terminals": ["d", "g", "s", "b"],
+        "params": {
+          "w": {
+            "role": "width",
+            "required": true,
+            "size": true,
+            "min": 4.2e-07,
+            "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__pfet_01v8__tt.pm3.spice (smallest wmin of the bins)"
+          },
+          "l": {
+            "role": "length",
+            "required": true,
+            "size": true,
+            "min": 1.5e-07,
+            "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__pfet_01v8__tt.pm3.spice (smallest lmin of the bins)"
+          },
+          "nf": {
+            "role": "fingers",
+            "integer": true,
+            "min": 1,
+            "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__pfet_01v8__tt.pm3.spice (nf is passed to the device)"
+          },
+          "m": {
+            "role": "multiplier",
+            "integer": true,
+            "min": 1,
+            "source": "ngspice instance multiplier of an X line; the subcircuit parameter mult of sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__pfet_01v8__tt.pm3.spice is not passed to the device"
+          }
+        },
+        "width_total": true,
+        "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__pfet_01v8__tt.pm3.spice"
+      },
+      "sky130_fd_pr__nfet_01v8_lvt": {
+        "kind": "nmos",
+        "terminals": ["d", "g", "s", "b"],
+        "params": {
+          "w": {
+            "role": "width",
+            "required": true,
+            "size": true,
+            "min": 4.2e-07,
+            "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__nfet_01v8_lvt__tt.pm3.spice (smallest wmin of the bins)"
+          },
+          "l": {
+            "role": "length",
+            "required": true,
+            "size": true,
+            "min": 1.5e-07,
+            "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__nfet_01v8_lvt__tt.pm3.spice (smallest lmin of the bins)"
+          },
+          "nf": {
+            "role": "fingers",
+            "integer": true,
+            "min": 1,
+            "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__nfet_01v8_lvt__tt.pm3.spice (nf is passed to the device)"
+          },
+          "m": {
+            "role": "multiplier",
+            "integer": true,
+            "min": 1,
+            "source": "ngspice instance multiplier of an X line; the subcircuit parameter mult of sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__nfet_01v8_lvt__tt.pm3.spice is not passed to the device"
+          }
+        },
+        "width_total": true,
+        "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__nfet_01v8_lvt__tt.pm3.spice"
+      },
+      "sky130_fd_pr__pfet_01v8_lvt": {
+        "kind": "pmos",
+        "terminals": ["d", "g", "s", "b"],
+        "params": {
+          "w": {
+            "role": "width",
+            "required": true,
+            "size": true,
+            "min": 4.2e-07,
+            "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__pfet_01v8_lvt__tt.pm3.spice (smallest wmin of the bins)"
+          },
+          "l": {
+            "role": "length",
+            "required": true,
+            "size": true,
+            "min": 3.5e-07,
+            "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__pfet_01v8_lvt__tt.pm3.spice (smallest lmin of the bins)"
+          },
+          "nf": {
+            "role": "fingers",
+            "integer": true,
+            "min": 1,
+            "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__pfet_01v8_lvt__tt.pm3.spice (nf is passed to the device)"
+          },
+          "m": {
+            "role": "multiplier",
+            "integer": true,
+            "min": 1,
+            "source": "ngspice instance multiplier of an X line; the subcircuit parameter mult of sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__pfet_01v8_lvt__tt.pm3.spice is not passed to the device"
+          }
+        },
+        "width_total": true,
+        "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__pfet_01v8_lvt__tt.pm3.spice"
+      },
+      "sky130_fd_pr__pfet_01v8_hvt": {
+        "kind": "pmos",
+        "terminals": ["d", "g", "s", "b"],
+        "params": {
+          "w": {
+            "role": "width",
+            "required": true,
+            "size": true,
+            "min": 3.6e-07,
+            "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__pfet_01v8_hvt__tt.pm3.spice (smallest wmin of the bins)"
+          },
+          "l": {
+            "role": "length",
+            "required": true,
+            "size": true,
+            "min": 1.5e-07,
+            "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__pfet_01v8_hvt__tt.pm3.spice (smallest lmin of the bins)"
+          },
+          "nf": {
+            "role": "fingers",
+            "integer": true,
+            "min": 1,
+            "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__pfet_01v8_hvt__tt.pm3.spice (nf is passed to the device)"
+          },
+          "m": {
+            "role": "multiplier",
+            "integer": true,
+            "min": 1,
+            "source": "ngspice instance multiplier of an X line; the subcircuit parameter mult of sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__pfet_01v8_hvt__tt.pm3.spice is not passed to the device"
+          }
+        },
+        "width_total": true,
+        "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__pfet_01v8_hvt__tt.pm3.spice"
+      }
     }
   }
 }

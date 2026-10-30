@@ -152,7 +152,8 @@ export function loadTask(taskDir) {
  * come from the task. environment (optional) replaces the environment of the experiments; local (optional)
  * replaces simra.local.json. Returns { corner: { experiment, status, errors, provenance, points, worst } }:
  * points are the rows of the sweep, and worst[m] is { value, vcm, pass } from the verdict row of requirement m
- * at the corner (the worst point over the sweep; a missing point is never a pass).
+ * at the corner (the worst point over the sweep; a missing point is never a pass). The key design has the
+ * design contract check of the verdict: { experiment, status, errors, gate_area_um2 }.
  */
 export async function verify(taskDir, designText, root, environment, local) {
 	const { task } = loadTask(taskDir);
@@ -167,6 +168,7 @@ export async function verify(taskDir, designText, root, environment, local) {
 	const requirements = JSON.parse(readFileSync(join(root, "requirements.json"), "utf8"));
 	if (environment) {
 		for (const e of Object.values(requirements.experiments)) e.environment = environment;
+		if (requirements.design) requirements.design.environment = environment;
 		writeFileSync(join(root, "requirements.json"), JSON.stringify(requirements, null, 2));
 	}
 	const { verdict } = await runCheck({ root, parallel: 3 });
@@ -185,6 +187,8 @@ export async function verify(taskDir, designText, root, environment, local) {
 		);
 		out[corner] = { experiment: e?.id ?? null, status: e?.status ?? "not_run", errors: run?.result?.errors ?? [], provenance, points, worst };
 	}
+	const d = verdict.design_check;
+	out.design = { experiment: d?.experiment ?? null, status: d?.status ?? "not_run", errors: d?.errors ?? [], gate_area_um2: d?.measurements.gate_area_um2 ?? null };
 	return out;
 }
 

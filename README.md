@@ -156,7 +156,8 @@ from a testbench that the agent writes.
 
 The check runs each experiment once per condition, also when more than one requirement reads it. Each row is
 `pass`, `fail`, `not_measured` (no value, or a different unit) or `not_run` (the experiment did not complete,
-or the row was not selected). The status is `pass` only when every row passes. A check of a part is never `pass`.
+or the row was not selected). The status is `pass` only when every row passes (and the
+[design contract](#design-contract), when there is one). A check of a part is never `pass`.
 
 ### Sweeps
 
@@ -181,6 +182,42 @@ a number means that the point has no value.
 
 When the result has `<name>.min` or `<name>.max`, the check uses them, also when the bench prints a
 `<name> = value` line (for example from `meas` in the loop).
+
+### Design contract
+
+The optional `design` part of `requirements.json` tells what the design file can contain. The check then
+examines the netlist. It does not simulate it. Example:
+
+```json
+"design": {
+  "file": "ota.spice", "subckt": "ota", "pins": ["inp", "inn", "out", "vdd", "vss", "ibias"],
+  "elements": ["mos", "r", "c"], "limits": { "gate_area_um2": 60, "c_f": 2e-12 }, "technology": "ihp-sg13"
+}
+```
+
+- `file`, `subckt` and `pins` are necessary. `pins` gives the pins of the subcircuit in their order.
+- `elements` gives the permitted element kinds: `mos`, `r` and `c`. The default is all three.
+- `limits` gives maximum values. `gate_area_um2` is the sum of W × L × m over all MOS devices, with each
+  subcircuit instance counted. `r_ohm` and `c_f` apply to each resistor and each capacitor.
+- `technology` is the name of a technology pack. The default is the pack for `$PDK`. `environment` and
+  `adapter` have the same defaults as an experiment (`local` and `ngspice`).
+
+The rules of the design file:
+
+1. The file contains only `.subckt` blocks, blank lines, comments and `.end`.
+2. The named block has the pins of `pins`, in the same order, and no parameters.
+3. An `X` line instantiates a MOS device of the technology pack or another block of the file. The sizes are
+   plain numbers with an optional scale suffix, for example `w=2u`. Each size is at or above the minimum of
+   the pack.
+4. An `R` or `C` line has 4 fields and a positive value.
+5. All other lines are errors: sources, `M` lines, `.model`, `.include`, `.lib`, `.param`, `.option` and
+   expressions in `{}`. A block that instantiates itself is also an error.
+
+The check runs the experiment `check_design` of the ngspice adapter before the other experiments. The verdict
+has the result in `design_check`: `pass`, `fail` or `not_run`, the errors with file and line, the MOS count and
+the gate area. The summary shows one `DESIGN` line and one line for each error. The status is `pass` only
+when every row passes and the design check passes. A check with `--only` or `--conditions` does not run the
+design check, so its design check is `not_run`.
 
 ## Layout
 

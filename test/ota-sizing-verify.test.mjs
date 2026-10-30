@@ -1,7 +1,8 @@
 // Known answer of the ota-sizing verification: the kernel check of requirements.json with the bench verify.spice
 // gives the recorded worst values of expected.json (made by reference.mjs) for the original design and for the
-// reference fix, on both PDKs. It runs only with SIMRA_TEST_IMAGE, an image with ngspice and both PDKs
-// (optional: SIMRA_TEST_ENGINE podman or docker, default podman; SIMRA_TEST_CPUS for taskset).
+// reference fix, on both PDKs, and the design contract check passes with the recorded gate area. It runs only
+// with SIMRA_TEST_IMAGE, an image with ngspice and both PDKs (optional: SIMRA_TEST_ENGINE podman or docker,
+// default podman; SIMRA_TEST_CPUS for taskset).
 // A skipped case is reported by the test runner as skipped: that check did not run.
 
 import assert from "node:assert/strict";
@@ -27,7 +28,9 @@ for (const name of Object.keys(FIXES)) {
 		t.after(() => rmSync(work, { recursive: true, force: true }));
 		const designs = { original, fix: resize(original, FIXES[name]) };
 		const results = await Promise.all(Object.entries(designs).map(async ([k, d]) => [k, await verify(taskDir, d, join(work, k), "eda", local)]));
-		for (const [k, v] of results) {
+		for (const [k, { design, ...v }] of results) {
+			assert.equal(design.status, "pass", `${k}: design check ${JSON.stringify(design.errors)}`);
+			assert.equal(design.gate_area_um2, expected[k].area_um2, `${k}: gate area`);
 			for (const [corner, e] of Object.entries(expected[k].corners)) {
 				assert.equal(v[corner].status, "completed", `${k} ${corner}: ${JSON.stringify(v[corner].errors)}`);
 				assert.equal(v[corner].points.length, e.sweep.length, `${k} ${corner}: the number of sweep points`);

@@ -1,5 +1,28 @@
 {
   "schema": "simra.requirements/0",
+  "design": {
+    "file": "ota.spice",
+    "subckt": "ota",
+    "pins": [
+      "inp",
+      "inn",
+      "out",
+      "vdd",
+      "vss",
+      "ibias"
+    ],
+    "elements": [
+      "mos",
+      "r",
+      "c"
+    ],
+    "limits": {
+      "gate_area_um2": 60,
+      "c_f": 2e-12
+    },
+    "technology": "ihp-sg13",
+    "environment": "eda"
+  },
   "conditions": {
     "tt": {
       "description": "mos_tt, VDD = 1.20 V, 27 degC",

@@ -152,5 +152,9 @@ for (const name of Object.keys(TASKS)) {
 			assert.deepEqual([r.measurement, r.unit, r.op, r.conditions], [m, req.experiments.sweep.inputs.measurements[m], spec.limits[m].op, Object.keys(spec.corners)]);
 			assert.ok(Math.abs(r.limit / spec.limits[m].value - 1) < 1e-12, `${m}: limit ${r.limit}, spec ${spec.limits[m].value}`);
 		}
+		// The design contract: the OTA pins and the design limits of the spec (gate area and Cc).
+		assert.deepEqual([req.design.file, req.design.subckt, req.design.pins], ["ota.spice", "ota", ["inp", "inn", "out", "vdd", "vss", "ibias"]]);
+		assert.equal(req.design.limits.gate_area_um2, spec.design.area_um2);
+		assert.ok(Math.abs(req.design.limits.c_f / spec.design.cc_f - 1) < 1e-12, `c_f: limit ${req.design.limits.c_f}, spec ${spec.design.cc_f}`);
 	});
 }

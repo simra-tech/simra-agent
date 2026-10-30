@@ -1,0 +1,15 @@
+* A hierarchical design (SKY130): two instances of the block pair, one PMOS load and one resistor.
+* Gate area: pair = 2 x (w=2 x l=0.5) = 2 um2, twice = 4 um2; load w=4 l=1 m=2 = 8 um2; total 12 um2.
+.subckt pair a b s vss
+XA a a s vss sky130_fd_pr__nfet_01v8 w=2 l=0.5
+XB b a s vss sky130_fd_pr__nfet_01v8
++ w=2 l=0.5 ; the continuation line gives the sizes
+.ends pair
+
+.subckt top in out vdd vss
+X1 in out vss vss pair
+X2 in out vss vss pair
+XL out out vdd vdd sky130_fd_pr__pfet_01v8 w=4 l=1 nf=2 m=2
+R1 out vss 10k
+.ends top
+.end

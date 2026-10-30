@@ -9,6 +9,21 @@ contain PDK facts. Each directory has one `technology.json` (schema `simra.techn
 | `pdks` | the values of `$PDK` that the pack applies to |
 | `ngspice.operating_point.device_letter` | the letter of the MOS devices in the ngspice `show` command (`m` for BSIM, `n` for OSDI models) |
 | `ngspice.operating_point.params` | the ngspice parameter name of `vgs`, `vth`, `vds`, `vdsat`, `id`, `gm` and `gds` |
+| `ngspice.size_unit_m` | the length in metres of a size without a suffix (`1e-06` when the library sets `.option scale=1.0u`) |
+| `ngspice.size_unit_source` | the PDK file that gives `size_unit_m` |
+| `ngspice.devices` | the MOS devices that a design can instantiate, by subcircuit name (operation `check_design`) |
+| `ngspice.devices.<name>.kind` | `nmos` or `pmos` |
+| `ngspice.devices.<name>.terminals` | the terminal names, in the order of the `X` line |
+| `ngspice.devices.<name>.params` | the instance parameters that a design can give; all other parameters are errors |
+| `...params.<p>.role` | `width`, `length`, `fingers` or `multiplier`; the gate area uses these roles |
+| `...params.<p>.required` | `true` when each instance must give the parameter |
+| `...params.<p>.size` | `true` for a length: the value is multiplied by `size_unit_m` and compared with `min` in metres |
+| `...params.<p>.per_finger` | `true` when `min` applies to the size divided by the number of fingers |
+| `...params.<p>.integer` | `true` for a count; the value is an integer at or above `min` |
+| `...params.<p>.min` | the minimum, in metres for a size; left out when the PDK gives no minimum |
+| `...params.<p>.source` | the PDK file (relative to `$PDK_ROOT`) and the fact in it that gives the value |
+| `ngspice.devices.<name>.width_total` | `true` when the width parameter is the total width of all fingers; when `false`, the gate area is multiplied by the number of fingers |
+| `ngspice.devices.<name>.source` | the PDK file that defines the device subcircuit |
 
 | Pack | PDKs | MOS model |
 | --- | --- | --- |
@@ -22,5 +37,14 @@ To add a PDK:
 
 1. Run an operating point with ngspice, then `show <letter> : all`.
 2. Find the names of the seven parameters in the output.
-3. Write `<name>/technology.json`.
-4. Add a fixture of the `show` output to the adapter tests.
+3. In the model library of the image, find the MOS device subcircuits. For each device, write its terminals
+   and its instance parameters (width, length, fingers, multiplier).
+4. Find whether the library sets `.option scale`. Write `size_unit_m`.
+5. Find the minimum width and length of each device: the model limits (for example `wmin`, `lmin` of the
+   bins) and the design rules. Write the value with its `source`. When the PDK gives no minimum, leave out
+   `min`.
+6. Run a short ngspice operating point to find whether the width is the total width of all fingers, and
+   whether the multiplier changes the current. Write `width_total`.
+7. Write `<name>/technology.json`.
+8. Add a fixture of the `show` output and a `check_design` test of a design of the new PDK to the adapter
+   tests.

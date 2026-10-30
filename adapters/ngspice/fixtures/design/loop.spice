@@ -1,0 +1,7 @@
+* A block that instantiates itself through another block: a -> b -> a.
+.subckt a p q
+X1 p q b
+.ends a
+.subckt b p q
+X1 p q a
+.ends b
