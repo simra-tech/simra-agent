@@ -57,6 +57,25 @@ class ClosureTest(unittest.TestCase):
         self.assertEqual(c.missing, ["missing.spice (from deck.spice)"])
         self.assertEqual(c.files[0]["sha256"], adapter.sha256(os.path.join(root, "deck.spice")))
 
+    def test_sourcepath_of_spiceinit(self):
+        # ngspice finds ".lib models.lib" in a directory that .spiceinit adds to sourcepath.
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        os.makedirs(os.path.join(d, "pdk", "models"))
+        with open(os.path.join(d, "pdk", "models", "models.lib"), "w") as f:
+            f.write("* models\n")
+        with open(os.path.join(d, ".spiceinit"), "w") as f:
+            f.write("setcs sourcepath = ( $sourcepath $SIMRA_TEST_PDK/models )\n")
+        with open(os.path.join(d, "deck.spice"), "w") as f:
+            f.write(".lib models.lib tt\n")
+        os.environ["SIMRA_TEST_PDK"] = os.path.join(d, "pdk")
+        self.addCleanup(os.environ.pop, "SIMRA_TEST_PDK")
+        self.assertEqual(adapter.sourcepath(os.path.join(d, ".spiceinit")), [os.path.join(d, "pdk", "models")])
+        c = adapter.Closure(d, adapter.sourcepath(os.path.join(d, ".spiceinit")))
+        c.add_netlist(os.path.join(d, "deck.spice"), "deck", "include")
+        self.assertEqual(c.missing, [])
+        self.assertEqual([f["role"] for f in c.files], ["deck", "include"])
+
 
 class LintTest(unittest.TestCase):
     def setUp(self):

@@ -36,6 +36,7 @@ MEAS_ERROR = re.compile(r"^\s*Error:\s*measure\s+(\S+)", re.IGNORECASE)
 DIAG_LINE = re.compile(r"^\s*(error|warning)\b[:\s]*(.*)$", re.IGNORECASE)
 INCLUDE_LINE = re.compile(r"^\s*\.(include|inc|lib)\s+(.*)$", re.IGNORECASE)
 OSDI_LINE = re.compile(r"^\s*osdi\s+(.*)$", re.IGNORECASE)
+SOURCEPATH_LINE = re.compile(r"^\s*setcs\s+sourcepath\s*=\s*\((.*)\)", re.IGNORECASE)
 OPTION_LINE = re.compile(r"^\s*\.?options?\s+(.*)$", re.IGNORECASE)
 OPTION_ASSIGN = re.compile(r"([A-Za-z_]\w*)\s*=\s*([^\s,]+)")
 MAX_DIAGNOSTICS = 50
@@ -145,8 +146,9 @@ def display_path(path, root):
 class Closure(object):
     """The set of files that one simulation reads, with their hashes."""
 
-    def __init__(self, root):
+    def __init__(self, root, search=()):
         self.root = root
+        self.search = list(search)
         self.files = []
         self.seen = set()
         self.missing = []
@@ -183,7 +185,8 @@ class Closure(object):
                     self.missing.append("{} (from {})".format(words[0], display_path(path, self.root)))
 
     def resolve(self, name, base):
-        for candidate in ([name] if os.path.isabs(name) else [os.path.join(base, name), os.path.join(self.root, name)]):
+        for candidate in ([name] if os.path.isabs(name) else [os.path.join(base, name), os.path.join(self.root, name)]
+                                                           + [os.path.join(d, name) for d in self.search]):
             if os.path.isfile(candidate):
                 return candidate
         return None
@@ -195,6 +198,17 @@ def find_spiceinit(work_dir):
         if d and os.path.isfile(os.path.join(d, ".spiceinit")):
             return os.path.join(d, ".spiceinit")
     return None
+
+
+def sourcepath(path):
+    """The directories that "setcs sourcepath = ( ... )" lines in a .spiceinit add to the ngspice search path."""
+    dirs = []
+    with open(path, errors="replace") as f:
+        for line in f:
+            m = SOURCEPATH_LINE.match(line)
+            if m:
+                dirs.extend(os.path.expandvars(w) for w in m.group(1).split() if w != "$sourcepath")
+    return dirs
 
 
 def add_spiceinit(closure, path):
@@ -299,11 +313,11 @@ def simulate(request):
             f.write('.lib "{}"{}\n'.format(path, " " + section if section else ""))
         f.write('.include "{}"\n.end\n'.format(os.path.realpath(deck_path)))
 
-    closure = Closure(root)
+    spiceinit = find_spiceinit(work_dir)
+    closure = Closure(root, sourcepath(spiceinit) if spiceinit else ())
     closure.add_netlist(deck_path, "deck", "include")
     for path, _ in libs:
         closure.add_netlist(path, "model", "model")
-    spiceinit = find_spiceinit(work_dir)
     if spiceinit:
         add_spiceinit(closure, spiceinit)
     for item in closure.missing:
