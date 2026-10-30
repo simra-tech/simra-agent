@@ -138,16 +138,17 @@ for (const [name, facts] of Object.entries(TASKS)) {
 		const bench = readFileSync(join(taskDir(name), "verify.spice"), "utf8");
 		const req = JSON.parse(readFileSync(join(taskDir(name), "requirements.json"), "utf8"));
 		assertBenchMatchesSpec(spec, bench, req);
-		// The same bench and requirements as ota-sizing; only the design limits differ (r_ohm is added).
+		// The same bench and requirements as ota-sizing; only the design limits (r_ohm is added) and the devices differ.
 		const sizingDir = join(repo, "evals/ota-sizing", name);
 		assert.equal(bench, readFileSync(join(sizingDir, "verify.spice"), "utf8"));
 		const sizing = JSON.parse(readFileSync(join(sizingDir, "requirements.json"), "utf8"));
-		assert.deepEqual({ ...req, design: { ...req.design, limits: null } }, { ...sizing, design: { ...sizing.design, limits: null } });
+		assert.deepEqual({ ...req, design: { ...req.design, limits: null, devices: null } }, { ...sizing, design: { ...sizing.design, limits: null, devices: null } });
 		assert.deepEqual(readFileSync(join(taskDir(name), "simra.config.json"), "utf8"), readFileSync(join(sizingDir, "simra.config.json"), "utf8"));
-		// The design contract: the file, the pins in their order, the element kinds and the limits of spec.md.
+		// The design contract: the file, the pins in their order, the element kinds, the devices and the limits of spec.md.
 		const d = spec.design;
 		assert.deepEqual([d.file, d.subckt, d.pins], ["ota.spice", "ota", ["inp", "inn", "out", "vdd", "vss", "ibias"]]);
 		assert.deepEqual([req.design.file, req.design.subckt, req.design.pins, req.design.elements], [d.file, d.subckt, d.pins, ["mos", "r", "c"]]);
+		assert.deepEqual(req.design.devices, d.devices);
 		assert.deepEqual(req.design.limits, { gate_area_um2: d.area_um2, r_ohm: d.r_ohm, c_f: d.c_f });
 		assert.deepEqual([req.design.technology, req.design.environment], [facts.technology, task.environment]);
 		// The devices of spec.md are devices of the technology pack, with the minimum sizes of the pack.

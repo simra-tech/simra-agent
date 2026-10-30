@@ -549,6 +549,44 @@ class CheckDesignTest(unittest.TestCase):
         r = self.check(self.ota(), elements=["mos", "c"])
         self.assert_error(r, 14, "Rz: an ideal resistor is not allowed by design.elements (mos, c)")
 
+    def test_devices_of_the_contract(self):
+        # IHP: the HV devices are in the pack, but not in the model library of the corner of the task.
+        text = self.ota(old="XM8 ibias ibias vss vss sg13_lv_nmos", new="XM8 ibias ibias vss vss sg13_hv_nmos")
+        r = self.check(text, devices=["sg13_lv_nmos", "sg13_lv_pmos"])
+        self.assertEqual(self.errors(r), [("d.spice:6", "XM8: sg13_hv_nmos is not in the devices of the design "
+                                                        "contract (sg13_lv_nmos, sg13_lv_pmos)")])
+        self.assertEqual(r["measurements"]["mos_count"]["value"], 7)  # the line is not counted
+        with open(os.path.join(self.work, "design.json")) as f:
+            self.assertEqual(json.load(f)["devices"], ["sg13_lv_nmos", "sg13_lv_pmos"])
+        # Without devices, every device of the pack is allowed.
+        r = self.check(text)
+        self.assertEqual(self.errors(r), [])
+        with open(os.path.join(self.work, "design.json")) as f:
+            self.assertIsNone(json.load(f)["devices"])
+        # The names compare without case.
+        self.assertEqual(self.errors(self.check(self.ota(), devices=["SG13_LV_NMOS", "sg13_lv_pmos"])), [])
+        # SKY130: the HVT PMOS is in the pack, but not in the list.
+        text = self.ota(self.SKY130, old="XM6 out y vdd vdd sky130_fd_pr__pfet_01v8 ",
+                        new="XM6 out y vdd vdd sky130_fd_pr__pfet_01v8_hvt ")
+        r = self.check(text, "sky130", devices=["sky130_fd_pr__nfet_01v8", "sky130_fd_pr__pfet_01v8"])
+        self.assertEqual(self.errors(r), [("d.spice:13", "XM6: sky130_fd_pr__pfet_01v8_hvt is not in the devices of "
+                                                         "the design contract (sky130_fd_pr__nfet_01v8, "
+                                                         "sky130_fd_pr__pfet_01v8)")])
+
+    def test_devices_that_the_pack_does_not_have(self):
+        # A name that the pack does not have is an error of the task author: the run fails.
+        r = self.check(self.ota(), devices=["sg13_lv_nmos", "sky130_fd_pr__nfet_01v8"])
+        self.assertEqual(r["status"], "failed")
+        self.assertEqual(r["diagnostics"][0]["message"],
+                         "input 'devices': sky130_fd_pr__nfet_01v8 is not a device of technology pack ihp-sg13; its "
+                         "devices are sg13_lv_nmos, sg13_lv_pmos, sg13_hv_nmos, sg13_hv_pmos")
+        r = self.check(self.ota(self.SKY130), "sky130", devices=["sg13_lv_nmos"])
+        self.assertEqual(r["status"], "failed")
+        self.assertIn("sg13_lv_nmos is not a device of technology pack sky130", r["diagnostics"][0]["message"])
+        r = self.check(self.ota(), devices="sg13_lv_nmos")
+        self.assertEqual([r["status"], r["diagnostics"][0]["message"]],
+                         ["failed", "input 'devices' must be a list of device names of the technology pack"])
+
     def test_multiplier_and_case(self):
         # m multiplies the area; names compare without case; a continuation line joins the line before it.
         text = self.ota(old="XM8 ibias ibias vss vss sg13_lv_nmos w=2u l=1u ng=1",
@@ -570,7 +608,10 @@ class CheckDesignTest(unittest.TestCase):
                        {"file": "d.spice", "subckt": "ota", "pins": []},
                        {"file": "d.spice", "subckt": "ota", "pins": OTA_PINS, "elements": ["l"]},
                        {"file": "d.spice", "subckt": "ota", "pins": OTA_PINS, "limits": {"area": 1}},
-                       {"file": "d.spice", "subckt": "ota", "pins": OTA_PINS, "limits": {"c_f": -1}}):
+                       {"file": "d.spice", "subckt": "ota", "pins": OTA_PINS, "limits": {"c_f": -1}},
+                       {"file": "d.spice", "subckt": "ota", "pins": OTA_PINS, "devices": "sg13_lv_nmos"},
+                       {"file": "d.spice", "subckt": "ota", "pins": OTA_PINS, "devices": []},
+                       {"file": "d.spice", "subckt": "ota", "pins": OTA_PINS, "devices": ["sg13_lv_nmos", ""]}):
             with self.subTest(inputs=inputs):
                 r = adapter.check_design({"root": self.root, "work_dir": self.work,
                                           "inputs": dict(inputs, technology="ihp-sg13")})

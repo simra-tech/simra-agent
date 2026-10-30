@@ -44,8 +44,9 @@ Operation "lint". Inputs:
 
 Operation "check_design". It checks a design netlist against the design contract (the "design" section of
 requirements.json) and runs no simulation. Inputs: file (relative to the design root), subckt, pins (in order),
-elements (the allowed kinds: "mos", "r", "c"; the default is all three), limits ({gate_area_um2, r_ohm, c_f}, all
-maxima) and technology (optional, as for operating_point). The technology pack gives the MOS devices, their
+elements (the allowed kinds: "mos", "r", "c"; the default is all three), devices (the allowed devices of the
+technology pack; the default is all), limits ({gate_area_um2, r_ohm, c_f}, all maxima) and technology (optional, as
+for operating_point). The technology pack gives the MOS devices, their
 terminals, their parameters and the minimum sizes (ngspice.devices). The file holds only .subckt blocks. In a block,
 an X line instantiates a device of the pack or another block of the file, and R and C lines are ideal elements with
 a plain value. Each other line (sources, .model, .include, .param, expressions, ...) is an error. The response has
@@ -833,8 +834,9 @@ def lint_device(name, nodes, params, model, device, size_unit):
     return errors, values, width * size_unit * 1e6 * length * size_unit * 1e6 * factor
 
 
-def lint_block(block, blocks, devices, elements, limits, size_unit):
-    """[(line, message)] of the lines of one block; the elements and the gate area of its devices go to the block."""
+def lint_block(block, blocks, devices, allowed, elements, limits, size_unit):
+    """[(line, message)] of the lines of one block; the elements and the gate area of its devices go to the block.
+    allowed: the device names of the design contract, or None for every device of the pack."""
     errors, names = [], set()
     block["elements"], block["mos_count"], block["area"] = [], 0, 0.0
     for number, line, t in block["lines"]:
@@ -878,6 +880,10 @@ def lint_block(block, blocks, devices, elements, limits, size_unit):
                 if "mos" not in elements:
                     errors.append((number, "{}: MOS devices are not allowed by design.elements ({})".format(
                         name, ", ".join(elements))))
+                    continue
+                if allowed is not None and model.lower() not in [a.lower() for a in allowed]:
+                    errors.append((number, "{}: {} is not in the devices of the design contract ({})".format(
+                        name, model, ", ".join(allowed))))
                     continue
                 messages, values, area = lint_device(name, nodes, params, model, device, size_unit)
                 errors.extend((number, m) for m in messages)
@@ -950,6 +956,7 @@ def check_design(request):
     inputs = request.get("inputs") or {}
     name, subckt, pins = inputs.get("file"), inputs.get("subckt"), inputs.get("pins")
     elements = inputs.get("elements", list(DESIGN_KINDS))
+    allowed = inputs.get("devices")
     limits = inputs.get("limits") or {}
     if not isinstance(name, str) or not name or os.path.isabs(name):
         return failure(None, "input 'file' is required (the design netlist, relative to the design root)")
@@ -959,6 +966,9 @@ def check_design(request):
         return failure(None, "input 'pins' is required (the ordered pin names of the subcircuit)")
     if not isinstance(elements, list) or any(k not in DESIGN_KINDS for k in elements):
         return failure(None, "input 'elements' must be a list of {}".format(", ".join(DESIGN_KINDS)))
+    if allowed is not None and (not isinstance(allowed, list) or not allowed
+                                or not all(isinstance(d, str) and d for d in allowed)):
+        return failure(None, "input 'devices' must be a list of device names of the technology pack")
     if not isinstance(limits, dict) or any(k not in DESIGN_LIMITS or isinstance(v, bool) or not isinstance(v, (int, float))
                                            or not v > 0 for k, v in limits.items()):
         return failure(None, "input 'limits' must be {{name: positive number}} with names {}".format(", ".join(DESIGN_LIMITS)))
@@ -967,6 +977,11 @@ def check_design(request):
         return failure(None, error)
     devices = {k.lower(): v for k, v in pack["ngspice"]["devices"].items()}
     size_unit = pack["ngspice"].get("size_unit_m", 1)
+    unknown = [d for d in allowed or [] if d.lower() not in devices]
+    if unknown:
+        return failure(None, "input 'devices': {} {} not a device of technology pack {}; its devices are {}".format(
+            ", ".join(unknown), "is" if len(unknown) == 1 else "are", pack["name"],
+            ", ".join(pack["ngspice"]["devices"])))
 
     path = os.path.join(root, name)
     files = [{"path": display_path(pack_path, root), "sha256": sha256(pack_path),
@@ -983,7 +998,7 @@ def check_design(request):
             if block["name"].lower() in devices:
                 errors.append((block["line"], ".subckt {} has the name of a device of technology pack {}".format(
                     block["name"], pack["name"])))
-            errors.extend(lint_block(block, blocks, devices, elements, limits, size_unit))
+            errors.extend(lint_block(block, blocks, devices, allowed, elements, limits, size_unit))
             all_elements.extend(block["elements"])
         top = blocks.get(subckt.lower())
         if top is None:
@@ -1013,7 +1028,8 @@ def check_design(request):
     }
     out = os.path.join(work_dir, "design.json")
     with open(out, "w") as f:
-        json.dump({"file": name, "subckt": subckt, "pins": pins, "elements_allowed": elements, "limits": limits,
+        json.dump({"file": name, "subckt": subckt, "pins": pins, "elements_allowed": elements, "devices": allowed,
+                   "limits": limits,
                    "technology": pack["name"], "errors": [{"message": d["message"], "source": d["source"]}
                                                           for d in diagnostics],
                    "elements": all_elements, "measurements": {k: v["value"] for k, v in measurements.items()}},

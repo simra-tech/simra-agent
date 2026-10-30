@@ -44,7 +44,8 @@ The conditions, the corners, the requirements and the bench are the same as in
 5. Write `answer.json`: the claim `meets_spec`, the gate area, and for each corner and requirement the worst
    value over the VCM range and its VCM.
 
-The `design` section of `requirements.json` gives the same rules to the check. Thus a check of
+The `design` section of `requirements.json` gives the same rules to the check. Its `devices` list gives the MOS
+devices of `spec.md`. Thus a check of
 `requirements.json` by the agent and the score use the same design rules and the same bench.
 
 ## Scoring

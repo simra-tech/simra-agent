@@ -76,6 +76,8 @@ export interface DesignContract {
 	pins: string[];
 	/** Allowed element kinds (default: all). */
 	elements?: (typeof DESIGN_ELEMENTS)[number][];
+	/** The devices of the technology pack that the design can instantiate (default: all). Names compare without case. */
+	devices?: string[];
 	limits?: Partial<Record<(typeof DESIGN_LIMITS)[number], number>>;
 	/** Technology pack name (default: the pack for $PDK). */
 	technology?: string;
@@ -190,6 +192,16 @@ function validateDesign(d: DesignContract): string[] {
 	if (d.elements !== undefined) {
 		if (!Array.isArray(d.elements)) errors.push(`design: elements is a list of ${DESIGN_ELEMENTS.join(", ")}`);
 		else for (const k of d.elements) if (!DESIGN_ELEMENTS.includes(k)) errors.push(`design: element kind ${JSON.stringify(k)} is not one of ${DESIGN_ELEMENTS.join(", ")}`);
+	}
+	// The kernel reads no technology pack: the adapter checks that each device exists.
+	if (d.devices !== undefined) {
+		if (!Array.isArray(d.devices) || d.devices.length === 0) errors.push("design: devices is a list of at least one device name of the technology pack");
+		else {
+			const bad = d.devices.filter((x) => typeof x !== "string" || !PIN.test(x));
+			if (bad.length) errors.push(`design: devices ${bad.map((x) => JSON.stringify(x)).join(", ")} are not identifiers`);
+			const lower = d.devices.map((x) => String(x).toLowerCase());
+			if (new Set(lower).size !== lower.length) errors.push("design: a device is given more than once");
+		}
 	}
 	if (d.limits !== undefined) {
 		if (!d.limits || typeof d.limits !== "object" || Array.isArray(d.limits)) errors.push("design: limits is an object");

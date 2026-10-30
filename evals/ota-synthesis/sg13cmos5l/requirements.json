@@ -16,6 +16,10 @@
       "r",
       "c"
     ],
+    "devices": [
+      "sg13_lv_nmos",
+      "sg13_lv_pmos"
+    ],
     "limits": {
       "gate_area_um2": 60,
       "r_ohm": 1000000,

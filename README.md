@@ -191,12 +191,15 @@ examines the netlist. It does not simulate it. Example:
 ```json
 "design": {
   "file": "ota.spice", "subckt": "ota", "pins": ["inp", "inn", "out", "vdd", "vss", "ibias"],
-  "elements": ["mos", "r", "c"], "limits": { "gate_area_um2": 60, "c_f": 2e-12 }, "technology": "ihp-sg13"
+  "elements": ["mos", "r", "c"], "devices": ["sg13_lv_nmos", "sg13_lv_pmos"],
+  "limits": { "gate_area_um2": 60, "c_f": 2e-12 }, "technology": "ihp-sg13"
 }
 ```
 
 - `file`, `subckt` and `pins` are necessary. `pins` gives the pins of the subcircuit in their order.
 - `elements` gives the permitted element kinds: `mos`, `r` and `c`. The default is all three.
+- `devices` gives the devices of the technology pack that the design can instantiate. Without `devices`, the
+  design can instantiate every device of the pack. A name that the pack does not have makes the design check `not_run`.
 - `limits` gives maximum values. `gate_area_um2` is the sum of W × L × m over all MOS devices, with each
   subcircuit instance counted. `r_ohm` and `c_f` apply to each resistor and each capacitor.
 - `technology` is the name of a technology pack. The default is the pack for `$PDK`. `environment` and
@@ -206,9 +209,9 @@ The rules of the design file:
 
 1. The file contains only `.subckt` blocks, blank lines, comments and `.end`.
 2. The named block has the pins of `pins`, in the same order, and no parameters.
-3. An `X` line instantiates a MOS device of the technology pack or another block of the file. The sizes are
-   plain numbers with an optional scale suffix, for example `w=2u`. Each size is at or above the minimum of
-   the pack.
+3. An `X` line instantiates a MOS device of the technology pack (only the `devices`, if given) or another block
+   of the file. The sizes are plain numbers with an optional scale suffix, for example `w=2u`. Each size is at
+   or above the minimum of the pack.
 4. An `R` or `C` line has 4 fields and a positive value.
 5. All other lines are errors: sources, `M` lines, `.model`, `.include`, `.lib`, `.param`, `.option` and
    expressions in `{}`. A block that instantiates itself is also an error.

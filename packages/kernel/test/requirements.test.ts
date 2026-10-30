@@ -245,7 +245,7 @@ test("an aborted check starts no new experiment", async (t) => {
 const passing = {
 	...amplifier,
 	conditions: { ...amplifier.conditions, ss: { inputs: { values: { gain_db: 60, ugf_hz: 8e6 } } } },
-	design: { file: "amp.spice", subckt: "amp", pins: ["inp", "out", "vdd", "vss"], elements: ["mos", "c"], limits: { gate_area_um2: 40 }, adapter: "fake" },
+	design: { file: "amp.spice", subckt: "amp", pins: ["inp", "out", "vdd", "vss"], elements: ["mos", "c"], devices: ["nch", "pch"], limits: { gate_area_um2: 40 }, adapter: "fake" },
 };
 
 test("the design section is validated with the file", () => {
@@ -266,6 +266,13 @@ test("the design section is validated with the file", () => {
 		"design: file is required (the design netlist, relative to the design root)",
 		"design: give at least one pin",
 	]);
+	// devices: a list of identifiers, at least one, each once (without case). The kernel does not read the pack.
+	const devices = (x: unknown) => validateRequirements({ ...passing, design: { ...passing.design, devices: x } } as unknown as RequirementsFile);
+	assert.deepEqual(devices(["no_such_device"]), []);
+	assert.deepEqual(devices("nch"), ["design: devices is a list of at least one device name of the technology pack"]);
+	assert.deepEqual(devices([]), ["design: devices is a list of at least one device name of the technology pack"]);
+	assert.deepEqual(devices(["nch", "", "p ch", 3]), ['design: devices "", "p ch", 3 are not identifiers']);
+	assert.deepEqual(devices(["nch", "NCH"]), ["design: a device is given more than once"]);
 });
 
 test("the design check runs with the rows; a pass needs a design pass", async (t) => {
@@ -280,7 +287,7 @@ test("the design check runs with the rows; a pass needs a design pass", async (t
 	// The design experiment has the contract as inputs, without the run settings; it is not a row experiment.
 	const source = loadExperiment(root, d?.experiment as string);
 	assert.equal(source.experiment.operation, "check_design");
-	assert.deepEqual(source.experiment.inputs, { file: "amp.spice", subckt: "amp", pins: ["inp", "out", "vdd", "vss"], elements: ["mos", "c"], limits: { gate_area_um2: 40 } });
+	assert.deepEqual(source.experiment.inputs, { file: "amp.spice", subckt: "amp", pins: ["inp", "out", "vdd", "vss"], elements: ["mos", "c"], devices: ["nch", "pch"], limits: { gate_area_um2: 40 } });
 	assert.equal(source.experiment.purpose, `check ${id}: design check`);
 	assert.equal(verdict.experiments.length, 2);
 	assert.equal(listExperiments(root).length, 3);

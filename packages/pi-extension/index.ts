@@ -191,7 +191,7 @@ export default function (pi: ExtensionAPI) {
 			"- requirements: [{id, description?, experiment, measurement, unit?, op, limit, conditions}]. op is \"<=\", \">=\" or",
 			"  \"between\". limit is a number, [low, high] for between, or {condition: limit}. measurement is a key of",
 			"  inputs.measurements. conditions lists the condition names to check.",
-			"- design (optional): {file, subckt, pins, elements?, limits?, technology?}. The check then also runs the ngspice",
+			"- design (optional): {file, subckt, pins, elements?, devices?, limits?, technology?}. The check then also runs the ngspice",
 			"  operation check_design on the netlist (only pack MOS devices, R and C; limits gate_area_um2, r_ohm, c_f). A design",
 			"  error fails the check, with its file and line. See the check_design description of run_experiment.",
 			"Example:",
