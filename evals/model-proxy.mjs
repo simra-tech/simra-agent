@@ -1,8 +1,9 @@
 // Logging proxy for model API calls in evaluations.
 // It forwards each request to the upstream API without change and writes one JSON line per request:
 // time, path, the model name in the request, thinking settings, the model name in the response, and token usage.
+// It reads both the Chat Completions API and the Responses API.
 // It never logs headers, so the API key does not appear in the log.
-// If DEEPSEEK_API_KEY is set for the proxy, the proxy puts it in the Authorization header of each request.
+// If MODEL_API_KEY is set for the proxy, the proxy puts it in the Authorization header of each request.
 // Then the agent needs only a dummy key and never sees the real one.
 //
 // Usage: node evals/model-proxy.mjs <port | socket path> <log.jsonl> [upstream]   (default upstream: https://api.deepseek.com)
@@ -11,7 +12,7 @@ import { appendFileSync } from "node:fs";
 import { createServer } from "node:http";
 
 const [port, logPath, upstream = "https://api.deepseek.com"] = process.argv.slice(2);
-const key = process.env.DEEPSEEK_API_KEY;
+const key = process.env.MODEL_API_KEY;
 if (!port || !logPath) {
 	console.error("usage: node evals/model-proxy.mjs <port | socket path> <log.jsonl> [upstream]");
 	process.exit(2);
@@ -25,8 +26,10 @@ function scanResponse(text) {
 	for (const body of bodies) {
 		try {
 			const j = JSON.parse(body);
-			response_model ??= j.model ?? null;
-			if (j.usage) usage = j.usage;
+			// Responses API stream: the model and the usage are in the "response.completed" event.
+			const r = j.type === "response.completed" ? j.response : j;
+			response_model ??= r.model ?? null;
+			if (r.usage) usage = r.usage;
 		} catch {}
 	}
 	return { response_model, usage };
@@ -39,13 +42,20 @@ const server = createServer(async (req, res) => {
 	const entry = { time: new Date().toISOString(), method: req.method, path: req.url };
 	try {
 		const j = JSON.parse(body.toString("utf8"));
+		// Responses API: pi can send a fixed reasoning.effort and the thinking level in "configuration_update"
+		// input items. The last such item is the effort that applies.
+		// pi also sends its tools in "additional_tools" input items, not in the tools field.
+		const items = Array.isArray(j.input) ? j.input : [];
+		const updates = items.filter((i) => i?.type === "configuration_update" && i.reasoning?.effort);
+		const tools = [...(Array.isArray(j.tools) ? j.tools : []), ...items.filter((i) => i?.type === "additional_tools").flatMap((i) => i.tools ?? [])];
 		Object.assign(entry, {
 			request_model: j.model ?? null,
 			stream: j.stream ?? null,
 			thinking: j.thinking ?? null,
-			reasoning_effort: j.reasoning_effort ?? null,
-			messages: Array.isArray(j.messages) ? j.messages.length : null,
-			tools: Array.isArray(j.tools) ? j.tools.map((t) => t.function?.name ?? t.name) : null,
+			reasoning_effort: updates.at(-1)?.reasoning.effort ?? j.reasoning_effort ?? j.reasoning?.effort ?? null,
+			...(updates.length ? { reasoning_effort_field: j.reasoning?.effort ?? null } : {}),
+			messages: Array.isArray(j.messages) ? j.messages.length : Array.isArray(j.input) ? j.input.length : null,
+			tools: Array.isArray(j.tools) || tools.length ? tools.map((t) => t.function?.name ?? t.name) : null,
 		});
 	} catch {}
 

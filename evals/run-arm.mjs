@@ -6,7 +6,7 @@
 // A file that does not exist is not copied (for example simra.local.json). score.mjs exports score(ws), which
 // returns the points of each part and "max": { part: maximum points }.
 //
-// Arms (all use the same model and the same thinking level):
+// Arms (all use the same model, chosen with --model, and the same thinking level):
 //   simra     pi with the Simra Agent extension (tool run_experiment)
 //   pi        stock pi
 //   opencode  OpenCode
@@ -28,9 +28,10 @@
 // container connects 127.0.0.1:8080 to the proxy socket; the proxy puts the real key in each request.
 // The image must not hold the answers: container/build.sh copies only the runtime files.
 //
-// The model key comes from DEEPSEEK_API_KEY (environment or .env in the repository root).
+// The model key comes from the key variable of the model in MODELS (environment or .env in the repository root).
 //
-// Usage: node evals/run-arm.mjs <task dir> <simra|pi|opencode> [--runs <dir>] [--timeout-min <n>] [--upstream <url>]
+// Usage: node evals/run-arm.mjs <task dir> <simra|pi|opencode> [--model <id>] [--runs <dir>] [--timeout-min <n>]
+//        [--upstream <url>]
 
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
@@ -40,7 +41,6 @@ import { loadConfig } from "@simra-tech/kernel";
 import { containerImageId, containerUser } from "../packages/kernel/src/environments.ts";
 
 const repo = new URL("../", import.meta.url).pathname;
-export const MODEL = "deepseek/deepseek-flash";
 export const DUMMY_KEY = "sk-dummy-the-proxy-adds-the-real-key";
 export const WORK = "/work";
 export const STATE = "/state";
@@ -48,6 +48,59 @@ const PROXY_DIR = "/proxy";
 const FORWARD_PORT = 8080;
 const BASE_URL = `http://127.0.0.1:${FORWARD_PORT}`;
 const EXTENSION = "/opt/simra-agent/packages/pi-extension";
+
+/**
+ * The models for the arms. keyVar: the variable that holds the key. upstream: the API that the proxy forwards to.
+ * pi: the providers block of pi's models.json. opencode: the provider block of opencode.json. Without network,
+ * OpenCode uses its built-in model list, so each model needs its entry here (the values are the ones in pi's list).
+ */
+export const MODELS = {
+	"deepseek/deepseek-flash": {
+		keyVar: "DEEPSEEK_API_KEY",
+		upstream: "https://api.deepseek.com",
+		pi: { deepseek: { baseUrl: BASE_URL } },
+		opencode: {
+			deepseek: {
+				options: { baseURL: BASE_URL },
+				models: {
+					"deepseek-flash": {
+						name: "DeepSeek Flash",
+						reasoning: true,
+						tool_call: true,
+						temperature: true,
+						interleaved: { field: "reasoning_content" },
+						limit: { context: 1_000_000, output: 384_000 },
+						variants: { high: { reasoningEffort: "high" } },
+					},
+				},
+			},
+		},
+	},
+	"openai/gpt-6.1-sol": {
+		keyVar: "OPENAI_API_KEY",
+		upstream: "https://api.openai.com/v1",
+		pi: { openai: { baseUrl: BASE_URL } },
+		opencode: {
+			openai: {
+				options: { baseURL: BASE_URL },
+				models: {
+					"gpt-6.1-sol": {
+						name: "GPT-6.1 Sol",
+						reasoning: true,
+						tool_call: true,
+						temperature: false,
+						limit: { context: 272_000, output: 128_000 },
+						// OpenCode 1.14.48 does not know this model as a reasoning model and drops the effort of the
+						// variant. forceReasoning keeps it (checked with a fake API on 2026-10-30).
+						options: { forceReasoning: true },
+						variants: { high: { reasoningEffort: "high" } },
+					},
+				},
+			},
+		},
+	},
+};
+export const DEFAULT_MODEL = "deepseek/deepseek-flash";
 
 // The container entry point: forward 127.0.0.1:<port> to the proxy socket, then run the agent.
 // Arguments: <socket> <port> <command> [arguments].
@@ -93,7 +146,7 @@ export function makeWorkspace(taskDir, task, ws) {
  * The container command line for one sandboxed process. ws, state and proxyDir are host directories.
  * env: extra environment variables. command: the program and its arguments in the container.
  */
-export function sandboxArgs({ engine, imageId, name, ws, state, proxyDir, env = {}, command }) {
+export function sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar = "DEEPSEEK_API_KEY", env = {}, command }) {
 	return [
 		"run",
 		"--rm",
@@ -121,7 +174,7 @@ export function sandboxArgs({ engine, imageId, name, ws, state, proxyDir, env = 
 		`${proxyDir}:${PROXY_DIR}`,
 		"-w",
 		WORK,
-		...Object.entries({ HOME: `${STATE}/home`, DEEPSEEK_API_KEY: DUMMY_KEY, ...env }).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
+		...Object.entries({ HOME: `${STATE}/home`, [keyVar]: DUMMY_KEY, ...env }).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
 		imageId,
 		"node",
 		"-e",
@@ -138,7 +191,7 @@ export async function startProxy(run, key, upstream) {
 	mkdirSync(proxyDir, { recursive: true });
 	const socket = join(proxyDir, "model.sock");
 	const args = [join(repo, "evals", "model-proxy.mjs"), socket, join(run, "models.jsonl"), ...(upstream ? [upstream] : [])];
-	const proxy = spawn(process.execPath, args, { env: { PATH: process.env.PATH, DEEPSEEK_API_KEY: key }, stdio: ["ignore", "ignore", "inherit"] });
+	const proxy = spawn(process.execPath, args, { env: { PATH: process.env.PATH, MODEL_API_KEY: key }, stdio: ["ignore", "ignore", "inherit"] });
 	for (let i = 0; i < 100 && !existsSync(socket); i++) await new Promise((r) => setTimeout(r, 50));
 	if (!existsSync(socket)) throw new Error("model proxy did not start");
 	return { proxy, proxyDir };
@@ -158,37 +211,28 @@ function loadDotEnv() {
 }
 
 /** The agent command in the container. Configuration files go to the host directory state (mounted at STATE). */
-function armCommand(arm, state, prompt) {
+function armCommand(arm, state, prompt, modelId) {
+	const model = MODELS[modelId];
 	if (arm === "simra" || arm === "pi") {
 		mkdirSync(join(state, "pi-agent"), { recursive: true });
-		writeFileSync(join(state, "pi-agent", "models.json"), JSON.stringify({ providers: { deepseek: { baseUrl: BASE_URL } } }, null, 2));
+		writeFileSync(join(state, "pi-agent", "models.json"), JSON.stringify({ providers: model.pi }, null, 2));
 		const ext = arm === "simra" ? ["-e", EXTENSION] : [];
 		return {
-			command: ["pi", "--session-dir", `${STATE}/sessions`, "-ne", ...ext, "-ns", "-np", "--model", MODEL, "--thinking", "high", "--mode", "json", "-p", prompt],
+			command: ["pi", "--session-dir", `${STATE}/sessions`, "-ne", ...ext, "-ns", "-np", "--model", modelId, "--thinking", "high", "--mode", "json", "-p", prompt],
 			env: { PI_CODING_AGENT_DIR: `${STATE}/pi-agent`, PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0" },
 		};
 	}
 	if (arm === "opencode") {
 		mkdirSync(join(state, "opencode", "config", "opencode"), { recursive: true });
-		// Without network, OpenCode uses its built-in model list, which does not have deepseek-flash.
-		// The values are the ones that pi has for this model.
-		const flash = {
-			name: "DeepSeek Flash",
-			reasoning: true,
-			tool_call: true,
-			temperature: true,
-			interleaved: { field: "reasoning_content" },
-			limit: { context: 1_000_000, output: 384_000 },
-			variants: { high: { reasoningEffort: "high" } },
-		};
 		// The sandbox is the boundary, as for pi, which has no permission checks. In "opencode run", a check that
 		// asks (for example a read outside /work, such as the PDK) is rejected and ends the session.
 		const permission = { "*": "allow", external_directory: "allow", doom_loop: "allow" };
-		const config = { $schema: "https://opencode.ai/config.json", permission, provider: { deepseek: { options: { baseURL: BASE_URL }, models: { "deepseek-flash": flash } } } };
+		// small_model: the session title call uses the same model as the agent (else OpenCode picks a small one).
+		const config = { $schema: "https://opencode.ai/config.json", permission, small_model: modelId, provider: model.opencode };
 		writeFileSync(join(state, "opencode", "config", "opencode", "opencode.json"), JSON.stringify(config, null, 2));
 		const xdg = `${STATE}/opencode`;
 		return {
-			command: ["opencode", "run", "--pure", "-m", MODEL, "--variant", "high", "--format", "json", prompt],
+			command: ["opencode", "run", "--pure", "-m", modelId, "--variant", "high", "--format", "json", prompt],
 			env: { XDG_CONFIG_HOME: `${xdg}/config`, XDG_DATA_HOME: `${xdg}/data`, XDG_CACHE_HOME: `${xdg}/cache`, XDG_STATE_HOME: `${xdg}/state` },
 		};
 	}
@@ -219,7 +263,10 @@ async function main() {
 	const opt = (name, dflt) => (args.includes(name) ? args[args.indexOf(name) + 1] : dflt);
 	const runs = resolve(opt("--runs", process.env.SIMRA_EVAL_RUNS ?? join(tmpdir(), "simra-evals")));
 	const timeoutMin = Number(opt("--timeout-min", "30"));
-	const upstream = opt("--upstream", undefined);
+	const modelId = opt("--model", DEFAULT_MODEL);
+	const model = MODELS[modelId];
+	if (!model) throw new Error(`unknown model "${modelId}" (use ${Object.keys(MODELS).join(" or ")})`);
+	const upstream = opt("--upstream", model.upstream);
 	const stamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
 	const runName = `${task.name}-${arm}-${stamp}`;
 	const run = join(runs, runName);
@@ -231,15 +278,15 @@ async function main() {
 	const imageId = containerImageId(engine, env.image);
 	if (env.image_id && env.image_id !== imageId) throw new Error(`image ${env.image} is ${imageId}, expected ${env.image_id}`);
 
-	const key = process.env.DEEPSEEK_API_KEY ?? loadDotEnv().DEEPSEEK_API_KEY;
-	if (!key) throw new Error("DEEPSEEK_API_KEY is not set");
+	const key = process.env[model.keyVar] ?? loadDotEnv()[model.keyVar];
+	if (!key) throw new Error(`${model.keyVar} is not set`);
 	const { proxy, proxyDir } = await startProxy(run, key, upstream);
 
 	const prompt = readFileSync(join(taskDir, task.prompt), "utf8");
-	const cmd = armCommand(arm, state, prompt);
+	const cmd = armCommand(arm, state, prompt, modelId);
 	const name = `simra-arm-${runName}`;
 	const toolEnv = Object.fromEntries(Object.entries(env.env ?? {}).filter(([k]) => k !== "HOME"));
-	const argv = sandboxArgs({ engine, imageId, name, ws, state, proxyDir, env: { ...toolEnv, ...cmd.env }, command: cmd.command });
+	const argv = sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar: model.keyVar, env: { ...toolEnv, ...cmd.env }, command: cmd.command });
 	const started = new Date();
 	// The engine client gets no key: only PATH and the variables that select the engine.
 	const clientEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => k === "PATH" || k.startsWith("DOCKER_") || k.startsWith("CONTAINER") || k === "XDG_RUNTIME_DIR" || k === "HOME"));
@@ -251,7 +298,11 @@ async function main() {
 
 	const log = join(run, "models.jsonl");
 	const calls = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
-	const tokens = calls.reduce((a, c) => ({ prompt: a.prompt + (c.usage?.prompt_tokens ?? 0), completion: a.completion + (c.usage?.completion_tokens ?? 0) }), { prompt: 0, completion: 0 });
+	// Chat Completions API: prompt_tokens / completion_tokens. Responses API: input_tokens / output_tokens.
+	const tokens = calls.reduce(
+		(a, c) => ({ prompt: a.prompt + (c.usage?.prompt_tokens ?? c.usage?.input_tokens ?? 0), completion: a.completion + (c.usage?.completion_tokens ?? c.usage?.output_tokens ?? 0) }),
+		{ prompt: 0, completion: 0 },
+	);
 	// The sandbox prevents access to host files. These checks remain as a second line.
 	const transcript = readFileSync(join(run, "transcript.jsonl"), "utf8");
 	const contamination = [
@@ -264,7 +315,7 @@ async function main() {
 	const summary = {
 		task: task.name,
 		arm,
-		model: MODEL,
+		model: modelId,
 		request_models: [...new Set(calls.map((c) => c.request_model))],
 		response_models: [...new Set(calls.map((c) => c.response_model))],
 		model_calls: calls.length,

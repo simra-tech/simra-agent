@@ -86,5 +86,7 @@ See [ota-corners](../ota-corners/README.md#run-an-arm) for the arms and the sand
 
 1. Build the environment image with `container/build.sh`.
 2. Write `examples/ota-sg13g2/simra.local.json` for this image.
-3. Put `DEEPSEEK_API_KEY` in the environment or in `.env` in the repository root.
-4. Run `node evals/run-arm.mjs evals/ota-pvt <arm> --timeout-min 15`.
+3. Put the key variable of the model in the environment or in `.env` in the repository root. `MODELS` in
+   `run-arm.mjs` names the variable: `DEEPSEEK_API_KEY` for `deepseek/deepseek-flash`, `OPENAI_API_KEY` for
+   `openai/gpt-6.1-sol`.
+4. Run `node evals/run-arm.mjs evals/ota-pvt <arm> [--model <id>] --timeout-min 15`.

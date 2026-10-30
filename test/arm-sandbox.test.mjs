@@ -6,7 +6,9 @@
 //    expected.json at its host path, and has no real key. It finds no reference value of ota-corners in the
 //    image, has no network and no writable root, and reaches the model API only through the proxy, which
 //    puts in the real key.
-// 2. arms: simra, pi and opencode each finish one model call through the proxy.
+// 2. arms: simra, pi and opencode each finish one model call through the proxy, with the default model
+//    (Chat Completions API). simra and opencode also do this with openai/gpt-6.1-sol (Responses API) and send
+//    the effort high.
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -17,7 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { containerImageId } from "../packages/kernel/src/environments.ts";
-import { DUMMY_KEY, sandboxArgs, startProxy } from "../evals/run-arm.mjs";
+import { DUMMY_KEY, MODELS, sandboxArgs, startProxy } from "../evals/run-arm.mjs";
 
 const repo = new URL("../", import.meta.url).pathname;
 const engine = process.env.SIMRA_TEST_ENGINE ?? "podman";
@@ -36,13 +38,35 @@ function runAsync(command, args, env) {
 	});
 }
 
-/** An OpenAI-style chat API that answers "done" and records the Authorization header of each request. */
+/** A Responses API event stream that answers "done". */
+function respondResponses(res) {
+	res.writeHead(200, { "content-type": "text/event-stream" });
+	const ev = (type, o) => res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...o })}\n\n`);
+	const response = { id: "resp_fake", object: "response", created_at: 0, status: "in_progress", model: "gpt-6.1-sol", output: [] };
+	const item = { id: "msg_fake", type: "message", role: "assistant", status: "in_progress", content: [] };
+	const done = { ...item, status: "completed", content: [{ type: "output_text", text: "done", annotations: [] }] };
+	const at = { item_id: item.id, output_index: 0, content_index: 0 };
+	ev("response.created", { response });
+	ev("response.output_item.added", { output_index: 0, item });
+	ev("response.content_part.added", { ...at, part: { type: "output_text", text: "", annotations: [] } });
+	ev("response.output_text.delta", { ...at, delta: "done" });
+	ev("response.output_text.done", { ...at, text: "done" });
+	ev("response.output_item.done", { output_index: 0, item: done });
+	ev("response.completed", { response: { ...response, status: "completed", output: [done], usage: { input_tokens: 3, output_tokens: 1, total_tokens: 4 } } });
+	res.end();
+}
+
+/**
+ * An OpenAI-style API that answers "done" and records the Authorization header of each request.
+ * It answers on /chat/completions (Chat Completions API) and on /responses (Responses API).
+ */
 async function fakeModelApi() {
 	const seen = [];
 	const server = createServer(async (req, res) => {
 		const chunks = [];
 		for await (const c of req) chunks.push(c);
 		seen.push({ method: req.method, path: req.url, authorization: req.headers.authorization });
+		if (req.method === "POST" && req.url.endsWith("/responses")) return respondResponses(res);
 		if (req.method !== "POST") {
 			res.writeHead(200, { "content-type": "application/json" });
 			return res.end(JSON.stringify({ object: "list", data: [{ id: "deepseek-flash", object: "model" }] }));
@@ -146,8 +170,15 @@ test("probe: the sandbox reads its workspace and nothing else on the host", { sk
 	}
 });
 
-for (const arm of ["simra", "pi", "opencode"]) {
-	test(`arm ${arm}: one model call through the proxy`, { skip, timeout: 300_000 }, async () => {
+const cases = [
+	{ arm: "simra", model: "deepseek/deepseek-flash" },
+	{ arm: "pi", model: "deepseek/deepseek-flash" },
+	{ arm: "opencode", model: "deepseek/deepseek-flash" },
+	{ arm: "simra", model: "openai/gpt-6.1-sol" },
+	{ arm: "opencode", model: "openai/gpt-6.1-sol" },
+];
+for (const { arm, model } of cases) {
+	test(`arm ${arm}, ${model}: one model call through the proxy`, { skip, timeout: 300_000 }, async () => {
 		const realKey = `sk-test-${randomBytes(16).toString("hex")}`;
 		const tmp = mkdtempSync(join(tmpdir(), "simra-arm-test-"));
 		const api = await fakeModelApi();
@@ -161,14 +192,14 @@ for (const arm of ["simra", "pi", "opencode"]) {
 			writeFileSync(join(task, "simra.local.json"), JSON.stringify({ environments: { eda: { engine, image } } }));
 			const runs = join(tmp, "runs");
 			// Run the arm as a separate process, as a user does, with the test key in its environment.
-			const r = await runAsync(process.execPath, [join(repo, "evals/run-arm.mjs"), task, arm, "--runs", runs, "--timeout-min", "4", "--upstream", api.url], { PATH: process.env.PATH, HOME: process.env.HOME, DEEPSEEK_API_KEY: realKey });
+			const r = await runAsync(process.execPath, [join(repo, "evals/run-arm.mjs"), task, arm, "--model", model, "--runs", runs, "--timeout-min", "4", "--upstream", api.url], { PATH: process.env.PATH, HOME: process.env.HOME, [MODELS[model].keyVar]: realKey });
 			assert.equal(r.status, 0, r.stderr);
 			const [run] = readdirSync(runs);
 			const summary = JSON.parse(readFileSync(join(runs, run, "score.json"), "utf8"));
 			const stderr = readFileSync(join(runs, run, "stderr.log"), "utf8");
 			assert.equal(summary.exit.code, 0, stderr);
 			assert.ok(summary.model_calls >= 1, "no model call");
-			assert.deepEqual(summary.request_models, ["deepseek-flash"]);
+			assert.deepEqual(summary.request_models, [model.split("/")[1]]);
 			const calls = readFileSync(join(runs, run, "models.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
 			// OpenCode also asks for a session title, without tools and without a thinking level.
 			const agentCalls = calls.filter((c) => c.tools?.length);

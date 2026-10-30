@@ -63,10 +63,20 @@ Arms:
 - `pi`: stock pi.
 - `opencode`: OpenCode.
 
-All arms use the model `deepseek/deepseek-flash` with high reasoning effort. On 2026-10-28, a check through
+All arms use the same model with high reasoning effort. The default model is `deepseek/deepseek-flash`.
+Select another model in `MODELS` (in `run-arm.mjs`) with `--model <id>`, for example `--model openai/gpt-6.1-sol`. On 2026-10-28, a check through
 `model-proxy.mjs` showed that pi 1.4.0 and OpenCode 1.14.48 both send the model name `deepseek-flash` and
 `reasoning_effort: high` to `api.deepseek.com`. OpenCode also sends one call for the session title, without
 tools and without a reasoning effort.
+
+With `openai/gpt-6.1-sol` (Responses API), a check on 2026-10-30 showed:
+
+- pi 1.4.0 sends a fixed `reasoning.effort: medium` and puts the thinking level `high` in a `configuration_update`
+  input item. The proxy logs the effort of that item. A direct test on the API (4 calls per form) gave a mean
+  of 988 reasoning tokens with `high`, 1025 with pi's form and 475 with `medium`. So the item sets the effort.
+- OpenCode 1.14.48 does not know this model as a reasoning model and drops the effort. The model option
+  `forceReasoning: true` in `MODELS` keeps it: OpenCode then sends `reasoning.effort: high`.
+- `small_model` is set to the same model, so the title call of OpenCode does not use a different model.
 
 Each arm runs in a sandbox container of the environment image (`container/`):
 
@@ -79,8 +89,9 @@ the sandbox with a fake model API.
 
 1. Build the environment image with `container/build.sh`.
 2. Write `examples/ota-sg13g2/simra.local.json` for this image (see the example README).
-3. Put `DEEPSEEK_API_KEY` in the environment or in `.env` in the repository root.
-4. Run `node evals/run-arm.mjs evals/ota-corners <arm>`.
+3. Put the key variable of the model in the environment or in `.env` in the repository root. `MODELS` names the
+   variable: `DEEPSEEK_API_KEY` for `deepseek/deepseek-flash`, `OPENAI_API_KEY` for `openai/gpt-6.1-sol`.
+4. Run `node evals/run-arm.mjs evals/ota-corners <arm> [--model <id>]`.
 
 The run directory is outside the repository (default: `$TMPDIR/simra-evals`; change it with `--runs <dir>`
 or `SIMRA_EVAL_RUNS`). It holds the workspace `ws/`, the event stream `transcript.jsonl`, the model call log
