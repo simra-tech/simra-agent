@@ -10,16 +10,15 @@ The PDK is at `$PDK_ROOT/ihp-sg13g2`.
 Find out if the OTA meets `spec.md` at every corner. Do not change `ota.spice`.
 
 Write `answer.json` in this directory, in the format below. Give one row for each corner (tt, ss, ff) and
-each requirement (gain_db, ugf_hz, pm_deg, sat_margin_v): 12 rows. Give the gain in dB, the unity-gain
-frequency in Hz, the phase margin in degrees and the saturation margin in V. In each sat_margin_v row, give
-the transistor that sets the margin in "device" (for example "XM1").
+each requirement (gain_db, ugf_hz, pm_deg): 9 rows. In each row, give the worst value over the input
+common-mode range of the spec, and the VCM in V where it occurs. Give the gain in dB, the unity-gain frequency
+in Hz and the phase margin in degrees.
 
 ```json
 {
   "meets_spec": true,
   "rows": [
-    { "corner": "tt", "requirement": "gain_db", "value": 0, "pass": true, "evidence": "<a file in this directory, or a run id>" },
-    { "corner": "tt", "requirement": "sat_margin_v", "value": 0, "device": "XM1", "pass": true, "evidence": "<a file in this directory, or a run id>" }
+    { "corner": "tt", "requirement": "gain_db", "value": 0, "vcm": 0, "pass": true, "evidence": "<a file in this directory, or a run id>" }
   ]
 }
 ```

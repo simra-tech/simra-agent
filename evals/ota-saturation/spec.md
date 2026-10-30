@@ -5,7 +5,7 @@ The OTA is the subcircuit `ota` in `ota.spice`.
 ## Conditions
 
 - Supply: VDD as given for the corner. VSS = 0 V.
-- Input common-mode voltage: VCM = VDD / 2.
+- Input common-mode voltage: VCM from 0.40 V to 0.70 V. Each requirement applies at each VCM in this range.
 - Bias: a 10 uA current flows into `ibias`.
 - Load: CL = 2 pF from `out` to ground.
 
@@ -24,10 +24,5 @@ Each requirement applies at every corner.
 | Requirement | Id | Limit |
 | --- | --- | --- |
 | DC open-loop gain, at 1 Hz | `gain_db` | >= 48 dB |
-| Unity-gain frequency | `ugf_hz` | >= 12 MHz |
+| Unity-gain frequency | `ugf_hz` | >= 13 MHz |
 | Phase margin | `pm_deg` | >= 60 ° |
-| Saturation margin | `sat_margin_v` | >= 0 V |
-
-The saturation margin is the smallest value of VDS - VDSAT of the transistors XM1 to XM8 at the DC operating
-point. VDSAT is the drain saturation voltage that the device model gives at the operating point. For a PMOS,
-use the magnitudes of VDS and VDSAT.

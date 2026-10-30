@@ -4,6 +4,7 @@
 * Then run ./sim.sh tb_ota.spice.
 * The AC stimulus (1 V) is on inp. Lfb and Cfb close the loop at DC only, so the output
 * settles at the common-mode voltage and the AC response is the open-loop response.
+* VCM = VDD / 2 is the worst case of the input range, so one VCM is sufficient.
 .include "ota.spice"
 .lib cornerMOSlv.lib mos_tt
 .temp 27

@@ -21,21 +21,20 @@
     },
     "ugf_hz": {
       "op": ">=",
-      "value": 12000000
+      "value": 13000000
     },
     "pm_deg": {
       "op": ">=",
       "value": 60
-    },
-    "sat_margin_v": {
-      "op": ">=",
-      "value": 0
     }
   },
+  "vcm_range": [
+    0.4,
+    0.7
+  ],
   "meets_spec": false,
   "variant_meets_spec": {
-    "ac_only": true,
-    "overdrive": false
+    "team_testbench": true
   },
   "tolerance": {
     "gain_db": {
@@ -46,9 +45,6 @@
     },
     "pm_deg": {
       "abs": 2
-    },
-    "sat_margin_v": {
-      "abs": 0.01
     }
   },
   "corners": {
@@ -57,174 +53,561 @@
         "section": "mos_tt",
         "vdd": 1.2,
         "temp": 27,
-        "vcm": 0.6,
+        "vcm_range": [
+          0.4,
+          0.7
+        ],
         "cl": "2p"
       },
-      "experiment": "20261030-111014-49aaf1",
       "values": {
-        "gain_db": 52.1052,
-        "ugf_hz": 20776600,
-        "pm_deg": 76.10883,
-        "sat_margin_v": 0.03408725
+        "gain_db": 51.161,
+        "ugf_hz": 16412800,
+        "pm_deg": 75.92949
       },
-      "device": "XM5",
+      "vcm": {
+        "gain_db": 0.7,
+        "ugf_hz": 0.4,
+        "pm_deg": 0.52
+      },
       "pass": {
         "gain_db": true,
         "ugf_hz": true,
-        "pm_deg": true,
-        "sat_margin_v": true
+        "pm_deg": true
       },
-      "margins": {
-        "XM1": 0.3141678,
-        "XM2": 0.2958329,
-        "XM3": 0.34337,
-        "XM4": 0.3613251,
-        "XM5": 0.03408725,
-        "XM6": 0.407787,
-        "XM7": 0.4092534,
-        "XM8": 0.2347326
-      },
-      "overdrive": {
+      "team_testbench": {
+        "experiment": "20261030-114445-736a73",
+        "vcm": 0.6,
         "values": {
-          "sat_margin_v": 0.0466958
+          "gain_db": 52.1052,
+          "ugf_hz": 20776600,
+          "pm_deg": 76.10883
         },
-        "device": "XM5",
         "pass": {
-          "sat_margin_v": true
-        },
-        "margins": {
-          "XM1": 0.3862158,
-          "XM2": 0.3672431,
-          "XM3": 0.3634998,
-          "XM4": 0.3814491,
-          "XM5": 0.0466958,
-          "XM6": 0.4202967,
-          "XM7": 0.4218617,
-          "XM8": 0.2516711
+          "gain_db": true,
+          "ugf_hz": true,
+          "pm_deg": true
         }
       },
-      "team_experiment": "20261030-111015-2f2773",
-      "cross_check": {
-        "gain_db": 52.1051578172049,
-        "ugf_hz": 20775536.71016092,
-        "pm_deg": 76.10884694609356
-      }
+      "sweep": [
+        {
+          "vcm": 0.4,
+          "experiment": "20261030-114424-3d2761",
+          "gain_db": 53.1119,
+          "ugf_hz": 16412800,
+          "pm_deg": 77.33989,
+          "sat_margin_v": -0.115984,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.42,
+          "experiment": "20261030-114425-38bdd4",
+          "gain_db": 53.0358,
+          "ugf_hz": 17409600,
+          "pm_deg": 76.86061,
+          "sat_margin_v": -0.103601,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.44,
+          "experiment": "20261030-114427-774fd5",
+          "gain_db": 52.9613,
+          "ugf_hz": 18251500,
+          "pm_deg": 76.49563,
+          "sat_margin_v": -0.0904707,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.46,
+          "experiment": "20261030-114428-f9f029",
+          "gain_db": 52.8846,
+          "ugf_hz": 18940600,
+          "pm_deg": 76.23224,
+          "sat_margin_v": -0.0766283,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.48,
+          "experiment": "20261030-114429-27f555",
+          "gain_db": 52.8026,
+          "ugf_hz": 19481600,
+          "pm_deg": 76.05881,
+          "sat_margin_v": -0.0621128,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.5,
+          "experiment": "20261030-114431-c44b88",
+          "gain_db": 52.7129,
+          "ugf_hz": 19888900,
+          "pm_deg": 75.96272,
+          "sat_margin_v": -0.0469831,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.52,
+          "experiment": "20261030-114432-e9137f",
+          "gain_db": 52.6137,
+          "ugf_hz": 20183500,
+          "pm_deg": 75.92949,
+          "sat_margin_v": -0.031331,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.54,
+          "experiment": "20261030-114433-cc4eb8",
+          "gain_db": 52.504,
+          "ugf_hz": 20392700,
+          "pm_deg": 75.94244,
+          "sat_margin_v": -0.0152801,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.56,
+          "experiment": "20261030-114434-98fad5",
+          "gain_db": 52.383,
+          "ugf_hz": 20548900,
+          "pm_deg": 75.98444,
+          "sat_margin_v": 0.001038991,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.58,
+          "experiment": "20261030-114436-ade61d",
+          "gain_db": 52.2503,
+          "ugf_hz": 20672300,
+          "pm_deg": 76.04265,
+          "sat_margin_v": 0.01751854,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.6,
+          "experiment": "20261030-114438-c21763",
+          "gain_db": 52.1052,
+          "ugf_hz": 20776600,
+          "pm_deg": 76.10883,
+          "sat_margin_v": 0.03408725,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.62,
+          "experiment": "20261030-114439-07ae1d",
+          "gain_db": 51.9469,
+          "ugf_hz": 20869100,
+          "pm_deg": 76.17856,
+          "sat_margin_v": 0.05070428,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.64,
+          "experiment": "20261030-114440-4be3bb",
+          "gain_db": 51.7747,
+          "ugf_hz": 20954700,
+          "pm_deg": 76.24955,
+          "sat_margin_v": 0.06734777,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.66,
+          "experiment": "20261030-114441-70e41c",
+          "gain_db": 51.5873,
+          "ugf_hz": 21034500,
+          "pm_deg": 76.32088,
+          "sat_margin_v": 0.08400605,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.68,
+          "experiment": "20261030-114443-bc7ed5",
+          "gain_db": 51.3834,
+          "ugf_hz": 21108700,
+          "pm_deg": 76.3921,
+          "sat_margin_v": 0.1006725,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.7,
+          "experiment": "20261030-114444-dc076e",
+          "gain_db": 51.161,
+          "ugf_hz": 21177500,
+          "pm_deg": 76.46309,
+          "sat_margin_v": 0.1173432,
+          "sat_device": "XM5"
+        }
+      ]
     },
     "ss": {
       "conditions": {
         "section": "mos_ss",
         "vdd": 1.08,
         "temp": 125,
-        "vcm": 0.54,
+        "vcm_range": [
+          0.4,
+          0.7
+        ],
         "cl": "2p"
       },
-      "experiment": "20261030-111017-a9a48a",
       "values": {
-        "gain_db": 49.3998,
-        "ugf_hz": 14740300,
-        "pm_deg": 72.59012,
-        "sat_margin_v": -0.0706125
+        "gain_db": 46.4119,
+        "ugf_hz": 11618000,
+        "pm_deg": 72.44018
       },
-      "device": "XM5",
+      "vcm": {
+        "gain_db": 0.7,
+        "ugf_hz": 0.4,
+        "pm_deg": 0.6
+      },
       "pass": {
-        "gain_db": true,
-        "ugf_hz": true,
-        "pm_deg": true,
-        "sat_margin_v": false
+        "gain_db": false,
+        "ugf_hz": false,
+        "pm_deg": true
       },
-      "margins": {
-        "XM1": 0.2089045,
-        "XM2": 0.1814808,
-        "XM3": 0.3055605,
-        "XM4": 0.33231,
-        "XM5": -0.0706125,
-        "XM6": 0.3099113,
-        "XM7": 0.2913971,
-        "XM8": 0.2037672
-      },
-      "overdrive": {
+      "team_testbench": {
+        "experiment": "20261030-114508-96d5f4",
+        "vcm": 0.54,
         "values": {
-          "sat_margin_v": -0.0552637
+          "gain_db": 49.3998,
+          "ugf_hz": 14740300,
+          "pm_deg": 72.59012
         },
-        "device": "XM5",
         "pass": {
-          "sat_margin_v": false
-        },
-        "margins": {
-          "XM1": 0.3062512,
-          "XM2": 0.2776158,
-          "XM3": 0.3485384,
-          "XM4": 0.3752784,
-          "XM5": -0.0552637,
-          "XM6": 0.3403971,
-          "XM7": 0.3067456,
-          "XM8": 0.2246068
+          "gain_db": true,
+          "ugf_hz": true,
+          "pm_deg": true
         }
       },
-      "team_experiment": "20261030-111019-1a5bab",
-      "cross_check": {
-        "gain_db": 49.39975325189966,
-        "ugf_hz": 14739770.576002061,
-        "pm_deg": 72.59014141633529
-      }
+      "sweep": [
+        {
+          "vcm": 0.4,
+          "experiment": "20261030-114446-a2a69b",
+          "gain_db": 49.9275,
+          "ugf_hz": 11618000,
+          "pm_deg": 75.08415,
+          "sat_margin_v": -0.161749,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.42,
+          "experiment": "20261030-114447-4c1637",
+          "gain_db": 49.9242,
+          "ugf_hz": 12259800,
+          "pm_deg": 74.48793,
+          "sat_margin_v": -0.150315,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.44,
+          "experiment": "20261030-114448-284113",
+          "gain_db": 49.8952,
+          "ugf_hz": 12835700,
+          "pm_deg": 73.98224,
+          "sat_margin_v": -0.138315,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.46,
+          "experiment": "20261030-114450-1f5e10",
+          "gain_db": 49.8431,
+          "ugf_hz": 13345800,
+          "pm_deg": 73.56026,
+          "sat_margin_v": -0.125774,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.48,
+          "experiment": "20261030-114451-287509",
+          "gain_db": 49.7683,
+          "ugf_hz": 13789200,
+          "pm_deg": 73.21614,
+          "sat_margin_v": -0.112712,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.5,
+          "experiment": "20261030-114452-8e6f39",
+          "gain_db": 49.6704,
+          "ugf_hz": 14168600,
+          "pm_deg": 72.94341,
+          "sat_margin_v": -0.0991479,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.52,
+          "experiment": "20261030-114453-4d74d2",
+          "gain_db": 49.5482,
+          "ugf_hz": 14484400,
+          "pm_deg": 72.73674,
+          "sat_margin_v": -0.0851051,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.54,
+          "experiment": "20261030-114455-1d5a67",
+          "gain_db": 49.3998,
+          "ugf_hz": 14740300,
+          "pm_deg": 72.59012,
+          "sat_margin_v": -0.0706125,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.56,
+          "experiment": "20261030-114456-99c9fe",
+          "gain_db": 49.2226,
+          "ugf_hz": 14941100,
+          "pm_deg": 72.4969,
+          "sat_margin_v": -0.0557106,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.58,
+          "experiment": "20261030-114457-81afad",
+          "gain_db": 49.0131,
+          "ugf_hz": 15092800,
+          "pm_deg": 72.44969,
+          "sat_margin_v": -0.0404547,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.6,
+          "experiment": "20261030-114458-d971ec",
+          "gain_db": 48.7658,
+          "ugf_hz": 15204700,
+          "pm_deg": 72.44018,
+          "sat_margin_v": -0.0249122,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.62,
+          "experiment": "20261030-114500-d75d98",
+          "gain_db": 48.4726,
+          "ugf_hz": 15284000,
+          "pm_deg": 72.46149,
+          "sat_margin_v": -0.00915544,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.64,
+          "experiment": "20261030-114501-786bc9",
+          "gain_db": 48.1199,
+          "ugf_hz": 15335500,
+          "pm_deg": 72.50916,
+          "sat_margin_v": 0.006747589,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.66,
+          "experiment": "20261030-114503-37a0b6",
+          "gain_db": 47.6863,
+          "ugf_hz": 15360800,
+          "pm_deg": 72.58302,
+          "sat_margin_v": 0.02274076,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.68,
+          "experiment": "20261030-114504-204428",
+          "gain_db": 47.1361,
+          "ugf_hz": 15356100,
+          "pm_deg": 72.68919,
+          "sat_margin_v": 0.03877783,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.7,
+          "experiment": "20261030-114506-8262bf",
+          "gain_db": 46.4119,
+          "ugf_hz": 15310700,
+          "pm_deg": 72.84314,
+          "sat_margin_v": 0.04121595,
+          "sat_device": "XM2"
+        }
+      ]
     },
     "ff": {
       "conditions": {
         "section": "mos_ff",
         "vdd": 1.32,
         "temp": -40,
-        "vcm": 0.66,
+        "vcm_range": [
+          0.4,
+          0.7
+        ],
         "cl": "2p"
       },
-      "experiment": "20261030-111020-748008",
       "values": {
-        "gain_db": 54.3694,
-        "ugf_hz": 27388100,
-        "pm_deg": 80.33726,
-        "sat_margin_v": 0.1376204
+        "gain_db": 54.0629,
+        "ugf_hz": 23155300,
+        "pm_deg": 79.45009
       },
-      "device": "XM5",
+      "vcm": {
+        "gain_db": 0.7,
+        "ugf_hz": 0.4,
+        "pm_deg": 0.46
+      },
       "pass": {
         "gain_db": true,
         "ugf_hz": true,
-        "pm_deg": true,
-        "sat_margin_v": true
+        "pm_deg": true
       },
-      "margins": {
-        "XM1": 0.4199672,
-        "XM2": 0.404336,
-        "XM3": 0.3393137,
-        "XM4": 0.3546567,
-        "XM5": 0.1376204,
-        "XM6": 0.4948721,
-        "XM7": 0.504311,
-        "XM8": 0.2381964
-      },
-      "overdrive": {
+      "team_testbench": {
+        "experiment": "20261030-114533-4d29a8",
+        "vcm": 0.66,
         "values": {
-          "sat_margin_v": 0.1447656
+          "gain_db": 54.3694,
+          "ugf_hz": 27388100,
+          "pm_deg": 80.33726
         },
-        "device": "XM5",
         "pass": {
-          "sat_margin_v": true
-        },
-        "margins": {
-          "XM1": 0.4731083,
-          "XM2": 0.4570405,
-          "XM3": 0.3473003,
-          "XM4": 0.3626387,
-          "XM5": 0.1447656,
-          "XM6": 0.4969519,
-          "XM7": 0.5114559,
-          "XM8": 0.2485244
+          "gain_db": true,
+          "ugf_hz": true,
+          "pm_deg": true
         }
       },
-      "team_experiment": "20261030-111023-2f55d9",
-      "cross_check": {
-        "gain_db": 54.36937296080466,
-        "ugf_hz": 27386765.739765644,
-        "pm_deg": 80.3372372056887
-      }
+      "sweep": [
+        {
+          "vcm": 0.4,
+          "experiment": "20261030-114509-fe0b2d",
+          "gain_db": 55.6054,
+          "ugf_hz": 23155300,
+          "pm_deg": 79.81747,
+          "sat_margin_v": -0.0758559,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.42,
+          "experiment": "20261030-114511-8b6bed",
+          "gain_db": 55.5106,
+          "ugf_hz": 24264900,
+          "pm_deg": 79.59402,
+          "sat_margin_v": -0.0617642,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.44,
+          "experiment": "20261030-114513-530196",
+          "gain_db": 55.4296,
+          "ugf_hz": 25078200,
+          "pm_deg": 79.47759,
+          "sat_margin_v": -0.0468148,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.46,
+          "experiment": "20261030-114514-3fcaf0",
+          "gain_db": 55.3566,
+          "ugf_hz": 25634800,
+          "pm_deg": 79.45009,
+          "sat_margin_v": -0.0311133,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.48,
+          "experiment": "20261030-114516-722bf8",
+          "gain_db": 55.2863,
+          "ugf_hz": 25999700,
+          "pm_deg": 79.48796,
+          "sat_margin_v": -0.0148347,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.5,
+          "experiment": "20261030-114518-c7bee9",
+          "gain_db": 55.2142,
+          "ugf_hz": 26246800,
+          "pm_deg": 79.56457,
+          "sat_margin_v": 0.001809069,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.52,
+          "experiment": "20261030-114519-2351ac",
+          "gain_db": 55.1371,
+          "ugf_hz": 26437300,
+          "pm_deg": 79.6579,
+          "sat_margin_v": 0.01864464,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.54,
+          "experiment": "20261030-114521-f31fdd",
+          "gain_db": 55.0531,
+          "ugf_hz": 26600300,
+          "pm_deg": 79.75679,
+          "sat_margin_v": 0.03557122,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.56,
+          "experiment": "20261030-114522-f2095e",
+          "gain_db": 54.9613,
+          "ugf_hz": 26748300,
+          "pm_deg": 79.85655,
+          "sat_margin_v": 0.05254171,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.58,
+          "experiment": "20261030-114524-f005bb",
+          "gain_db": 54.8611,
+          "ugf_hz": 26886700,
+          "pm_deg": 79.95567,
+          "sat_margin_v": 0.06953579,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.6,
+          "experiment": "20261030-114525-85e393",
+          "gain_db": 54.7522,
+          "ugf_hz": 27020300,
+          "pm_deg": 80.05318,
+          "sat_margin_v": 0.08654439,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.62,
+          "experiment": "20261030-114526-3368c2",
+          "gain_db": 54.6342,
+          "ugf_hz": 27148300,
+          "pm_deg": 80.14933,
+          "sat_margin_v": 0.103563,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.64,
+          "experiment": "20261030-114528-20a313",
+          "gain_db": 54.5067,
+          "ugf_hz": 27270800,
+          "pm_deg": 80.24398,
+          "sat_margin_v": 0.1205889,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.66,
+          "experiment": "20261030-114529-92e486",
+          "gain_db": 54.3694,
+          "ugf_hz": 27388100,
+          "pm_deg": 80.33726,
+          "sat_margin_v": 0.1376204,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.68,
+          "experiment": "20261030-114530-31f9ad",
+          "gain_db": 54.2216,
+          "ugf_hz": 27500400,
+          "pm_deg": 80.42905,
+          "sat_margin_v": 0.1546561,
+          "sat_device": "XM5"
+        },
+        {
+          "vcm": 0.7,
+          "experiment": "20261030-114532-812c38",
+          "gain_db": 54.0629,
+          "ugf_hz": 27609400,
+          "pm_deg": 80.51923,
+          "sat_margin_v": 0.1716948,
+          "sat_device": "XM5"
+        }
+      ]
     }
   }
 }
