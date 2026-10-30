@@ -2,16 +2,26 @@
 # Build with container/build.sh. The build context is the runtime part of the committed tree (git archive):
 # no evals/, examples/ or test/, so an agent in the container cannot read the eval answers.
 ARG BASE=docker.io/hpretl/iic-osic-tools:2026.10@sha256:306585de35d198e70ea58950f77147c86f56c698726a19afea9f1c83009557be
+
+# The base image has Node 18 and no npm. pi needs Node 22.19 or later.
+# One stage per architecture (amd64, arm64); the build uses the stage of the target architecture.
+ARG NODE_VERSION=22.23.4
+ARG TARGETARCH
+FROM scratch AS node-amd64
+ARG NODE_VERSION
+ADD --checksum=sha256:1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz /node.tar.xz
+FROM scratch AS node-arm64
+ARG NODE_VERSION
+ADD --checksum=sha256:6287aa46b6c375d816e63ae66d024fbbfd70404825aabdfdf898a970871d2f4b https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-arm64.tar.xz /node.tar.xz
+FROM node-${TARGETARCH} AS node
+
 FROM ${BASE}
 ARG BASE
 
 USER root
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# The base image has Node 18 and no npm. pi needs Node 22.19 or later.
-ARG NODE_VERSION=22.23.4
-ARG NODE_SHA256=1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce
-ADD --checksum=sha256:${NODE_SHA256} https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz /tmp/node.tar.xz
+COPY --from=node /node.tar.xz /tmp/node.tar.xz
 RUN mkdir -p /opt/node && tar -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1 && rm /tmp/node.tar.xz
 
 # The default image startup (VNC) is not used, so set the tool path here.
