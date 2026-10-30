@@ -22,7 +22,7 @@ const environment = process.argv[2] ?? "eda";
 const CORNER_LIB = "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerMOSlv.lib";
 const MEASUREMENTS = { "v(out)": "V", gain_db: "dB", ugf_hz: "Hz", pm_deg: "deg" };
 export const METRICS = ["gain_db", "ugf_hz", "pm_deg"];
-const UNIT_SCALE = { dB: 1, Hz: 1, kHz: 1e3, MHz: 1e6, GHz: 1e9, "°": 1, deg: 1 };
+const UNIT_SCALE = { dB: 1, Hz: 1, kHz: 1e3, MHz: 1e6, GHz: 1e9, "°": 1, deg: 1, V: 1, mV: 1e-3 };
 
 /** Corners and limits from spec.md. */
 export function parseSpec(text) {

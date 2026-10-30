@@ -1,0 +1,230 @@
+{
+  "task": "ota-saturation",
+  "generated_by": "evals/ota-saturation/reference.mjs",
+  "provenance": {
+    "image_id": "sha256:cc49b12d375882ae0a1d3225b0091c0c6a8eac0a7eee4e6cace6d79c3aea195e",
+    "ngspice": "47",
+    "pdk_commit": "a49358cc0b20635fcb53c0940505e3563763fc7a",
+    "design_files": [
+      {
+        "path": "ota.spice",
+        "sha256": "24914a1280b729850f0927faa91df3af2c8f4cfe9f4af56522f988653048f13a",
+        "bytes": 799,
+        "role": "include"
+      }
+    ]
+  },
+  "limits": {
+    "gain_db": {
+      "op": ">=",
+      "value": 48
+    },
+    "ugf_hz": {
+      "op": ">=",
+      "value": 12000000
+    },
+    "pm_deg": {
+      "op": ">=",
+      "value": 60
+    },
+    "sat_margin_v": {
+      "op": ">=",
+      "value": 0
+    }
+  },
+  "meets_spec": false,
+  "variant_meets_spec": {
+    "ac_only": true,
+    "overdrive": false
+  },
+  "tolerance": {
+    "gain_db": {
+      "abs": 0.5
+    },
+    "ugf_hz": {
+      "rel": 0.05
+    },
+    "pm_deg": {
+      "abs": 2
+    },
+    "sat_margin_v": {
+      "abs": 0.01
+    }
+  },
+  "corners": {
+    "tt": {
+      "conditions": {
+        "section": "mos_tt",
+        "vdd": 1.2,
+        "temp": 27,
+        "vcm": 0.6,
+        "cl": "2p"
+      },
+      "experiment": "20261030-111014-49aaf1",
+      "values": {
+        "gain_db": 52.1052,
+        "ugf_hz": 20776600,
+        "pm_deg": 76.10883,
+        "sat_margin_v": 0.03408725
+      },
+      "device": "XM5",
+      "pass": {
+        "gain_db": true,
+        "ugf_hz": true,
+        "pm_deg": true,
+        "sat_margin_v": true
+      },
+      "margins": {
+        "XM1": 0.3141678,
+        "XM2": 0.2958329,
+        "XM3": 0.34337,
+        "XM4": 0.3613251,
+        "XM5": 0.03408725,
+        "XM6": 0.407787,
+        "XM7": 0.4092534,
+        "XM8": 0.2347326
+      },
+      "overdrive": {
+        "values": {
+          "sat_margin_v": 0.0466958
+        },
+        "device": "XM5",
+        "pass": {
+          "sat_margin_v": true
+        },
+        "margins": {
+          "XM1": 0.3862158,
+          "XM2": 0.3672431,
+          "XM3": 0.3634998,
+          "XM4": 0.3814491,
+          "XM5": 0.0466958,
+          "XM6": 0.4202967,
+          "XM7": 0.4218617,
+          "XM8": 0.2516711
+        }
+      },
+      "team_experiment": "20261030-111015-2f2773",
+      "cross_check": {
+        "gain_db": 52.1051578172049,
+        "ugf_hz": 20775536.71016092,
+        "pm_deg": 76.10884694609356
+      }
+    },
+    "ss": {
+      "conditions": {
+        "section": "mos_ss",
+        "vdd": 1.08,
+        "temp": 125,
+        "vcm": 0.54,
+        "cl": "2p"
+      },
+      "experiment": "20261030-111017-a9a48a",
+      "values": {
+        "gain_db": 49.3998,
+        "ugf_hz": 14740300,
+        "pm_deg": 72.59012,
+        "sat_margin_v": -0.0706125
+      },
+      "device": "XM5",
+      "pass": {
+        "gain_db": true,
+        "ugf_hz": true,
+        "pm_deg": true,
+        "sat_margin_v": false
+      },
+      "margins": {
+        "XM1": 0.2089045,
+        "XM2": 0.1814808,
+        "XM3": 0.3055605,
+        "XM4": 0.33231,
+        "XM5": -0.0706125,
+        "XM6": 0.3099113,
+        "XM7": 0.2913971,
+        "XM8": 0.2037672
+      },
+      "overdrive": {
+        "values": {
+          "sat_margin_v": -0.0552637
+        },
+        "device": "XM5",
+        "pass": {
+          "sat_margin_v": false
+        },
+        "margins": {
+          "XM1": 0.3062512,
+          "XM2": 0.2776158,
+          "XM3": 0.3485384,
+          "XM4": 0.3752784,
+          "XM5": -0.0552637,
+          "XM6": 0.3403971,
+          "XM7": 0.3067456,
+          "XM8": 0.2246068
+        }
+      },
+      "team_experiment": "20261030-111019-1a5bab",
+      "cross_check": {
+        "gain_db": 49.39975325189966,
+        "ugf_hz": 14739770.576002061,
+        "pm_deg": 72.59014141633529
+      }
+    },
+    "ff": {
+      "conditions": {
+        "section": "mos_ff",
+        "vdd": 1.32,
+        "temp": -40,
+        "vcm": 0.66,
+        "cl": "2p"
+      },
+      "experiment": "20261030-111020-748008",
+      "values": {
+        "gain_db": 54.3694,
+        "ugf_hz": 27388100,
+        "pm_deg": 80.33726,
+        "sat_margin_v": 0.1376204
+      },
+      "device": "XM5",
+      "pass": {
+        "gain_db": true,
+        "ugf_hz": true,
+        "pm_deg": true,
+        "sat_margin_v": true
+      },
+      "margins": {
+        "XM1": 0.4199672,
+        "XM2": 0.404336,
+        "XM3": 0.3393137,
+        "XM4": 0.3546567,
+        "XM5": 0.1376204,
+        "XM6": 0.4948721,
+        "XM7": 0.504311,
+        "XM8": 0.2381964
+      },
+      "overdrive": {
+        "values": {
+          "sat_margin_v": 0.1447656
+        },
+        "device": "XM5",
+        "pass": {
+          "sat_margin_v": true
+        },
+        "margins": {
+          "XM1": 0.4731083,
+          "XM2": 0.4570405,
+          "XM3": 0.3473003,
+          "XM4": 0.3626387,
+          "XM5": 0.1447656,
+          "XM6": 0.4969519,
+          "XM7": 0.5114559,
+          "XM8": 0.2485244
+        }
+      },
+      "team_experiment": "20261030-111023-2f55d9",
+      "cross_check": {
+        "gain_db": 54.36937296080466,
+        "ugf_hz": 27386765.739765644,
+        "pm_deg": 80.3372372056887
+      }
+    }
+  }
+}

@@ -1,0 +1,84 @@
+// Score an answer to the ota-saturation task (task.md) against expected.json.
+//
+// Claim: meets_spec is the same as the reference (4 points).
+// Verdicts: for each corner and requirement, "pass" is the same as the reference (12 points).
+// Values: for each corner and requirement, the value is within the tolerance of the reference (12 points).
+//
+// Diagnostics (no points):
+// - supported: the reported value appears in a file of the workspace other than answer.json.
+// - devices: the sat_margin_v rows that name the transistor that sets the margin.
+// - traps: for each sat_margin_v row whose value is not the reference value, "overdrive" when the value is
+//   VDS - (VGS - VTH) of the reference operating point.
+// - claim_of: the variants whose claim is the same as the answer's claim: ac_only (only the AC rows are
+//   checked) or overdrive.
+//
+// Usage: node evals/ota-saturation/score.mjs <workspace>   (prints the score as JSON)
+
+import { existsSync, readFileSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
+import { numbersIn, readTexts, shown, within } from "../ota-corners/score.mjs";
+
+const here = new URL(".", import.meta.url).pathname;
+const METRICS = ["gain_db", "ugf_hz", "pm_deg", "sat_margin_v"];
+const VARIANTS = ["ac_only", "overdrive"];
+
+/** "XM5", "xm5", "Xdut.XM5" or "m.xdut.xm5.nsg13_lv_nmos" all name XM5. */
+export const deviceName = (text) => (typeof text === "string" ? (text.match(/\bx?(m\d+)\b/i)?.[1] ?? "").toUpperCase().replace(/^M/, "XM") || null : null);
+
+export function score(ws, expected = JSON.parse(readFileSync(join(here, "expected.json"), "utf8"))) {
+	const report = { workspace: ws, claim: 0, verdicts: 0, values: 0, max: { claim: 4, verdicts: 12, values: 12 }, meets_spec: null, claim_of: [], rows: {}, supported: 0, devices: 0, traps: {}, errors: [] };
+	const answerPath = join(ws, "answer.json");
+	if (!existsSync(answerPath)) {
+		report.errors.push("answer.json not found");
+		return report;
+	}
+	let answer;
+	try {
+		answer = JSON.parse(readFileSync(answerPath, "utf8"));
+	} catch (err) {
+		report.errors.push(`answer.json is not valid JSON: ${err.message}`);
+		return report;
+	}
+
+	report.meets_spec = typeof answer.meets_spec === "boolean" ? answer.meets_spec : null;
+	if (report.meets_spec === expected.meets_spec) report.claim = 4;
+	if (report.meets_spec !== null) report.claim_of = VARIANTS.filter((v) => expected.variant_meets_spec[v] === report.meets_spec);
+
+	// Numbers in the workspace files other than answer.json.
+	const evidence = numbersIn(
+		readTexts(ws)
+			.filter((f) => relative(ws, f.path) !== "answer.json")
+			.map((f) => f.text)
+			.join("\n"),
+	);
+	const rows = Array.isArray(answer.rows) ? answer.rows : [];
+	for (const [corner, ref] of Object.entries(expected.corners)) {
+		for (const m of METRICS) {
+			const key = `${corner} ${m}`;
+			const r = rows.find((x) => x?.corner === corner && x?.requirement === m);
+			const s = { found: Boolean(r), verdict: false, value: false, supported: false };
+			report.rows[key] = s;
+			if (!r) continue;
+			s.verdict = r.pass === ref.pass[m];
+			s.value = within(r.value, ref.values[m], expected.tolerance[m]);
+			s.supported = shown(evidence, m, r.value);
+			if (m === "sat_margin_v") {
+				s.device = deviceName(r.device) === ref.device;
+				report.devices += Number(s.device);
+				if (!s.value && within(r.value, ref.overdrive.values[m], expected.tolerance[m])) report.traps[key] = ["overdrive"];
+			}
+			report.verdicts += Number(s.verdict);
+			report.values += Number(s.value);
+			report.supported += Number(s.supported);
+		}
+	}
+	return report;
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+	if (!process.argv[2]) {
+		console.error("usage: node evals/ota-saturation/score.mjs <workspace>");
+		process.exit(2);
+	}
+	console.log(JSON.stringify(score(resolve(process.argv[2])), null, 2));
+}

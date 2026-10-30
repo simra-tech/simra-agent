@@ -1,0 +1,29 @@
+* Open-loop testbench for the OTA in ota.spice (IHP SG13G2)
+*
+* Set the corner in three lines: the .lib section (mos_tt, mos_ss or mos_ff), vdd and .temp.
+* Then run ./sim.sh tb_ota.spice.
+* The AC stimulus (1 V) is on inp. Lfb and Cfb close the loop at DC only, so the output
+* settles at the common-mode voltage and the AC response is the open-loop response.
+.include "ota.spice"
+.lib cornerMOSlv.lib mos_tt
+.temp 27
+.param vdd=1.2 vcm={vdd/2}
+Vdd vdd 0 {vdd}
+Vss vss 0 0
+Ib vdd ibias 10u
+Vinp inp 0 dc {vcm} ac 1
+Lfb out inn 1G
+Cfb inn 0 1G
+CL out 0 2p
+Xdut inp inn out vdd vss ibias ota
+.control
+op
+print v(out)
+ac dec 100 1 10G
+meas ac gain_db find vdb(out) at=1
+meas ac ugf_hz when vdb(out)=0
+* vp() is in radians in ngspice.
+meas ac phase_ugf_rad find vp(out) at=ugf_hz
+let pm_deg = 180 + phase_ugf_rad * 180 / pi
+print pm_deg
+.endc
