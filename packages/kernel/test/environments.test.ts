@@ -55,3 +55,13 @@ test("a container environment checks the image ID and the engine", (t) => {
 	assert.throws(() => buildInvocation(request({ engine: "nerdctl" })), /unknown engine "nerdctl"/);
 	assert.throws(() => buildInvocation(request({ image: undefined })), /needs "image"/);
 });
+
+test("the technology directory is mounted read-only and given in SIMRA_TECHNOLOGY_DIR", (t) => {
+	fakeEngines(t);
+	const inv = buildInvocation({ ...request({}), technologyDir: "/simra/technologies" });
+	assert.ok(inv.args.includes("/simra/technologies:/simra/technologies:ro"));
+	assert.ok(inv.args.includes("SIMRA_TECHNOLOGY_DIR=/simra/technologies"));
+	assert.ok(!buildInvocation(request({})).args.some((a) => a.includes("SIMRA_TECHNOLOGY_DIR")));
+	const local = buildInvocation({ ...request({}), config: { kind: "local" } as never, technologyDir: "/simra/technologies" });
+	assert.equal(local.env.SIMRA_TECHNOLOGY_DIR, "/simra/technologies");
+});

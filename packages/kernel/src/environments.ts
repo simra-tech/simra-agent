@@ -1,6 +1,8 @@
 // Execution environments. An environment turns an adapter command into a process command line.
 // "local" runs the adapter on this host. "container" runs it in a container image with podman or docker.
 // In a container, the design root and the adapter directory are mounted at their host paths, so paths stay the same.
+// The technology directory (technology packs, PDK data for adapters) is mounted in the same way, read-only. The
+// adapter gets its path in SIMRA_TECHNOLOGY_DIR.
 
 import { execFileSync } from "node:child_process";
 import type { ContainerEngine, EnvironmentConfig } from "./config.ts";
@@ -20,6 +22,8 @@ export interface InvocationRequest {
 	adapterDir: string;
 	adapterCommand: string[];
 	experimentId: string;
+	/** The directory of the technology packs, if it exists. */
+	technologyDir?: string;
 }
 
 export function containerImageId(engine: ContainerEngine, image: string): string {
@@ -43,13 +47,14 @@ export function buildInvocation(req: InvocationRequest): Invocation {
 	const { config } = req;
 	const pin = config.cpus ? ["taskset", "-c", config.cpus] : [];
 	const env = config.env ?? {};
+	const technology = req.technologyDir ? { SIMRA_TECHNOLOGY_DIR: req.technologyDir } : {};
 
 	if (config.kind === "local") {
 		const argv = [...pin, ...req.adapterCommand];
 		return {
 			command: argv[0],
 			args: argv.slice(1),
-			env: { ...process.env, ...env },
+			env: { ...process.env, ...env, ...technology },
 			record: { name: req.name, kind: "local", cpus: config.cpus ?? null, env },
 		};
 	}
@@ -73,11 +78,12 @@ export function buildInvocation(req: InvocationRequest): Invocation {
 			containerUser(engine),
 			"--label",
 			`simra.experiment=${req.experimentId}`,
-			...Object.entries(env).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
+			...Object.entries({ ...env, ...technology }).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
 			"-v",
 			`${req.root}:${req.root}`,
 			"-v",
 			`${req.adapterDir}:${req.adapterDir}:ro`,
+			...(req.technologyDir ? ["-v", `${req.technologyDir}:${req.technologyDir}:ro`] : []),
 			"-w",
 			req.root,
 			imageId,

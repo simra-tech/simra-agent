@@ -30,6 +30,8 @@ export const KERNEL_VERSION: string = readJson<{ version: string }>(
 	new URL("../package.json", import.meta.url).pathname,
 ).version;
 export const BUILTIN_ADAPTER_DIR = new URL("../../../adapters", import.meta.url).pathname;
+/** The technology packs (PDK data for adapters, see technologies/README.md). */
+export const BUILTIN_TECHNOLOGY_DIR = new URL("../../../technologies", import.meta.url).pathname;
 
 export interface AdapterManifest {
 	contract: string;
@@ -124,7 +126,8 @@ export async function runExperiment(opts: RunOptions): Promise<RunOutcome> {
 	const responsePath = join(dir, "response.json");
 	const adapterCommand = [...manifest.command.map((part) => part.replaceAll("{adapter_dir}", adapterDir)), requestPath];
 	// Build the invocation first: a configuration error must not leave an empty experiment behind.
-	const invocation = buildInvocation({ name: envName, config: envConfig, root, adapterDir, adapterCommand, experimentId: id });
+	const technologyDir = existsSync(BUILTIN_TECHNOLOGY_DIR) ? BUILTIN_TECHNOLOGY_DIR : undefined;
+	const invocation = buildInvocation({ name: envName, config: envConfig, root, adapterDir, adapterCommand, experimentId: id, technologyDir });
 	createExperimentDir(root, id);
 
 	const experiment: ExperimentRecord = {
