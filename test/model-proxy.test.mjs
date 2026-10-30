@@ -6,7 +6,8 @@
 // 3. Responses API as pi 1.4.0 sends it: a fixed reasoning.effort "medium" and the thinking level in a
 //    "configuration_update" input item, and the tools in an "additional_tools" input item. The proxy logs the
 //    effort and the tools of these items.
-// In both cases, the proxy puts the key from MODEL_API_KEY in the request, and the key is not in the log.
+// 4. A run directory whose socket path is longer than the unix socket limit gives a clear error.
+// In each case, the proxy puts the key from MODEL_API_KEY in the request, and the key is not in the log.
 
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -106,4 +107,10 @@ test("model proxy: logs Chat Completions and Responses API calls", async () => {
 		up.close();
 		rmSync(dir, { recursive: true, force: true });
 	}
+});
+
+test("model proxy: a socket path that is too long gives a clear error", async (t) => {
+	const dir = mkdtempSync(join(tmpdir(), "simra-proxy-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	await assert.rejects(startProxy(join(dir, "x".repeat(100)), "key", "http://127.0.0.1:9"), /socket path is too long .* Use a shorter --runs directory/);
 });

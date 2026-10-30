@@ -190,6 +190,8 @@ export async function startProxy(run, key, upstream) {
 	const proxyDir = join(run, "proxy");
 	mkdirSync(proxyDir, { recursive: true });
 	const socket = join(proxyDir, "model.sock");
+	// A unix socket path has a limit of 107 bytes on Linux (103 on macOS).
+	if (Buffer.byteLength(socket) > 103) throw new Error(`socket path is too long (${Buffer.byteLength(socket)} bytes, limit 103): ${socket}. Use a shorter --runs directory.`);
 	const args = [join(repo, "evals", "model-proxy.mjs"), socket, join(run, "models.jsonl"), ...(upstream ? [upstream] : [])];
 	const proxy = spawn(process.execPath, args, { env: { PATH: process.env.PATH, MODEL_API_KEY: key }, stdio: ["ignore", "ignore", "inherit"] });
 	for (let i = 0; i < 100 && !existsSync(socket); i++) await new Promise((r) => setTimeout(r, 50));
