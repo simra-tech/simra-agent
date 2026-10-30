@@ -228,8 +228,8 @@ class SimulateInputTest(unittest.TestCase):
         self.assertEqual(r["status"], "completed")
         self.assertEqual(r["measurements"]["gain_db"]["value"], 46.1)
         # Includes relative to the design root are found, as in the input hashes.
-        self.assertEqual(open(os.path.join(self.work, "ngspice.log")).read().splitlines()[1],
-                         "input_dir = " + os.path.realpath(self.root))
+        with open(os.path.join(self.work, "ngspice.log")) as log:
+            self.assertEqual(log.read().splitlines()[1], "input_dir = " + os.path.realpath(self.root))
         self.assertEqual([(d["severity"], d["source"]) for d in r["diagnostics"]], [("warning", "tb.spice:2")])
 
 
