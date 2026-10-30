@@ -106,6 +106,7 @@ export default function (pi: ExtensionAPI) {
 		promptGuidelines: [
 			"Run simulations with run_experiment, not with a direct shell command, so that each run is recorded.",
 			"When you report a simulated number, give the experiment id that produced it.",
+			"When a task asks for output files (a changed design, an answer file), write them as soon as you have a first result, and update them each time you find a better one. A session can end before you finish.",
 		],
 		parameters: Type.Object({
 			adapter: Type.String({ description: 'Adapter name, for example "ngspice"' }),
