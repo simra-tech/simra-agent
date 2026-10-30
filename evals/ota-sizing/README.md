@@ -44,9 +44,9 @@ current. The original OTA has two faults, and both are at ss:
 - At the bottom of the VCM range, the tail source XM5 is out of saturation. The UGF is too low.
 - At the top of the VCM range, the input device XM2 is near the edge of saturation. The gain is too low.
 
-A wider tail source does not solve the task: it increases the current and decreases the gain. A fix must raise
-the tail node (a wider input pair) and give the input pair more drain voltage (wider loads XM3 and XM4, and XM6
-in the same ratio, so that the second stage keeps its current).
+More than one fix exists. The reference fix raises the tail node (a wider input pair) and gives the input pair
+more drain voltage (wider loads XM3 and XM4, and XM6 in the same ratio, so that the second stage keeps its
+current). A smaller Cc also increases the UGF, and a lower current in the second stage increases the gain.
 
 ## Scoring
 
