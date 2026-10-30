@@ -1,6 +1,7 @@
 // The ota-sizing scorer checks the topology and the design limits of the final ota.spice, and scores the answer
 // against its own verification. Here a fake verifier gives the recorded sweeps of expected.json, so the test
-// needs no container. reference.mjs makes these sweeps with ngspice.
+// needs no container. reference.mjs makes these sweeps with ngspice; test/ota-sizing-verify.test.mjs checks
+// that the verification reproduces them.
 
 import assert from "node:assert/strict";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -8,7 +9,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { FIXES, resize } from "../evals/ota-sizing/reference.mjs";
-import { checkTopology, gateArea, loadTask, METRICS, parseRows, scoreSizing, sweep, verifyDeck, worst } from "../evals/ota-sizing/sizing.mjs";
+import { validateRequirements } from "@simra-tech/kernel";
+import { checkTopology, gateArea, loadTask, METRICS, scoreSizing, sweep } from "../evals/ota-sizing/sizing.mjs";
 
 const repo = new URL("../", import.meta.url).pathname;
 const TASKS = { sg13cmos5l: { area: 30, fix_area: 50, range: [0.4, 0.7], points: 16 }, sky130: { area: 42, fix_area: 58, range: [0.8, 1.2], points: 21 } };
@@ -124,25 +126,31 @@ test("ota-sizing: a design over the area limit does not meet the spec", async (t
 	assert.match(s.errors.join(), /design limits: area 86 µm² \(limit 80\)/);
 });
 
-test("ota-sizing: the verification deck, its ROW lines and the worst values", () => {
-	const deck = verifyDeck({ vdd: 1.8, temp: 27 }, [0.8, 0.82, 0.84]);
-	assert.match(deck, /^foreach vcm 0.8 0.82 0.84$/m);
-	assert.match(deck, /^Vdd vdd 0 1.8$/m);
-	assert.match(deck, /^\.temp 27$/m);
-	const rows = parseRows(
-		[
-			"ROW vcm=0.8 idd_a=7.1e-05 gain_db=70.1 ugf_hz=1.7e+07 pm_deg=78.5",
-			"ROW vcm=0.82 idd_a=7.2e-05 gain_db=69.0 ugf_hz=1.8e+07 pm_deg=78.0",
-			"Error: no such vector ugf_hz",
-			"ROW vcm=0.84 idd_a=7.3e-05 gain_db=68.0 ugf_hz=ugf_hz pm_deg=",
-		].join("\n"),
-	);
-	assert.equal(rows.length, 3);
-	assert.deepEqual(rows[2], { vcm: 0.84, idd_a: 7.3e-5, gain_db: 68, ugf_hz: null, pm_deg: null });
-	const limits = { gain_db: { op: ">=", value: 65 }, ugf_hz: { op: ">=", value: 1.5e7 }, pm_deg: { op: ">=", value: 60 }, idd_a: { op: "<=", value: 8e-5 } };
-	const w = worst(rows, [0.8, 0.82, 0.84], limits);
-	assert.deepEqual(w.gain_db, { value: 68, vcm: 0.84, pass: true });
-	assert.deepEqual(w.idd_a, { value: 7.3e-5, vcm: 0.84, pass: true }, "the supply current is worst at its maximum");
-	assert.deepEqual(w.ugf_hz, { value: null, vcm: null, pass: false }, "a failed measurement fails the requirement");
-	assert.deepEqual(worst(rows.slice(0, 2), [0.8, 0.82, 0.84], limits).gain_db, { value: null, vcm: null, pass: false }, "a missing VCM fails");
-});
+for (const name of Object.keys(TASKS)) {
+	test(`ota-sizing ${name}: verify.spice and requirements.json say the same as spec.md`, () => {
+		const { spec } = loadTask(taskDir(name));
+		const bench = readFileSync(join(taskDir(name), "verify.spice"), "utf8");
+		const req = JSON.parse(readFileSync(join(taskDir(name), "requirements.json"), "utf8"));
+		assert.deepEqual(validateRequirements(req), []);
+		// The bench sweeps the VCM range of the spec and prints one ROW line per point. The corner gives the model
+		// library, VDD and the temperature, so the bench has no .lib line and only defaults for vdd and .temp.
+		assert.match(bench, new RegExp(`^foreach vcm ${sweep(spec.range).join(" ")}$`, "m"));
+		assert.match(bench, /^\s*echo ROW vcm=\$vcm idd_a=.* gain_db=.* ugf_hz=.* pm_deg=/m);
+		assert.doesNotMatch(bench, /^\.lib/im);
+		assert.match(bench, new RegExp(`^\\.param vdd=${spec.corners.tt.vdd}$`, "m"));
+		assert.match(bench, new RegExp(`^\\.temp ${spec.corners.tt.temp}$`, "m"));
+		// Each corner of the spec is a condition: its library section, VDD and temperature.
+		assert.deepEqual(Object.keys(req.conditions), Object.keys(spec.corners));
+		for (const [c, k] of Object.entries(spec.corners)) {
+			assert.deepEqual(req.conditions[c].inputs, { libs: [{ path: spec.lib, section: k.section }], params: { vdd: k.vdd }, temp_c: k.temp });
+		}
+		// One sweep experiment with the bench, and each requirement of the spec with its limit at every corner.
+		assert.equal(req.experiments.sweep.inputs.deck, "verify.spice");
+		assert.deepEqual(Object.keys(req.experiments.sweep.inputs.measurements), METRICS);
+		for (const m of METRICS) {
+			const r = req.requirements.find((x) => x.id === m);
+			assert.deepEqual([r.measurement, r.unit, r.op, r.conditions], [m, req.experiments.sweep.inputs.measurements[m], spec.limits[m].op, Object.keys(spec.corners)]);
+			assert.ok(Math.abs(r.limit / spec.limits[m].value - 1) < 1e-12, `${m}: limit ${r.limit}, spec ${spec.limits[m].value}`);
+		}
+	});
+}

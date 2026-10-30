@@ -2,9 +2,16 @@ This directory holds a two-stage Miller OTA for the SkyWater SKY130 PDK:
 
 - `ota.spice`: the OTA subcircuit.
 - `spec.md`: the specification. It gives the conditions, the corners, the requirements and the design limits.
+- `verify.spice`: the verification bench of `spec.md`. It sweeps VCM over the range and prints one `ROW` line
+  per VCM with the four values. It has no model library line.
+- `requirements.json`: the corners (model library section, VDD, temperature) and the limits of `spec.md`.
 
 ngspice and the SkyWater SKY130 PDK are available through `./sim.sh <deck>`. It runs `ngspice -b <deck>`.
 The PDK is at `$PDK_ROOT/sky130A`.
+
+The score verifies the final `ota.spice` with `verify.spice` at each corner of `requirements.json`. To run the
+bench with `./sim.sh`, write a top deck for the corner: the `.lib` line, `.include "verify.spice"`, and then
+`.param vdd=<VDD>` and `.temp <temperature>` (after the include, so that they replace the values in the bench).
 
 The OTA does not meet `spec.md`. Change the sizes in `ota.spice` so that the OTA meets `spec.md` at every
 corner and at each VCM in the range. Obey the design limits of `spec.md`.

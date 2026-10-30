@@ -2,9 +2,10 @@
 //
 // The agent changes the sizes in ota.spice so that the OTA meets spec.md over the input common-mode range.
 // The scorer does not trust the answer: it checks the topology and the design limits of the final ota.spice,
-// and then simulates it through the kernel runner, at each corner of spec.md and at each VCM of the range
-// (verification sweep). The PDK facts (model library, sections, units) come from spec.md and task.json of the
-// task directory.
+// and then runs the check of requirements.json with the bench verify.spice of the task through the kernel, at
+// each corner and at each VCM of the range (verification sweep). The agent gets the same two files, so its
+// check and the score use the same bench. The PDK facts (model library, sections, units) come from spec.md,
+// requirements.json and task.json of the task directory.
 //
 // Score:
 // - topology (1): ota.spice has the same devices, nets, models and parameter names as the original.
@@ -19,7 +20,7 @@
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { runExperiment } from "@simra-tech/kernel";
+import { experimentDir, loadExperiment, runCheck } from "@simra-tech/kernel";
 import { numbersIn, readTexts, shown, within } from "../ota-corners/score.mjs";
 
 export const METRICS = ["gain_db", "ugf_hz", "pm_deg", "idd_a"];
@@ -54,8 +55,6 @@ export function parseSpec(text) {
 	}
 	return { range: [Number(range[1]), Number(range[2])], lib: lib[1], corners, limits, design: { area_um2: Number(area[1]), cc_f: Number(cc[1]) * 1e-12 } };
 }
-
-export const passes = (value, { op, value: limit }) => typeof value === "number" && Number.isFinite(value) && (op === ">=" ? value >= limit : value <= limit);
 
 /** The VCM values of the sweep: the range in steps of STEP, both ends included. */
 export function sweep([low, high]) {
@@ -139,69 +138,6 @@ export function changedSizes(originalText, designText) {
 	return out;
 }
 
-/** The verification testbench for one corner: a loop over the VCM values, one ROW line for each VCM. */
-export function verifyDeck({ vdd, temp }, vcms) {
-	return `* ota-sizing verification: VDD = ${vdd} V, ${temp} degC, CL = 2 pF, VCM from ${vcms[0]} V to ${vcms.at(-1)} V
-.include "ota.spice"
-.temp ${temp}
-Vdd vdd 0 ${vdd}
-Vss vss 0 0
-Ib vdd ibias 10u
-Vinp inp 0 dc ${vcms[0]} ac 1
-Lfb out inn 1G
-Cfb inn 0 1G
-CL out 0 2p
-Xdut inp inn out vdd vss ibias ota
-.control
-foreach vcm ${vcms.join(" ")}
-  alter vinp dc = $vcm
-  op
-  let idd = -i(vdd)
-  set iddv = $&idd
-  ac dec 100 1 10G
-  meas ac gain_db find vdb(out) at=1
-  meas ac ugf_hz when vdb(out)=0
-  meas ac ph find vp(out) at=ugf_hz
-  let pm = 180 + ph * 180 / pi
-  echo ROW vcm=$vcm idd_a=$iddv gain_db=$&gain_db ugf_hz=$&ugf_hz pm_deg=$&pm
-  destroy all
-end
-.endc
-`;
-}
-
-/** The ROW lines of an ngspice log: [{ vcm, idd_a, gain_db, ugf_hz, pm_deg }]. A value that is not a number is null. */
-export function parseRows(log) {
-	return log
-		.split("\n")
-		.filter((l) => l.startsWith("ROW "))
-		.map((l) => {
-			const r = {};
-			for (const kv of l.slice(4).trim().split(/\s+/)) {
-				const [k, v] = kv.split("=");
-				const x = Number(v);
-				r[k] = v !== undefined && v !== "" && Number.isFinite(x) ? x : null;
-			}
-			return r;
-		});
-}
-
-/** The worst value of each requirement over the points, and its VCM. A missing point or value is null. */
-export function worst(points, vcms, limits) {
-	const out = {};
-	for (const m of METRICS) {
-		const complete = vcms.every((v) => points.some((p) => Math.abs(p.vcm - v) < 1e-6 && p[m] !== null && p[m] !== undefined));
-		if (!complete) {
-			out[m] = { value: null, vcm: null, pass: false };
-			continue;
-		}
-		const sign = limits[m].op === ">=" ? 1 : -1;
-		const w = points.reduce((a, p) => (sign * p[m] < sign * a[m] ? p : a));
-		out[m] = { value: w[m], vcm: w.vcm, pass: passes(w[m], limits[m]) };
-	}
-	return out;
-}
-
 /** The task data: task.json, spec.md and the original ota.spice of a task directory. */
 export function loadTask(taskDir) {
 	const task = JSON.parse(readFileSync(join(taskDir, "task.json"), "utf8"));
@@ -211,37 +147,45 @@ export function loadTask(taskDir) {
 }
 
 /**
- * Simulate a design (the text of ota.spice) at each corner over the VCM range, through the kernel runner, in a
- * new design root at root. The configuration files come from the task. Returns { corner: { experiment, points,
- * worst } }.
+ * Verify a design (the text of ota.spice) with the bench and the requirements of the task: the kernel check of
+ * requirements.json, one sweep experiment per corner, in a new design root at root. The configuration files
+ * come from the task. environment (optional) replaces the environment of the experiments; local (optional)
+ * replaces simra.local.json. Returns { corner: { experiment, status, errors, provenance, points, worst } }:
+ * points are the rows of the sweep, and worst[m] is { value, vcm, pass } from the verdict row of requirement m
+ * at the corner (the worst point over the sweep; a missing point is never a pass).
  */
-export async function verify(taskDir, designText, root, environment) {
-	const { task, spec } = loadTask(taskDir);
+export async function verify(taskDir, designText, root, environment, local) {
+	const { task } = loadTask(taskDir);
 	rmSync(root, { recursive: true, force: true });
 	mkdirSync(root, { recursive: true });
-	for (const f of ["simra.config.json", "simra.local.json"]) {
+	for (const f of ["simra.config.json", "simra.local.json", "verify.spice", "requirements.json"]) {
 		const from = resolve(taskDir, task.files[f]);
 		if (existsSync(from)) copyFileSync(from, join(root, f));
 	}
+	if (local) writeFileSync(join(root, "simra.local.json"), JSON.stringify(local));
 	writeFileSync(join(root, "ota.spice"), designText);
-	const vcms = sweep(spec.range);
-	const runs = Object.entries(spec.corners).map(async ([corner, c]) => {
-		const deck = `verify_${corner}.spice`;
-		writeFileSync(join(root, deck), verifyDeck(c, vcms));
-		const { id, dir, experiment, result } = await runExperiment({
-			root,
-			adapter: "ngspice",
-			operation: "simulate",
-			environment: environment ?? task.environment,
-			purpose: `ota-sizing verification, corner ${corner}`,
-			inputs: { deck, libs: [{ path: spec.lib, section: c.section }] },
-		});
-		const log = join(dir, "work", "ngspice.log");
-		const points = existsSync(log) ? parseRows(readFileSync(log, "utf8")) : [];
-		const provenance = { image_id: experiment.environment?.image_id ?? null, ngspice: result.tool?.version ?? null, pdk: result.tool?.pdk ?? null };
-		return [corner, { experiment: id, status: result.status, errors: result.errors, provenance, points, worst: worst(points, vcms, spec.limits) }];
-	});
-	return Object.fromEntries(await Promise.all(runs));
+	const requirements = JSON.parse(readFileSync(join(root, "requirements.json"), "utf8"));
+	if (environment) {
+		for (const e of Object.values(requirements.experiments)) e.environment = environment;
+		writeFileSync(join(root, "requirements.json"), JSON.stringify(requirements, null, 2));
+	}
+	const { verdict } = await runCheck({ root, parallel: 3 });
+	const out = {};
+	for (const corner of Object.keys(requirements.conditions)) {
+		const e = verdict.experiments.find((x) => x.condition === corner);
+		const run = e ? loadExperiment(root, e.id) : null;
+		const table = run ? join(experimentDir(root, run.id), "work", "sweep.json") : null;
+		const points = table && existsSync(table) ? JSON.parse(readFileSync(table, "utf8")).rows : [];
+		const provenance = { image_id: run?.experiment.environment?.image_id ?? null, ngspice: run?.result?.tool?.version ?? null, pdk: run?.result?.tool?.pdk ?? null };
+		const worst = Object.fromEntries(
+			METRICS.map((m) => {
+				const row = verdict.rows.find((r) => r.requirement === m && r.condition === corner);
+				return [m, { value: row?.value ?? null, vcm: row?.at?.vcm ?? null, pass: row?.status === "pass" }];
+			}),
+		);
+		out[corner] = { experiment: e?.id ?? null, status: e?.status ?? "not_run", errors: run?.result?.errors ?? [], provenance, points, worst };
+	}
+	return out;
 }
 
 /**
