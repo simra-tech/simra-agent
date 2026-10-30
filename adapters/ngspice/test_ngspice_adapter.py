@@ -152,7 +152,7 @@ class SimulateInputTest(unittest.TestCase):
         bin_dir = os.path.join(self.root, "bin")
         os.mkdir(bin_dir)
         with open(os.path.join(bin_dir, "ngspice"), "w") as f:
-            f.write("#!/bin/sh\necho 'gain_db = 46.1'\n")
+            f.write("#!/bin/sh\necho 'gain_db = 46.1'\necho \"input_dir = $NGSPICE_INPUT_DIR\"\n")
         os.chmod(os.path.join(bin_dir, "ngspice"), 0o755)
         with open(os.path.join(self.root, "tb.spice"), "w") as f:
             f.write("* tb\n.option rshunt=5e5\n")
@@ -164,6 +164,9 @@ class SimulateInputTest(unittest.TestCase):
             os.environ["PATH"] = path
         self.assertEqual(r["status"], "completed")
         self.assertEqual(r["measurements"]["gain_db"]["value"], 46.1)
+        # Includes relative to the design root are found, as in the input hashes.
+        self.assertEqual(open(os.path.join(self.work, "ngspice.log")).read().splitlines()[1],
+                         "input_dir = " + os.path.realpath(self.root))
         self.assertEqual([(d["severity"], d["source"]) for d in r["diagnostics"]], [("warning", "tb.spice:2")])
 
 

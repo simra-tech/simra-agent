@@ -353,7 +353,11 @@ def run(request, tool, top_name, deck_path, libs, wanted, extra_inputs=()):
     log_path = os.path.join(work_dir, "ngspice.log")
     with open(log_path, "w") as log:
         try:
-            code = subprocess.call(["ngspice", "-b", top_name], cwd=work_dir, stdout=log, stderr=subprocess.STDOUT)
+            # ngspice looks for an include file in the directory of the including file and in the current
+            # directory (work_dir). NGSPICE_INPUT_DIR adds the design root, as in Closure.resolve.
+            env = dict(os.environ, NGSPICE_INPUT_DIR=os.path.realpath(root))
+            code = subprocess.call(["ngspice", "-b", top_name], cwd=work_dir, env=env, stdout=log,
+                                   stderr=subprocess.STDOUT)
         except OSError as e:
             return failure(tool, "could not start ngspice: {}".format(e))
     with open(log_path, errors="replace") as f:
