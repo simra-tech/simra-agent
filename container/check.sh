@@ -7,7 +7,8 @@ tag=${1:?usage: container/check.sh <tag>}
 engine=${SIMRA_ENGINE:-docker}
 if [ "$engine" = podman ]; then user=0:0; else user=$(id -u):$(id -g); fi
 repo=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
-src=$(mktemp -d)
+# The real path: on macOS, mktemp gives a path under the /var link, which a container engine VM may not have.
+src=$(cd "$(mktemp -d)" && pwd -P)
 trap 'rm -rf "$src"' EXIT
 git -C "$repo" archive HEAD | tar -x -C "$src"
 chmod -R a+rX "$src"

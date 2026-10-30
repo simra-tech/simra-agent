@@ -5,7 +5,7 @@
 // A skipped case is reported by the test runner as skipped: that check did not run.
 
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -39,7 +39,8 @@ const environments = {
 
 for (const [name, { config, skip }] of Object.entries(environments)) {
 	test(`ngspice RC known answer (${name})`, { skip, timeout: 120_000 }, async (t) => {
-		const root = mkdtempSync(join(tmpdir(), "simra-rc-"));
+		// The real path: on macOS, tmpdir() is under the /var link, which a container engine VM may not have.
+		const root = mkdtempSync(join(realpathSync(tmpdir()), "simra-rc-"));
 		t.after(() => rmSync(root, { recursive: true, force: true }));
 		writeFileSync(join(root, "simra.config.json"), JSON.stringify({ environments: { [name]: config } }));
 		copyFileSync(rcDeck, join(root, "rc.spice"));
