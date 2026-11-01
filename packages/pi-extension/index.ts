@@ -5,12 +5,19 @@
 // (operation "lint") to the tool result: for example a warning about ".option rshunt".
 // When SIMRA_SESSION_DEADLINE (an ISO 8601 time) is set, it adds a time note to the first tool result after 50 %
 // and after 80 % of the session time: the agent must write its output files before the session ends.
+// It replaces pi's coding-assistant preamble with a chip-design preamble (SIMRA_PREAMBLE) and leaves out pi's own
+// documentation section; the tool list and the rules stay (see chipDesignPrompt).
 // All logic lives in @simra-tech/kernel, which works without pi.
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
-import { type ExtensionAPI, type ToolResultEvent, VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
+import {
+	type BeforeAgentStartEvent,
+	type ExtensionAPI,
+	type ToolResultEvent,
+	VERSION as PI_VERSION,
+} from "@earendil-works/pi-coding-agent";
 import {
 	BUILTIN_ADAPTER_DIR,
 	findRoot,
@@ -89,6 +96,38 @@ export function sessionClock(start: number, deadline: number) {
 	};
 }
 
+export const SIMRA_PREAMBLE = [
+	"You are a chip design assistant in Simra Agent. You help a designer specify, design and verify circuits with a simulator",
+	"and a process design kit (PDK). You read and edit netlists and files, and you run simulations as recorded experiments.",
+	"A number that you report comes from a recorded simulation. You never estimate a number in its place. When a check did",
+	"not run, you say that it did not run.",
+].join(" ");
+
+/**
+ * Set the chip-design preamble in pi's prompt options. With a custom preamble, pi leaves out its tool list, its rules
+ * and its documentation section. This function puts the tool list and the rules back, built as pi builds them from the
+ * same options, so that only the preamble and the documentation section change. A prompt that the user set (SYSTEM.md
+ * or --system-prompt) stays as it is.
+ */
+export function chipDesignPrompt(options: BeforeAgentStartEvent["systemPromptOptions"]): void {
+	if (options.customPrompt) return;
+	const { selectedTools, hiddenTools, toolSnippets, toolGuidelines, promptGuidelines } = options;
+	const listed = selectedTools.filter((name) => !hiddenTools.includes(name) && toolSnippets[name]);
+	const fileTools = ["grep", "find", "ls"].some((name) => selectedTools.includes(name));
+	const rules = [
+		...(selectedTools.includes("bash") && !fileTools ? ["Use bash for file operations like ls, rg, find"] : []),
+		...selectedTools.flatMap((name) => toolGuidelines[name] ?? []),
+		...promptGuidelines,
+		"Be concise in your responses",
+		"Show file paths clearly when working with files",
+	]
+		.map((rule) => rule.trim())
+		.filter(Boolean);
+	options.customPrompt = SIMRA_PREAMBLE;
+	options.sections.tools = listed.length > 0 ? listed.map((name) => `- ${name}: ${toolSnippets[name]}`).join("\n") : "(none)";
+	options.sections.rules = [...new Set(rules)].map((rule) => `- ${rule}`).join("\n");
+}
+
 export default function (pi: ExtensionAPI) {
 	// A finding is added once per session, at the first call that shows it.
 	const reported = new Set<string>();
@@ -110,6 +149,10 @@ export default function (pi: ExtensionAPI) {
 		for (const d of fresh) reported.add(formatDiagnostic(d));
 		return ["", "Simra netlist check (ngspice adapter, operation lint):", ...fresh.map(formatDiagnostic)].join("\n");
 	}
+
+	pi.on("before_agent_start", (event) => {
+		chipDesignPrompt(event.systemPromptOptions);
+	});
 
 	pi.on("tool_result", async (event, ctx) => {
 		const notes = [await netlistNote(event, ctx.cwd), clock?.(Date.now()) ?? null].filter((n): n is string => n !== null);
@@ -137,7 +180,7 @@ export default function (pi: ExtensionAPI) {
 			"Available adapters:",
 			adapterCatalog(),
 		].join("\n"),
-		promptSnippet: "run_experiment: run and record one simulation through a Simra adapter",
+		promptSnippet: "run and record one simulation through a Simra adapter",
 		promptGuidelines: [
 			"Run simulations with run_experiment, not with a direct shell command, so that each run is recorded.",
 			"When you report a simulated number, give the experiment id that produced it.",
@@ -196,7 +239,7 @@ export default function (pi: ExtensionAPI) {
 			"Example:",
 			REQUIREMENTS_EXAMPLE,
 		].join("\n"),
-		promptSnippet: "check_requirements: run the experiments in requirements.json and compare each measurement with its limit",
+		promptSnippet: "run the experiments in requirements.json and compare each measurement with its limit",
 		promptGuidelines: [
 			"Before you say that the design meets its requirements, run check_requirements without a selection and give its check id.",
 			"Use the requirements and conditions parameters to check one row quickly while you work; that result is not a pass.",

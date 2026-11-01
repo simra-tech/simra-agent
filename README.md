@@ -81,6 +81,15 @@ The design root is the nearest directory upward with `simra.config.json`. It def
 environments. Put machine-specific settings (image ID, CPU list) in `simra.local.json`, which git ignores.
 See [examples/ota-sg13g2](examples/ota-sg13g2/README.md).
 
+## System prompt
+
+In pi, the extension replaces the first paragraph of pi's system prompt. pi's paragraph describes a coding
+assistant. The extension's paragraph (`SIMRA_PREAMBLE` in `packages/pi-extension/index.ts`) describes a chip
+design assistant that reports only simulated numbers. The extension keeps pi's list of tools and the rules of the
+tools. It removes pi's section about the pi documentation.
+
+A system prompt that you give to pi (`--system-prompt` or `.pi/SYSTEM.md`) stays as it is.
+
 ## Netlist check
 
 Some simulator options add elements to the circuit. For example, `.option rshunt=5e5` connects 500 kΩ from
