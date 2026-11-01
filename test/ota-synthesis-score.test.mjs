@@ -83,14 +83,13 @@ for (const [name, facts] of Object.entries(TASKS)) {
 		assert.deepEqual([e.cheat.design_check.status, e.cheat.rows_pass, e.cheat.meets_spec, e.cheat.design_check.mos_count], ["fail", true, false, 0]);
 		assert.deepEqual(
 			e.cheat.design_check.errors.map((x) => x.source),
-			["ota.spice:2", "ota.spice:3", "ota.spice:5"],
+			["ota.spice:3", "ota.spice:5"],
 		);
-		// The R and C of the cheat (1 MΩ, 10 kΩ and 2 pF) are above the area limit without a MOS device.
+		// The R and C of the cheat (1 MΩ, 10 kΩ and 2 pF) are above the area limit without a MOS device: the area row fails.
 		const cheatRc = passiveArea(facts.technology, facts.pdk, CHEAT_RC);
 		assert.ok(near(e.cheat.design_check.area_um2, cheatRc) && cheatRc > e.spec.design.area_um2, `cheat: area ${e.cheat.design_check.area_um2}`);
-		assert.match(e.cheat.design_check.errors[0].message, /^the area \(the MOS gates plus the R and C\) is \S+ µm² \(gate area 0 µm², R and C \S+ µm²\), above the limit \d+ µm² \(limits\.area_um2\)$/);
-		assert.match(e.cheat.design_check.errors[1].message, /E1: a controlled source \(E\) is not allowed/);
-		assert.match(e.cheat.design_check.errors[2].message, /Co: node 0 is the global ground/);
+		assert.match(e.cheat.design_check.errors[0].message, /E1: a controlled source \(E\) is not allowed/);
+		assert.match(e.cheat.design_check.errors[1].message, /Co: node 0 is the global ground/);
 		assert.deepEqual([e.cheat_score.design, e.cheat_score.requirements], [0, 0]);
 		// input_load: the fix with a divider on each input passes the design part and every row but iin_a, which it
 		// fails at every corner by more than INPUT_LOAD_FACTOR. The fix (gate inputs) passes iin_a by more than
@@ -130,7 +129,7 @@ for (const [name, facts] of Object.entries(TASKS)) {
 		const s = await scoreSynthesis(workspace(t, designs(name).cheat, answerOf(e.cheat, true)), taskDir(name), { verifier });
 		assert.deepEqual(parts(s), [0, 0, 0, 15], "the simulation passes, but the design part fails");
 		assert.equal(Object.values(s.rows).filter((r) => r.pass).length, 15);
-		assert.deepEqual([s.verified_meets_spec, s.design_status, s.mos_count, s.design_errors.length], [false, "fail", 0, 3]);
+		assert.deepEqual([s.verified_meets_spec, s.design_status, s.mos_count, s.design_errors.length], [false, "fail", 0, 2]);
 		assert.match(s.errors.join("\n"), /^ota\.spice:3: E1: a controlled source \(E\)/m);
 		// The claim false is correct.
 		const honest = await scoreSynthesis(workspace(t, designs(name).cheat, answerOf(e.cheat, false)), taskDir(name), { verifier });
@@ -179,8 +178,9 @@ for (const [name, facts] of Object.entries(TASKS)) {
 			const bench = readFileSync(join(taskDir(dir), "verify.spice"), "utf8");
 			const req = JSON.parse(readFileSync(join(taskDir(dir), "requirements.json"), "utf8"));
 			assertBenchMatchesSpec(spec, bench, req, { metrics: METRICS, row: /^\s*echo ROW vcm=\$vcm idd_a=.* gain_db=.* ugf_hz=.* pm_deg=.* iin_a=\$iinv$/m });
-			// The bench and requirements of ota-sizing with iin_a; only the design limits (r_ohm is added) and the devices
-			// differ. A variant also has its own requirement limits (assertBenchMatchesSpec checks them against its spec.md).
+			// The bench and requirements of ota-sizing with iin_a; only the design rows (the area in place of the gate area),
+			// the design limits (r_ohm is added) and the devices differ. A variant also has its own requirement limits
+			// (assertBenchMatchesSpec checks them against its spec.md).
 			const sizingDir = join(repo, "evals/ota-sizing", name);
 			assert.equal(withoutIin(bench), readFileSync(join(sizingDir, "verify.spice"), "utf8"));
 			assert.ok(bench.includes(IIN_LINES), "the bench measures iin_a at the DC operating point");
@@ -190,18 +190,22 @@ for (const [name, facts] of Object.entries(TASKS)) {
 			const base = (r) => {
 				const { iin_a, ...measurements } = r.experiments.sweep.inputs.measurements;
 				const sweep = { ...r.experiments.sweep, inputs: { ...r.experiments.sweep.inputs, measurements } };
-				const requirements = r.requirements.filter((x) => x.id !== "iin_a").map((x) => (dir === name ? x : { ...x, limit: null }));
-				return { ...r, experiments: { ...r.experiments, sweep }, requirements, design: { ...r.design, limits: null, devices: null } };
+				const design = { ...r.experiments.design, inputs: { ...r.experiments.design.inputs, limits: null, devices: null } };
+				const requirements = r.requirements.filter((x) => x.id !== "iin_a" && x.conditions).map((x) => (dir === name ? x : { ...x, limit: null }));
+				return { ...r, experiments: { ...r.experiments, design, sweep }, requirements };
 			};
 			assert.deepEqual(base(req), base(sizing));
 			assert.deepEqual(readFileSync(join(taskDir(dir), "simra.config.json"), "utf8"), readFileSync(join(sizingDir, "simra.config.json"), "utf8"));
 			// The design contract: the file, the pins in their order, the element kinds, the devices and the limits of spec.md.
 			const d = spec.design;
 			assert.deepEqual([d.file, d.subckt, d.pins], ["ota.spice", "ota", ["inp", "inn", "out", "vdd", "vss", "ibias"]]);
-			assert.deepEqual([req.design.file, req.design.subckt, req.design.pins, req.design.elements], [d.file, d.subckt, d.pins, ["mos", "r", "c"]]);
-			assert.deepEqual(req.design.devices, d.devices);
-			assert.deepEqual(req.design.limits, { area_um2: d.area_um2, r_ohm: d.r_ohm, c_f: d.c_f });
-			assert.deepEqual([req.design.technology, req.design.environment], [facts.technology, task.environment]);
+			const design = req.experiments.design;
+			assert.deepEqual([design.inputs.file, design.inputs.subckt, design.inputs.pins, design.inputs.elements], [d.file, d.subckt, d.pins, ["mos", "r", "c"]]);
+			assert.deepEqual(design.inputs.devices, d.devices);
+			assert.deepEqual(design.inputs.limits, { r_ohm: d.r_ohm, c_f: d.c_f });
+			assert.deepEqual([design.adapter, design.operation, design.inputs.technology, design.environment], ["ngspice", "check_design", facts.technology, task.environment]);
+			const rows = req.requirements.filter((r) => r.experiment === "design").map((r) => [r.id, r.experiment, r.measurement, r.op, r.limit]);
+			assert.deepEqual(rows, [["design_errors", "design", "design_errors", "<=", 0], ["area_um2", "design", "area_um2", "<=", d.area_um2]]);
 			assertPassiveRule(readFileSync(join(taskDir(dir), "spec.md"), "utf8"), facts.technology, facts.pdk);
 			// The devices of spec.md are devices of the technology pack, with the minimum sizes of the pack.
 			const pack = JSON.parse(readFileSync(join(repo, "technologies", facts.technology, "technology.json"), "utf8")).ngspice;

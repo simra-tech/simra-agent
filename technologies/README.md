@@ -11,13 +11,13 @@ contain PDK facts. Each directory has one `technology.json` (schema `simra.techn
 | `ngspice.operating_point.params` | the ngspice parameter name of `vgs`, `vth`, `vds`, `vdsat`, `id`, `gm` and `gds` |
 | `ngspice.size_unit_m` | the length in metres of a size without a suffix (`1e-06` when the library sets `.option scale=1.0u`) |
 | `ngspice.size_unit_source` | the PDK file that gives `size_unit_m` |
-| `ngspice.passives.<pdk>` | the area of the ideal R and C of a design (operation `check_design`), for one value of `$PDK` |
+| `ngspice.passives.<pdk>` | the area of the ideal R and C of a design (operation `check_design` of the ngspice adapter), for one value of `$PDK` |
 | `...<pdk>.r.device` | the high-resistance poly resistor of the PDK that the ideal resistor stands for |
 | `...<pdk>.r.sheet_ohm`, `.width_min_m` | its sheet resistance (Ω/sq) and its minimum width (m); a resistor R has the area R × w_min² / R_sheet |
 | `...<pdk>.c.device` | the densest capacitor of the PDK (MIM, when the PDK has it) that the ideal capacitor stands for |
 | `...<pdk>.c.density_f_per_m2` | its capacitance density (F/m²); a capacitor C has the area C / density |
 | `...<pdk>.r.source`, `.c.source` | the PDK files (relative to `$PDK_ROOT`) and the facts in them that give the values |
-| `ngspice.devices` | the MOS devices that a design can instantiate, by subcircuit name (operation `check_design`) |
+| `ngspice.devices` | the MOS devices that a design can instantiate, by subcircuit name (operation `check_design` of the ngspice adapter) |
 | `ngspice.devices.<name>.kind` | `nmos` or `pmos` |
 | `ngspice.devices.<name>.terminals` | the terminal names, in the order of the `X` line |
 | `ngspice.devices.<name>.params` | the instance parameters that a design can give; all other parameters are errors |
@@ -57,5 +57,5 @@ To add a PDK:
    the pack. Write their sheet resistance, minimum width and capacitance density in `ngspice.passives`, with the
    sources. Without these facts, the area of a design with R or C is not known.
 8. Write `<name>/technology.json`.
-9. Add a fixture of the `show` output and a `check_design` test of a design of the new PDK to the adapter
-   tests.
+9. Add a fixture of the `show` output to the ngspice adapter tests, and a `check_design` test of a design of
+   the new PDK to `adapters/ngspice/test_design_check.py`.

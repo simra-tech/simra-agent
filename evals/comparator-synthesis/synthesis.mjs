@@ -4,8 +4,8 @@
 // netlist. It writes a continuous-time comparator in cmp.spice; the topology is free. The scorer is the
 // scoreSynthesis() of ../ota-synthesis/synthesis.mjs, with the tolerance of this task: it runs the check of
 // requirements.json on the final cmp.spice through the kernel (the verify() of ../ota-sizing/sizing.mjs). The
-// check lints cmp.spice against the design section of requirements.json (the design part of the verdict) and
-// simulates it with the bench at each corner and at the 5 VCM points of the range.
+// check lints cmp.spice with the design experiment of requirements.json (the experiment with the operation
+// check_design) and simulates it with the bench at each corner and at the 5 VCM points of the range.
 //
 // Score:
 // - design (2): the design part of the verdict passes (the contract, the element rules and the limits).

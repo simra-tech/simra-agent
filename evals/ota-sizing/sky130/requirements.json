@@ -1,28 +1,5 @@
 {
   "schema": "simra.requirements/0",
-  "design": {
-    "file": "ota.spice",
-    "subckt": "ota",
-    "pins": [
-      "inp",
-      "inn",
-      "out",
-      "vdd",
-      "vss",
-      "ibias"
-    ],
-    "elements": [
-      "mos",
-      "r",
-      "c"
-    ],
-    "limits": {
-      "gate_area_um2": 80,
-      "c_f": 2e-12
-    },
-    "technology": "sky130",
-    "environment": "eda"
-  },
   "conditions": {
     "tt": {
       "description": "tt, VDD = 1.80 V, 27 degC",
@@ -71,6 +48,32 @@
     }
   },
   "experiments": {
+    "design": {
+      "adapter": "ngspice",
+      "operation": "check_design",
+      "environment": "eda",
+      "inputs": {
+        "file": "ota.spice",
+        "subckt": "ota",
+        "pins": [
+          "inp",
+          "inn",
+          "out",
+          "vdd",
+          "vss",
+          "ibias"
+        ],
+        "elements": [
+          "mos",
+          "r",
+          "c"
+        ],
+        "limits": {
+          "c_f": 2e-12
+        },
+        "technology": "sky130"
+      }
+    },
     "sweep": {
       "adapter": "ngspice",
       "operation": "simulate",
@@ -87,6 +90,23 @@
     }
   },
   "requirements": [
+    {
+      "id": "design_errors",
+      "description": "Errors of the netlist against the design contract",
+      "experiment": "design",
+      "measurement": "design_errors",
+      "op": "<=",
+      "limit": 0
+    },
+    {
+      "id": "gate_area_um2",
+      "description": "Gate area: W x L x m of all MOS devices",
+      "experiment": "design",
+      "measurement": "gate_area_um2",
+      "unit": "um2",
+      "op": "<=",
+      "limit": 80
+    },
     {
       "id": "gain_db",
       "description": "DC open-loop gain, at 1 Hz",

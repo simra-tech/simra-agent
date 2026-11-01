@@ -61,7 +61,7 @@ function resistorChains(text, n) {
 	const chain = (pin) => Array.from({ length: n }, (_, i) => `R${pin}${i} ${i ? `${pin}${i}` : pin} ${i === n - 1 ? "vss" : `${pin}${i + 1}`} 1meg`);
 	const lines = text.split("\n");
 	const at = lines.findIndex((l) => /^\.subckt\s/i.test(l)) + 1;
-	return { design: [...lines.slice(0, at), ...chain("inp"), ...chain("inn"), ...lines.slice(at)].join("\n"), subckt: at };
+	return [...lines.slice(0, at), ...chain("inp"), ...chain("inn"), ...lines.slice(at)].join("\n");
 }
 
 const CHAINS = { sg13cmos5l: { technology: "ihp-sg13", pdk: "ihp-sg13cmos5l", n: 8 }, sky130: { technology: "sky130", pdk: "sky130A", n: 16 } };
@@ -72,17 +72,16 @@ for (const [name, facts] of Object.entries(CHAINS)) {
 		const expected = JSON.parse(readFileSync(join(taskDir, "expected.json"), "utf8"));
 		const work = mkdtempSync(join(realpathSync(tmpdir()), "simra-synthesis-chain-"));
 		t.after(() => rmSync(work, { recursive: true, force: true }));
-		const { design: text, subckt } = resistorChains(designs(name).fix, facts.n);
+		const text = resistorChains(designs(name).fix, facts.n);
 		const { design, ...v } = await verify(taskDir, text, work, "eda", local);
-		// The area: the fix plus 2 × n MΩ. It is above the limit, and it is the only design error.
+		// The area: the fix plus 2 × n MΩ. It is above the limit, so the area row fails. The netlist has no errors.
 		const fix = expected.fix.design_check;
 		const passive = fix.passive_area_um2 + passiveArea(facts.technology, facts.pdk, { r: Array(2 * facts.n).fill(1e6) });
 		assert.equal(design.status, "fail");
 		assert.ok(Math.abs(design.passive_area_um2 - passive) < 1e-3, `R and C area ${design.passive_area_um2}, from the pack ${passive}`);
 		assert.deepEqual([design.gate_area_um2, design.mos_count], [fix.gate_area_um2, fix.mos_count]);
 		assert.ok(design.area_um2 > expected.spec.design.area_um2, `area ${design.area_um2}`);
-		assert.deepEqual(design.errors.map((e) => e.source), [`ota.spice:${subckt}`]);
-		assert.match(design.errors[0].message, /^the area \(the MOS gates plus the R and C\) is .* above the limit/);
+		assert.deepEqual(design.errors, []);
 		// iin_a: VCM / (n MΩ) on each input. It fails at each corner by a factor of more than 10, below 100 nA.
 		for (const [corner, c] of Object.entries(v)) {
 			const w = c.worst.iin_a;

@@ -50,19 +50,11 @@ export function formatVerdict(root: string, verdict: VerdictRecord): string {
 	);
 	lines.push(`record: ${relative(root, join(checksDir(root), verdict.id))}/verdict.json`);
 	if (verdict.status === "incomplete") lines.push("Not every part of the check passed or ran, so this check does not show that the design meets its requirements.");
-	const d = verdict.design_check;
-	if (d) {
-		const m = d.measurements;
-		const facts = [
-			m.mos_count === undefined ? null : `${m.mos_count} MOS`,
-			m.area_um2 === undefined ? null : `area ${num(m.area_um2)} um2`,
-			m.gate_area_um2 === undefined ? null : `gate area ${num(m.gate_area_um2)} um2`,
-			m.passive_area_um2 === undefined ? null : `R and C area ${num(m.passive_area_um2)} um2`,
-		].filter((x) => x !== null);
-		const source = d.experiment ? ` [${d.experiment}]` : "";
-		const reason = d.reason ? ` (${d.reason})` : "";
-		lines.push(`  ${`DESIGN ${d.status.toUpperCase()}`.padEnd(12)} ${d.file}${facts.length ? `: ${facts.join(", ")}` : ""}${source}${reason}`);
-		for (const e of d.errors) lines.push(`    error${e.source ? ` (${e.source})` : ""}: ${e.message}`);
+	// The diagnostics of each experiment that gave a row that is not a pass, for example design errors with file and line.
+	const pending = new Set(verdict.rows.filter((r) => r.status !== "pass" && r.experiment).map((r) => r.experiment));
+	for (const e of verdict.experiments.filter((e) => pending.has(e.id) && e.diagnostics.length)) {
+		lines.push(`  ${e.experiment}${e.condition === null ? "" : ` @ ${e.condition}`} [${e.id}]:`);
+		for (const d of e.diagnostics) lines.push(`    ${formatDiagnostic(d)}`);
 	}
 	const order: Record<VerdictRow["status"], number> = { fail: 0, not_measured: 1, not_run: 2, pass: 3 };
 	const rows = verdict.rows.filter((r) => r.reason !== NOT_SELECTED).sort((a, b) => order[a.status] - order[b.status]);
@@ -73,7 +65,7 @@ export function formatVerdict(root: string, verdict: VerdictRecord): string {
 		const margin = r.margin_rel === null ? (r.margin === null ? "" : ` margin ${num(r.margin)}${unit}`) : ` margin ${(r.margin_rel * 100).toFixed(1)}%`;
 		const source = r.experiment ? ` [${r.experiment}]` : "";
 		const reason = r.reason ? ` (${r.reason})` : "";
-		lines.push(`  ${r.status.toUpperCase().padEnd(12)} ${r.requirement} @ ${r.condition}: ${value}${at}, limit ${limitText(r.op, r.limit)}${margin}${source}${reason}`);
+		lines.push(`  ${r.status.toUpperCase().padEnd(12)} ${r.requirement}${r.condition === null ? "" : ` @ ${r.condition}`}: ${value}${at}, limit ${limitText(r.op, r.limit)}${margin}${source}${reason}`);
 	}
 	const unselected = verdict.rows.length - rows.length;
 	if (unselected) lines.push(`  NOT_RUN      ${unselected} more row${unselected === 1 ? "" : "s"}: ${NOT_SELECTED} (listed in verdict.json)`);

@@ -5,6 +5,6 @@
   "command": ["node", "{adapter_dir}/fake.mjs"],
   "operations": {
     "run": { "description": "Test adapter. inputs.mode selects the behaviour." },
-    "check_design": { "description": "Test design check. Lines 'error <text>' of inputs.file are errors." }
+    "check_design": { "description": "The same as run, with the operation name of a design check." }
   }
 }

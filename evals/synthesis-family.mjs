@@ -32,15 +32,15 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { designOf } from "./ota-sizing/sizing.mjs";
 import { summary } from "./ota-synthesis/reference.mjs";
 
 const repo = new URL("../", import.meta.url).pathname;
 const GENERATED_BY = "evals/synthesis-family.mjs";
-/** The relative tolerance of the rounding and of the area check (the same as the ngspice adapter). */
+/** The relative tolerance of the rounding. */
 const EPS = 1e-9;
 const OP = { upper: "<=", lower: ">=", lower_db: ">=" };
 const AREA = /(Area: the gate area plus the area of the R and C is <= )([\d.]+)( µm²)/;
-const AREA_ERROR = "the area (the MOS gates plus the R and C) is";
 
 /** The derived limits of a family: [key, rule, where] with where "requirements" or "design". */
 function rules(family) {
@@ -61,8 +61,6 @@ const decimals = (step) => (String(step).split(".")[1] ?? "").length;
 const clean = (x) => Number(x.toPrecision(12));
 /** The real margin of a worst value against a limit, in the direction of the kind. */
 const marginOf = (kind, worst, limit) => (kind === "upper" ? limit / worst : kind === "lower" ? worst / limit : 10 ** ((worst - limit) / 20));
-/** A number as Python formats it with {:g} (the messages of the ngspice adapter). */
-const g = (x) => String(Number(x.toPrecision(6)));
 
 /** The worst value of a derived metric over the corners of the target (the area for the design limit). */
 function worstOf(target, key, rule, where) {
@@ -198,15 +196,14 @@ export function variantSpec(text, limits, { base, factor }) {
 	return out.replace(heading, `${heading}This specification is a variant of ${base} with the limits at factor ${factor} of a hidden design point.\n\n`);
 }
 
-/** The requirements.json of the variant: the base (an object) with the changed limits replaced (SI units). */
+/**
+ * The requirements.json of the variant: the base (an object) with the changed limits replaced (SI units). The area
+ * is a requirement too (id area_um2, on the design experiment).
+ */
 export function variantRequirements(json, limits) {
 	const out = structuredClone(json);
 	for (const [k, l] of Object.entries(limits)) {
 		if (!l.changed) continue;
-		if (l.where === "design") {
-			out.design.limits[k] = l.value;
-			continue;
-		}
 		const r = out.requirements.filter((x) => x.id === k);
 		if (!r.length) throw new Error(`requirements.json: no requirement ${k}`);
 		for (const x of r) {
@@ -224,35 +221,18 @@ function passes(op, limit, value) {
 	return op === "<=" ? value <= limit : value >= limit;
 }
 
-/** The 1-based line of ".subckt <name>" in a netlist text, or null. */
-function subcktLine(text, name) {
-	const i = (text ?? "").split("\n").findIndex((l) => new RegExp(`^\\s*\\.subckt\\s+${name}\\b`, "i").test(l));
-	return i < 0 ? null : i + 1;
-}
-
 /**
  * A result (in the shape of the roles of expected.json) against the variant spec: the pass flags of the derived
- * requirements, the area error of the design check (in the words of the ngspice adapter), rows_pass and
- * meets_spec. design is the netlist text (for the line of the error), if known.
+ * requirements, the status of the design check (its errors and the area limit), rows_pass and meets_spec.
  */
-function rescore(result, spec, limits, design) {
+function rescore(result, spec, limits) {
 	const r = structuredClone(result);
 	for (const c of Object.values(r.corners)) {
 		for (const [k, l] of Object.entries(limits)) if (l.where === "requirements") c.worst[k].pass = passes(spec.limits[k].op, spec.limits[k].value, c.worst[k].value);
 	}
 	const area = limits.area_um2;
 	const d = r.design_check;
-	if (area && d.status !== "not_run") {
-		const errors = d.errors.filter((e) => !e.message.startsWith(AREA_ERROR));
-		if (d.area_um2 !== null && d.area_um2 > area.value * (1 + EPS)) {
-			const line = subcktLine(design, spec.design.subckt);
-			const message = `${AREA_ERROR} ${g(d.area_um2)} µm² (gate area ${g(d.gate_area_um2)} µm², R and C ${g(d.passive_area_um2)} µm²), above the limit ${g(area.value)} µm² (limits.area_um2)`;
-			errors.push({ message, source: line ? `${spec.design.file}:${line}` : spec.design.file });
-			errors.sort((a, b) => Number(a.source.split(":")[1] ?? 0) - Number(b.source.split(":")[1] ?? 0));
-		}
-		d.errors = errors;
-		d.status = errors.length ? "fail" : "pass";
-	}
+	if (area && d.status !== "not_run") d.status = d.errors.length || !passes("<=", area.value, d.area_um2) ? "fail" : "pass";
 	r.rows_pass = Object.values(r.corners).every((c) => Object.values(c.worst).every((w) => w.pass));
 	r.meets_spec = d.status === "pass" && r.rows_pass;
 	return r;
@@ -262,11 +242,10 @@ function rescore(result, spec, limits, design) {
  * The expected.json of the variant, without a simulation: the roles of the base with their pass flags, rows_pass
  * and meets_spec against the new limits, a fourth role target (target.result with its source), spec (the parsed
  * variant spec), limit_margins and provenance. options: family (the roles), base (the base task directory,
- * relative to the repository), designs ({ role: netlist text } of the base roles, for the line of an area
- * error). It throws when the target does not meet the variant spec, the known fail meets it, or the cheat fails a
+ * relative to the repository). It throws when the target does not meet the variant spec, the known fail meets it, or the cheat fails a
  * row.
  */
-export function variantExpected(expected, target, spec, limits, factor, { family, base, designs = {} }) {
+export function variantExpected(expected, target, spec, limits, factor, { family, base }) {
 	const roles = Object.values(family.roles);
 	const out = {
 		task: `${expected.task}-f${factor}`,
@@ -278,9 +257,9 @@ export function variantExpected(expected, target, spec, limits, factor, { family
 	};
 	for (const role of roles) {
 		if (!expected[role]) throw new Error(`expected.json: no role ${role}`);
-		out[role] = rescore(expected[role], spec, limits, designs[role]);
+		out[role] = rescore(expected[role], spec, limits);
 	}
-	out.target = { source: target.source, ...rescore(target.result, spec, limits, target.design) };
+	out.target = { source: target.source, ...rescore(target.result, spec, limits) };
 	for (const [k, v] of Object.entries(expected)) if (!(k in out)) out[k] = v;
 
 	const { known_fail, cheat, input_load } = family.roles;
@@ -318,7 +297,7 @@ export async function variantFiles(taskDir, factor) {
 	const family = readJson(join(dirname(taskDir), "family.json"));
 	const target = readJson(join(taskDir, "target.json"));
 	const task = readJson(join(taskDir, "task.json"));
-	const { parseSpec, designs } = await taskModules(taskDir);
+	const { parseSpec } = await taskModules(taskDir);
 	const baseText = readFileSync(join(taskDir, "spec.md"), "utf8");
 	const limits = deriveLimits(family, parseSpec(baseText), target, f);
 	const text = variantSpec(baseText, limits, { base: task.name, factor: f });
@@ -331,7 +310,7 @@ export async function variantFiles(taskDir, factor) {
 		"spec.md": text,
 		"requirements.json": json(variantRequirements(readJson(join(taskDir, "requirements.json")), limits)),
 		"task.json": json({ ...task, name: `${task.name}-f${f}` }),
-		"expected.json": json(variantExpected(readJson(join(taskDir, "expected.json")), target, spec, limits, f, { family, base: relative(repo, taskDir), designs })),
+		"expected.json": json(variantExpected(readJson(join(taskDir, "expected.json")), target, spec, limits, f, { family, base: relative(repo, taskDir) })),
 	};
 	const local = [task.prompt, task.score, ...Object.values(task.files)].filter((p) => !p.includes("/") && !(p in files));
 	for (const p of new Set(local)) if (existsSync(join(taskDir, p))) files[p] = readFileSync(join(taskDir, p), "utf8");
@@ -350,7 +329,7 @@ async function main() {
 		if (arg) {
 			const run = resolve(arg);
 			const family = readJson(join(dirname(taskDir), "family.json"));
-			const file = readJson(join(taskDir, "requirements.json")).design.file;
+			const file = designOf(readJson(join(taskDir, "requirements.json"))).inputs.file;
 			const current = existsSync(join(taskDir, "target.json")) ? readJson(join(taskDir, "target.json")) : target;
 			target = targetOfRun(readJson(join(run, "score.json")), readFileSync(join(run, "ws", file), "utf8"), family, current, basename(run));
 		}

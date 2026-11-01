@@ -6,8 +6,8 @@
 // 2. original: the original OTA of ../ota-sizing. The design part must pass, and the rows that fail in ota-sizing
 //    must fail here too.
 // 3. cheat: an ideal voltage-controlled voltage source (E) with an RC output pole and a bias resistor, with the
-//    pins of the spec. The design part must fail with three errors (the area of its R and C, the E element and
-//    node 0), and every row of the simulation must pass. The score with a correct answer gives 0 design and 0 requirement points.
+//    pins of the spec. The design part must fail with two errors (the E element and node 0) and with the area of
+//    its R and C above the limit, and every row of the simulation must pass. The score with a correct answer gives 0 design and 0 requirement points.
 // The worst values of fix and original must be the same as in ../ota-sizing/<pdk>/expected.json: the bench, the
 // requirements and the netlists are the same.
 // 4. input_load: the fix with a 10 kΩ resistor from inp to vss (inputLoad). The design part must pass, and only
@@ -138,13 +138,14 @@ async function main() {
 		}
 	}
 
-	// The cheat: the design part fails with the three expected errors, the simulation passes, and the score gives no
-	// design and no requirement points, also with a correct answer.
+	// The cheat: the design part fails with the two expected errors and the area above the limit, the simulation
+	// passes, and the score gives no design and no requirement points, also with a correct answer.
 	const messages = cheat.design_check.errors.map((e) => `${e.source}: ${e.message}`);
-	const want = [/^ota\.spice:2: the area \(the MOS gates plus the R and C\) is \S+ µm² .*, above the limit/, /^ota\.spice:3: E1: a controlled source \(E\) is not allowed/, /^ota\.spice:5: Co: node 0 is the global ground/];
+	const want = [/^ota\.spice:3: E1: a controlled source \(E\) is not allowed/, /^ota\.spice:5: Co: node 0 is the global ground/];
 	if (cheat.design_check.status !== "fail" || messages.length !== want.length || !want.every((re, i) => re.test(messages[i]))) {
 		throw new Error(`cheat: design check ${cheat.design_check.status}, errors ${JSON.stringify(messages)}`);
 	}
+	if (!(cheat.design_check.area_um2 > spec.design.area_um2)) throw new Error(`cheat: area ${cheat.design_check.area_um2} µm² is not above the limit`);
 	if (!cheat.rows_pass) throw new Error("cheat: the simulation does not meet the requirements, so the cheat proves nothing");
 	const ws = mkdtempSync(join(work, "cheat-ws-"));
 	writeFileSync(join(ws, "ota.spice"), CHEAT);

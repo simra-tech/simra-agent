@@ -160,8 +160,14 @@ export function taskRequirements(taskDir) {
 	return JSON.parse(readFileSync(resolve(taskDir, task.files["requirements.json"]), "utf8"));
 }
 
-/** The metric ids of a requirements file: the requirement ids, in order, each one time. */
-export const metricsOf = (requirements) => [...new Set(requirements.requirements.map((r) => r.id))];
+/** The metric ids of a requirements file: the ids of the requirements with conditions, in order, each one time. */
+export const metricsOf = (requirements) => [...new Set(requirements.requirements.filter((r) => r.conditions).map((r) => r.id))];
+
+/** The name and the template of the design check experiment of a requirements file (operation check_design), or null. */
+export function designOf(requirements) {
+	const found = Object.entries(requirements.experiments).find(([, e]) => e.operation === "check_design");
+	return found ? { name: found[0], ...found[1] } : null;
+}
 
 /** The task data: task.json, spec.md and the original ota.spice of a task directory. */
 export function loadTask(taskDir) {
@@ -180,9 +186,11 @@ export function loadTask(taskDir) {
  * (optional) are the requirement ids to report (default: the requirement ids of requirements.json).
  * Returns { corner: { experiment, status, errors, provenance, points, worst } }: points are the rows of the
  * sweep, and worst[m] is { value, vcm, pass } from the verdict row of requirement m at the corner (the worst
- * point over the sweep; a missing point is never a pass). The key design has the design contract check of the
- * verdict: { experiment, status, errors, area_um2, gate_area_um2, passive_area_um2, mos_count } (area_um2: the MOS
- * gates plus the R and C, with the R and C area from the technology pack).
+ * point over the sweep; a missing point is never a pass). The key design has the design check (the experiment with
+ * the operation check_design, see designOf, and the rows of its requirements): { experiment, status, errors,
+ * area_um2, gate_area_um2, passive_area_um2, mos_count }. status is fail when a design row fails, pass when every
+ * design row passes, else not_run. errors are the error diagnostics of the design experiment, with file and line
+ * (area_um2: the MOS gates plus the R and C, with the R and C area from the technology pack).
  */
 export async function verify(taskDir, designText, root, environment, local, { file, metrics } = {}) {
 	const task = JSON.parse(readFileSync(join(taskDir, "task.json"), "utf8"));
@@ -194,10 +202,9 @@ export async function verify(taskDir, designText, root, environment, local, { fi
 	}
 	if (local) writeFileSync(join(root, "simra.local.json"), JSON.stringify(local));
 	const requirements = JSON.parse(readFileSync(join(root, "requirements.json"), "utf8"));
-	writeFileSync(join(root, file ?? requirements.design?.file ?? "ota.spice"), designText);
+	writeFileSync(join(root, file ?? designOf(requirements)?.inputs.file ?? "ota.spice"), designText);
 	if (environment) {
 		for (const e of Object.values(requirements.experiments)) e.environment = environment;
-		if (requirements.design) requirements.design.environment = environment;
 		writeFileSync(join(root, "requirements.json"), JSON.stringify(requirements, null, 2));
 	}
 	const { verdict } = await runCheck({ root, parallel: 3 });
@@ -216,15 +223,21 @@ export async function verify(taskDir, designText, root, environment, local, { fi
 		);
 		out[corner] = { experiment: e?.id ?? null, status: e?.status ?? "not_run", errors: run?.result?.errors ?? [], provenance, points, worst };
 	}
-	const d = verdict.design_check;
+	const design = designOf(requirements);
+	const ids = new Set(requirements.requirements.filter((r) => r.experiment === design?.name).map((r) => r.id));
+	const rows = verdict.rows.filter((r) => ids.has(r.requirement));
+	const e = verdict.experiments.find((x) => x.experiment === design?.name);
+	const completed = e?.status === "completed";
+	const m = completed ? loadExperiment(root, e.id).result.measurements : {};
+	const value = (name) => (m[name]?.status === "measured" ? m[name].value : null);
 	out.design = {
-		experiment: d?.experiment ?? null,
-		status: d?.status ?? "not_run",
-		errors: d?.errors ?? [],
-		area_um2: d?.measurements.area_um2 ?? null,
-		gate_area_um2: d?.measurements.gate_area_um2 ?? null,
-		passive_area_um2: d?.measurements.passive_area_um2 ?? null,
-		mos_count: d?.measurements.mos_count ?? null,
+		experiment: e?.id ?? null,
+		status: rows.some((r) => r.status === "fail") ? "fail" : rows.length && rows.every((r) => r.status === "pass") ? "pass" : "not_run",
+		errors: completed ? e.diagnostics.filter((x) => x.severity === "error").map((x) => ({ message: x.message, source: x.source ?? null })) : [],
+		area_um2: value("area_um2"),
+		gate_area_um2: value("gate_area_um2"),
+		passive_area_um2: value("passive_area_um2"),
+		mos_count: value("mos_count"),
 	};
 	return out;
 }

@@ -26,7 +26,7 @@ The conditions, the corners, the requirements and the bench are the same as in
 | `<pdk>/task.md` | the prompt, the same for every arm |
 | `<pdk>/spec.md` | the specification: conditions, corners, requirements and design rules |
 | `<pdk>/verify.spice` | the verification bench (the bench of ota-sizing with the measurement of `iin_a`) |
-| `<pdk>/requirements.json` | the corners, the limits and the design contract (the `design` section) |
+| `<pdk>/requirements.json` | the corners, the limits and the design contract (the experiment `design` and its requirements) |
 | `<pdk>/simra.config.json` | the environment of the task (the same as in ota-sizing) |
 | `<pdk>/expected.json` | the reference results and their provenance |
 | `<pdk>/score.mjs` | the scorer for one workspace (it calls `synthesis.mjs`) |
@@ -48,9 +48,9 @@ The conditions, the corners, the requirements and the bench are the same as in
 5. Write `answer.json`: the claim `meets_spec`, the area, and for each corner and requirement the worst value
    over the VCM range and its VCM.
 
-The `design` section of `requirements.json` gives the same rules to the check. Its `devices` list gives the MOS
-devices of `spec.md`. Thus a check of
-`requirements.json` by the agent and the score use the same design rules and the same bench.
+The experiment `design` of `requirements.json` (operation `check_design` of the ngspice adapter) and its
+requirements give the same rules to the check. Its `devices` list gives the MOS devices of `spec.md`. Thus a check
+of `requirements.json` by the agent and the score use the same design rules and the same bench.
 
 ## Scoring
 

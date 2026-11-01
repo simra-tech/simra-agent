@@ -47,9 +47,9 @@ test("check_requirements runs the check and gives the verdict", async (t) => {
 	// It names the condition inputs of ngspice and the sweep convention.
 	assert.match(tool.description, /params .* and temp_c/);
 	assert.match(tool.description, /'ROW <sweep>=<v> <name>=<value> \.\.\.'/);
-	// It names the design contract and the adapter operation that checks it.
-	assert.match(tool.description, /- design \(optional\): \{file, subckt, pins, elements\?, devices\?, limits\?, technology\?\}/);
-	assert.match(tool.description, /operation check_design/);
+	// It names the requirements without conditions; the adapter catalog names the design check.
+	assert.match(tool.description, /A requirement without conditions runs its\n {2}experiment once/);
+	assert.doesNotMatch(tool.description, /check_design|ngspice operation/);
 	assert.match(tools.get("run_experiment").description, /adapter "ngspice", operation "check_design"/);
 
 	const root = mkdtempSync(join(tmpdir(), "simra-ext-"));

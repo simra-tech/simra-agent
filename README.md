@@ -23,7 +23,7 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
 - The tool `check_requirements` (pi extension) and the command `simra check` (plain CLI) check the design
   against `requirements.json`. They run the experiments that the requirements need and write a verdict to
   `simra/checks/<id>/verdict.json`. Each row of the verdict names the experiment that gave its value.
-- One adapter exists: ngspice.
+- The ngspice adapter has four operations: `simulate`, `operating_point`, `lint` and `check_design`.
 - One example design exists: a two-stage OTA for the open IHP SG13G2 PDK.
 
 ## Requirements
@@ -125,8 +125,12 @@ The parameter names of the MOS models are different in each PDK. They are in the
 - `experiments`: one template per measurement setup (`adapter`, `operation`, `inputs`). In each string input,
   `{condition}` is replaced with the condition name.
 - `requirements`: each has an `id`, an `experiment`, a `measurement`, an optional `unit`, an `op` (`<=`, `>=` or
-  `between`), a `limit` and the `conditions`. The limit is one number, `[low, high]` for `between`, or one
-  limit per condition.
+  `between`), a `limit` and optional `conditions`. The limit is one number, `[low, high]` for `between`, or one
+  limit per condition. A requirement without `conditions` runs its experiment once, with the template inputs
+  only. Its verdict row has the condition `null`.
+
+Other top-level fields are errors. An older file with a top-level `design` section is an error too. The message
+tells how to write the design check as an experiment (see [Design contract](#design-contract)).
 
 Example:
 
@@ -156,8 +160,11 @@ from a testbench that the agent writes.
 
 The check runs each experiment once per condition, also when more than one requirement reads it. Each row is
 `pass`, `fail`, `not_measured` (no value, or a different unit) or `not_run` (the experiment did not complete,
-or the row was not selected). The status is `pass` only when every row passes (and the
-[design contract](#design-contract), when there is one). A check of a part is never `pass`.
+or the row was not selected). The status is `pass` only when every row passes. A check of a part is never
+`pass`.
+
+The verdict has the diagnostics (errors and warnings, with file and line) of each experiment. When a row of an
+experiment does not pass, the summary shows the diagnostics of that experiment before the rows.
 
 ### Sweeps
 
@@ -185,27 +192,50 @@ When the result has `<name>.min` or `<name>.max`, the check uses them, also when
 
 ### Design contract
 
-The optional `design` part of `requirements.json` tells what the design file can contain. The check then
-examines the netlist. It does not simulate it. Example:
+The operation `check_design` of the ngspice adapter tells what the design file can contain. It runs no
+simulation. It reads the netlist in the ngspice form, with the `ngspice.*` facts of the technology pack. Put it in
+`requirements.json` as an experiment, and put requirements without `conditions` on its measurements. Example:
 
 ```json
-"design": {
-  "file": "ota.spice", "subckt": "ota", "pins": ["inp", "inn", "out", "vdd", "vss", "ibias"],
-  "elements": ["mos", "r", "c"], "devices": ["sg13_lv_nmos", "sg13_lv_pmos"],
-  "limits": { "area_um2": 1000, "c_f": 2e-12 }, "technology": "ihp-sg13"
-}
+"experiments": {
+  "design": {
+    "adapter": "ngspice", "operation": "check_design", "environment": "eda",
+    "inputs": {
+      "file": "ota.spice", "subckt": "ota", "pins": ["inp", "inn", "out", "vdd", "vss", "ibias"],
+      "elements": ["mos", "r", "c"], "devices": ["sg13_lv_nmos", "sg13_lv_pmos"],
+      "limits": { "c_f": 2e-12 }, "technology": "ihp-sg13"
+    }
+  }
+},
+"requirements": [
+  { "id": "design_errors", "experiment": "design", "measurement": "design_errors", "op": "<=", "limit": 0 },
+  { "id": "area_um2", "experiment": "design", "measurement": "area_um2", "unit": "um2", "op": "<=", "limit": 1000 }
+]
 ```
+
+The inputs:
 
 - `file`, `subckt` and `pins` are necessary. `pins` gives the pins of the subcircuit in their order.
 - `elements` gives the permitted element kinds: `mos`, `r` and `c`. The default is all three.
 - `devices` gives the devices of the technology pack that the design can instantiate. Without `devices`, the
-  design can instantiate every device of the pack. A name that the pack does not have makes the design check `not_run`.
-- `limits` gives maximum values. `gate_area_um2` is the sum of W × L × m over all MOS devices, with each
-  subcircuit instance counted. `area_um2` is the gate area plus the area of the R and C. A resistor counts as
-  R × w_min² / R_sheet and a capacitor as C / density, with the facts of the technology pack for `$PDK`
-  (`ngspice.passives`). `r_ohm` and `c_f` apply to each resistor and each capacitor.
-- `technology` is the name of a technology pack. The default is the pack for `$PDK`. `environment` and
-  `adapter` have the same defaults as an experiment (`local` and `ngspice`).
+  design can instantiate every device of the pack. A name that the pack does not have makes the run fail, so its
+  rows are `not_run`.
+- `limits` gives maximum values for each element: `r_ohm` for each resistor and `c_f` for each capacitor. An
+  element above its limit is an error at its line.
+- `technology` is the name of a technology pack. The default is the pack for `$PDK`.
+
+The measurements:
+
+- `design_errors`: the number of errors. Put the requirement `design_errors <= 0` on it.
+- `mos_count`: the number of MOS devices, with each subcircuit instance counted.
+- `gate_area_um2`: the sum of W × L × m over all MOS devices.
+- `passive_area_um2`: the area of the R and C. A resistor counts as R × w_min² / R_sheet and a capacitor as
+  C / density, with the facts of the technology pack for `$PDK` (`ngspice.passives`).
+- `area_um2`: `gate_area_um2` plus `passive_area_um2`, that is, the MOS gate area plus the area of the ideal R and
+  C from the facts of the pack. It is an estimate from the netlist, not a layout area.
+
+When the pack has no passive facts for the R or C of the design, `passive_area_um2` and `area_um2` are not
+measured, and the adapter gives a warning. A requirement on them is then `not_measured`.
 
 The rules of the design file:
 
@@ -213,16 +243,14 @@ The rules of the design file:
 2. The named block has the pins of `pins`, in the same order, and no parameters.
 3. An `X` line instantiates a MOS device of the technology pack (only the `devices`, if given) or another block
    of the file. The sizes are plain numbers with an optional scale suffix, for example `w=2u`. Each size is at
-   or above the minimum of the pack.
+   or above the minimum of the pack. The sizes follow the scale of the technology pack (`ngspice.size_unit_m`):
+   with `ihp-sg13`, `w=2u` is 2 µm; the `sky130` library sets `.option scale=1.0u`, so `w=2` is 2 µm.
 4. An `R` or `C` line has 4 fields and a positive value.
 5. All other lines are errors: sources, `M` lines, `.model`, `.include`, `.lib`, `.param`, `.option` and
    expressions in `{}`. A block that instantiates itself is also an error.
 
-The check runs the experiment `check_design` of the ngspice adapter before the other experiments. The verdict
-has the result in `design_check`: `pass`, `fail` or `not_run`, the errors with file and line, the MOS count, the area,
-the gate area and the area of the R and C. The summary shows one `DESIGN` line and one line for each error. The status is `pass` only
-when every row passes and the design check passes. A check with `--only` or `--conditions` does not run the
-design check, so its design check is `not_run`.
+Each error is a diagnostic with file and line. When a row of the design experiment does not pass, the summary
+shows the errors before the rows.
 
 ## Layout
 
@@ -230,7 +258,7 @@ design check, so its design check is `not_run`.
 | --- | --- |
 | `packages/kernel/` | runner, experiment records, environments, `simra` CLI (no pi dependency) |
 | `packages/pi-extension/` | the pi extension (the only package that imports pi) |
-| `adapters/ngspice/` | ngspice adapter (Python) and its tests |
+| `adapters/ngspice/` | ngspice adapter (Python) and its tests; `design_check.py` has the operation `check_design` |
 | `technologies/` | technology packs: the PDK facts that adapters need |
 | `examples/ota-sg13g2/` | two-stage OTA for IHP SG13G2 |
 | `evals/` | demo evaluations for the inner development loop (not decision benchmarks): the OTA at 3 corners, the OTA against a PVT spec, OTA synthesis from a pin specification (`ota-synthesis`), comparator synthesis from a pin specification (`comparator-synthesis`), their scorers and an arm runner. `synthesis-family.mjs` makes variants of the two synthesis tasks with tighter limits, from a hidden target design and a difficulty factor |

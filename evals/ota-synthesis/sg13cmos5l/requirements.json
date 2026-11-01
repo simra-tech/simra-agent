@@ -1,33 +1,5 @@
 {
   "schema": "simra.requirements/0",
-  "design": {
-    "file": "ota.spice",
-    "subckt": "ota",
-    "pins": [
-      "inp",
-      "inn",
-      "out",
-      "vdd",
-      "vss",
-      "ibias"
-    ],
-    "elements": [
-      "mos",
-      "r",
-      "c"
-    ],
-    "devices": [
-      "sg13_lv_nmos",
-      "sg13_lv_pmos"
-    ],
-    "limits": {
-      "area_um2": 1000,
-      "r_ohm": 1000000,
-      "c_f": 2e-12
-    },
-    "technology": "ihp-sg13",
-    "environment": "eda"
-  },
   "conditions": {
     "tt": {
       "description": "mos_tt, VDD = 1.20 V, 27 degC",
@@ -76,6 +48,37 @@
     }
   },
   "experiments": {
+    "design": {
+      "adapter": "ngspice",
+      "operation": "check_design",
+      "environment": "eda",
+      "inputs": {
+        "file": "ota.spice",
+        "subckt": "ota",
+        "pins": [
+          "inp",
+          "inn",
+          "out",
+          "vdd",
+          "vss",
+          "ibias"
+        ],
+        "elements": [
+          "mos",
+          "r",
+          "c"
+        ],
+        "devices": [
+          "sg13_lv_nmos",
+          "sg13_lv_pmos"
+        ],
+        "limits": {
+          "r_ohm": 1000000,
+          "c_f": 2e-12
+        },
+        "technology": "ihp-sg13"
+      }
+    },
     "sweep": {
       "adapter": "ngspice",
       "operation": "simulate",
@@ -93,6 +96,23 @@
     }
   },
   "requirements": [
+    {
+      "id": "design_errors",
+      "description": "Errors of the netlist against the design contract",
+      "experiment": "design",
+      "measurement": "design_errors",
+      "op": "<=",
+      "limit": 0
+    },
+    {
+      "id": "area_um2",
+      "description": "Area: the MOS gates plus the ideal R and C",
+      "experiment": "design",
+      "measurement": "area_um2",
+      "unit": "um2",
+      "op": "<=",
+      "limit": 1000
+    },
     {
       "id": "gain_db",
       "description": "DC open-loop gain, at 1 Hz",

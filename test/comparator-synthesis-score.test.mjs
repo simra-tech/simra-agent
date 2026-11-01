@@ -213,15 +213,19 @@ for (const [name, facts] of Object.entries(TASKS)) {
 			// The same corners, design limits for R and C, devices and environment as ota-synthesis.
 			const ota = JSON.parse(readFileSync(join(repo, "evals/ota-synthesis", name, "requirements.json"), "utf8"));
 			assert.deepEqual(req.conditions, ota.conditions);
-			assert.deepEqual({ ...req.design, file: null, subckt: null, limits: { ...req.design.limits, area_um2: null } }, { ...ota.design, file: null, subckt: null, limits: { ...ota.design.limits, area_um2: null } });
+			const other = (r) => ({ ...r.experiments.design, inputs: { ...r.experiments.design.inputs, file: null, subckt: null } });
+			assert.deepEqual(other(req), other(ota));
 			assert.equal(readFileSync(join(taskDir(dir), "simra.config.json"), "utf8"), readFileSync(join(repo, "evals/ota-synthesis", name, "simra.config.json"), "utf8"));
 			// The design contract: the file, the pins in their order, the element kinds, the devices and the limits of spec.md.
 			const d = spec.design;
 			assert.deepEqual([d.file, d.subckt, d.pins], ["cmp.spice", "cmp", ["inp", "inn", "out", "vdd", "vss", "ibias"]]);
-			assert.deepEqual([req.design.file, req.design.subckt, req.design.pins, req.design.elements], [d.file, d.subckt, d.pins, ["mos", "r", "c"]]);
-			assert.deepEqual(req.design.devices, d.devices);
-			assert.deepEqual(req.design.limits, { area_um2: d.area_um2, r_ohm: d.r_ohm, c_f: d.c_f });
-			assert.deepEqual([req.design.technology, req.design.environment], [facts.technology, task.environment]);
+			const design = req.experiments.design;
+			assert.deepEqual([design.inputs.file, design.inputs.subckt, design.inputs.pins, design.inputs.elements], [d.file, d.subckt, d.pins, ["mos", "r", "c"]]);
+			assert.deepEqual(design.inputs.devices, d.devices);
+			assert.deepEqual(design.inputs.limits, { r_ohm: d.r_ohm, c_f: d.c_f });
+			assert.deepEqual([design.adapter, design.operation, design.inputs.technology, design.environment], ["ngspice", "check_design", facts.technology, task.environment]);
+			const rows = req.requirements.filter((r) => r.experiment === "design").map((r) => [r.id, r.experiment, r.measurement, r.op, r.limit]);
+			assert.deepEqual(rows, [["design_errors", "design", "design_errors", "<=", 0], ["area_um2", "design", "area_um2", "<=", d.area_um2]]);
 			assertPassiveRule(readFileSync(join(taskDir(dir), "spec.md"), "utf8"), facts.technology, facts.pdk);
 			// The devices of spec.md are devices of the technology pack, with the minimum sizes of the pack.
 			const pack = JSON.parse(readFileSync(join(repo, "technologies", facts.technology, "technology.json"), "utf8")).ngspice;

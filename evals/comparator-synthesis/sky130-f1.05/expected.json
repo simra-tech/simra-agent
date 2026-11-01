@@ -171,12 +171,7 @@
   "reference": {
     "design_check": {
       "status": "fail",
-      "errors": [
-        {
-          "message": "the area (the MOS gates plus the R and C) is 22.45 µm² (gate area 22.45 µm², R and C 0 µm²), above the limit 7.7 µm² (limits.area_um2)",
-          "source": "cmp.spice:2"
-        }
-      ],
+      "errors": [],
       "area_um2": 22.45,
       "gate_area_um2": 22.45,
       "passive_area_um2": 0,
@@ -496,12 +491,7 @@
   "known_fail": {
     "design_check": {
       "status": "fail",
-      "errors": [
-        {
-          "message": "the area (the MOS gates plus the R and C) is 20.45 µm² (gate area 20.45 µm², R and C 0 µm²), above the limit 7.7 µm² (limits.area_um2)",
-          "source": "cmp.spice:2"
-        }
-      ],
+      "errors": [],
       "area_um2": 20.45,
       "gate_area_um2": 20.45,
       "passive_area_um2": 0,
@@ -1150,12 +1140,7 @@
   "input_load": {
     "design_check": {
       "status": "fail",
-      "errors": [
-        {
-          "message": "the area (the MOS gates plus the R and C) is 26.2475 µm² (gate area 22.45 µm², R and C 3.7975 µm²), above the limit 7.7 µm² (limits.area_um2)",
-          "source": "cmp.spice:2"
-        }
-      ],
+      "errors": [],
       "area_um2": 26.2475,
       "gate_area_um2": 22.45,
       "passive_area_um2": 3.7975,

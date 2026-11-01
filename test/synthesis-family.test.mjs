@@ -84,7 +84,7 @@ for (const c of CASES) {
 		assert.equal(target.task, readJson(join(c.dir, "task.json")).name);
 		assert.ok(target.result.meets_spec, "the target meets the base spec");
 		// The target has a worst value of every requirement of the base task (a new requirement needs a new verification).
-		const ids = readJson(join(c.dir, "requirements.json")).requirements.map((r) => r.id);
+		const ids = readJson(join(c.dir, "requirements.json")).requirements.filter((r) => r.conditions).map((r) => r.id);
 		for (const [k, x] of Object.entries(target.result.corners)) assert.deepEqual(Object.keys(x.worst), ids, `${k}: the requirements of the target`);
 		if (target.source.kind === "reference") {
 			assert.deepEqual(target, reference, "target.json is targetOf the reference role of expected.json");

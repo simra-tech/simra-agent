@@ -25,7 +25,7 @@ ota-synthesis. The requirements, the load, the bench and the area limit are diff
 | `<pdk>/task.md` | the prompt, the same for every arm |
 | `<pdk>/spec.md` | the specification: conditions, corners, requirements and design rules |
 | `<pdk>/verify.spice` | the transient verification bench |
-| `<pdk>/requirements.json` | the corners, the limits and the design contract (the `design` section) |
+| `<pdk>/requirements.json` | the corners, the limits and the design contract (the experiment `design` and its requirements) |
 | `<pdk>/simra.config.json` | the environment of the task (the same as in ota-synthesis) |
 | `<pdk>/expected.json` | the reference results, the limit margins and their provenance |
 | `<pdk>/score.mjs` | the scorer for one workspace (it calls `synthesis.mjs`) |

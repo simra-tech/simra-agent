@@ -8,9 +8,10 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { loadExperiment } from "@simra-tech/kernel";
 import { FIXES, resize } from "../evals/ota-sizing/reference.mjs";
 import { assertBenchMatchesSpec } from "./ota-bench-consistency.mjs";
-import { checkTopology, gateArea, loadTask, METRICS, scoreSizing, sweep } from "../evals/ota-sizing/sizing.mjs";
+import { checkTopology, gateArea, loadTask, METRICS, scoreSizing, sweep, verify } from "../evals/ota-sizing/sizing.mjs";
 
 const repo = new URL("../", import.meta.url).pathname;
 const TASKS = { sg13cmos5l: { area: 30, fix_area: 50, range: [0.4, 0.7], points: 16 }, sky130: { area: 42, fix_area: 58, range: [0.8, 1.2], points: 21 } };
@@ -132,9 +133,44 @@ for (const name of Object.keys(TASKS)) {
 		const bench = readFileSync(join(taskDir(name), "verify.spice"), "utf8");
 		const req = JSON.parse(readFileSync(join(taskDir(name), "requirements.json"), "utf8"));
 		assertBenchMatchesSpec(spec, bench, req);
-		// The design contract: the OTA pins and the design limits of the spec (gate area and Cc).
-		assert.deepEqual([req.design.file, req.design.subckt, req.design.pins], ["ota.spice", "ota", ["inp", "inn", "out", "vdd", "vss", "ibias"]]);
-		assert.equal(req.design.limits.gate_area_um2, spec.design.area_um2);
-		assert.ok(Math.abs(req.design.limits.c_f / spec.design.cc_f - 1) < 1e-12, `c_f: limit ${req.design.limits.c_f}, spec ${spec.design.cc_f}`);
+		// The design contract: the OTA pins and the design limits of the spec (gate area and Cc). The design rows (the
+		// requirements of the experiment design): no design errors and the gate area.
+		const design = req.experiments.design;
+		assert.deepEqual([design.adapter, design.operation], ["ngspice", "check_design"]);
+		assert.deepEqual([design.inputs.file, design.inputs.subckt, design.inputs.pins], ["ota.spice", "ota", ["inp", "inn", "out", "vdd", "vss", "ibias"]]);
+		const rows = req.requirements.filter((r) => r.experiment === "design").map((r) => [r.id, r.experiment, r.measurement, r.op, r.limit]);
+		assert.deepEqual(rows, [["design_errors", "design", "design_errors", "<=", 0], ["gate_area_um2", "design", "gate_area_um2", "<=", spec.design.area_um2]]);
+		assert.ok(Math.abs(design.inputs.limits.c_f / spec.design.cc_f - 1) < 1e-12, `c_f: limit ${design.inputs.limits.c_f}, spec ${spec.design.cc_f}`);
 	});
 }
+
+test("verify: the design part is the experiment with the operation check_design, not a row without a condition", async (t) => {
+	const dir = mkdtempSync(join(tmpdir(), "simra-sizing-verify-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const fake = join(repo, "packages/kernel/test/fixtures/adapters");
+	const values = (v, diagnostics = []) => ({ mode: "values", values: v, diagnostics });
+	const files = { "simra.config.json": { adapter_dirs: [fake] }, "simra.local.json": null, "verify.spice": null };
+	files["requirements.json"] = {
+		schema: "simra.requirements/0",
+		conditions: { tt: {} },
+		experiments: {
+			// A first experiment without conditions that is not the design check.
+			supply: { adapter: "fake", operation: "run", inputs: values({ iq_a: 1e-4 }) },
+			ac: { adapter: "fake", operation: "run", inputs: values({ gain_db: 60 }) },
+			design: { adapter: "fake", operation: "check_design", inputs: { file: "x.spice", ...values({ design_errors: 1, area_um2: 12 }, [{ severity: "error", message: "V1: a voltage source is not allowed", source: "x.spice:2" }]) } },
+		},
+		requirements: [
+			{ id: "iq_a", experiment: "supply", measurement: "iq_a", op: "<=", limit: 1e-3 },
+			{ id: "gain_db", experiment: "ac", measurement: "gain_db", op: ">=", limit: 50, conditions: ["tt"] },
+			{ id: "design_errors", experiment: "design", measurement: "design_errors", op: "<=", limit: 0 },
+		],
+	};
+	for (const [f, v] of Object.entries(files)) if (v) writeFileSync(join(dir, f), JSON.stringify(v));
+	writeFileSync(join(dir, "task.json"), JSON.stringify({ files: Object.fromEntries(Object.keys(files).map((f) => [f, f])) }));
+	const out = await verify(dir, "* design\n", join(dir, "root"));
+	const design = loadExperiment(join(dir, "root"), out.design.experiment);
+	assert.equal(design.experiment.operation, "check_design");
+	assert.deepEqual([out.design.status, out.design.area_um2, out.design.errors], ["fail", 12, [{ message: "V1: a voltage source is not allowed", source: "x.spice:2" }]]);
+	assert.equal(readFileSync(join(dir, "root", "x.spice"), "utf8"), "* design\n");
+	assert.equal(out.tt.worst.gain_db.pass, true);
+});

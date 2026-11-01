@@ -1329,10 +1329,6 @@
       "status": "fail",
       "errors": [
         {
-          "message": "the area (the MOS gates plus the R and C) is 1061.86 µm² (gate area 0 µm², R and C 1061.86 µm²), above the limit 770 µm² (limits.area_um2)",
-          "source": "ota.spice:2"
-        },
-        {
           "message": "E1: a controlled source (E) is not allowed in the design; use only MOS devices of the technology pack (X), ideal resistors (R), ideal capacitors (C)",
           "source": "ota.spice:3"
         },

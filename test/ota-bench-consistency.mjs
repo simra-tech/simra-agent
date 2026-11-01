@@ -36,7 +36,7 @@ export function assertBenchMatchesSpec(spec, bench, req, { points = sweep(spec.r
 	// One sweep experiment with the bench, and each requirement of the spec with its limit at every corner.
 	assert.equal(req.experiments.sweep.inputs.deck, "verify.spice");
 	assert.deepEqual(Object.keys(req.experiments.sweep.inputs.measurements), metrics);
-	assert.deepEqual(req.requirements.map((r) => r.id), metrics);
+	assert.deepEqual(req.requirements.filter((r) => r.conditions).map((r) => r.id), metrics);
 	assert.deepEqual(Object.keys(spec.limits), metrics);
 	for (const m of metrics) {
 		const r = req.requirements.find((x) => x.id === m);

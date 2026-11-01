@@ -3,8 +3,8 @@
 // The agent gets a pin specification (spec.md), the bench verify.spice and requirements.json, and no netlist. It
 // writes the OTA in ota.spice; the topology is free. The scorer does not trust the answer: it runs the check of
 // requirements.json on the final ota.spice through the kernel (the verify() of ../ota-sizing/sizing.mjs). The
-// check lints ota.spice against the design section of requirements.json (the design part of the verdict) and
-// simulates it with the bench at each corner and at each VCM of the range. scoreSynthesis() takes the corners, the
+// check lints ota.spice with the design experiment of requirements.json (the experiment with the operation
+// check_design) and simulates it with the bench at each corner and at each VCM of the range. scoreSynthesis() takes the corners, the
 // metrics and the design file from requirements.json, so other synthesis tasks (comparator-synthesis) use it too.
 //
 // Score:
@@ -22,7 +22,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { numbersIn, readTexts, shown, within } from "../ota-corners/score.mjs";
-import { METRICS as SIZING_METRICS, TOLERANCE as SIZING_TOLERANCE, metricsOf, parseConditions, taskRequirements, verify } from "../ota-sizing/sizing.mjs";
+import { designOf, METRICS as SIZING_METRICS, TOLERANCE as SIZING_TOLERANCE, metricsOf, parseConditions, taskRequirements, verify } from "../ota-sizing/sizing.mjs";
 
 export { verify };
 
@@ -77,7 +77,7 @@ export async function scoreSynthesis(ws, taskDir, { verifyRoot = join(dirname(ws
 	const requirements = taskRequirements(taskDir);
 	const metrics = metricsOf(requirements);
 	const corners = Object.keys(requirements.conditions);
-	const designFile = file ?? requirements.design.file;
+	const designFile = file ?? designOf(requirements).inputs.file;
 	const rowCount = corners.length * metrics.length;
 	const report = {
 		workspace: ws,

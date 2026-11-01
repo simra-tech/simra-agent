@@ -134,12 +134,7 @@
   "fix": {
     "design_check": {
       "status": "fail",
-      "errors": [
-        {
-          "message": "the area (the MOS gates plus the R and C) is 827.92 µm² (gate area 50 µm², R and C 777.92 µm²), above the limit 496 µm² (limits.area_um2)",
-          "source": "ota.spice:5"
-        }
-      ],
+      "errors": [],
       "area_um2": 827.919894648,
       "gate_area_um2": 50,
       "passive_area_um2": 777.919894648,
@@ -633,12 +628,7 @@
   "original": {
     "design_check": {
       "status": "fail",
-      "errors": [
-        {
-          "message": "the area (the MOS gates plus the R and C) is 807.92 µm² (gate area 30 µm², R and C 777.92 µm²), above the limit 496 µm² (limits.area_um2)",
-          "source": "ota.spice:5"
-        }
-      ],
+      "errors": [],
       "area_um2": 807.919894648,
       "gate_area_um2": 30,
       "passive_area_um2": 777.919894648,
@@ -1133,10 +1123,6 @@
     "design_check": {
       "status": "fail",
       "errors": [
-        {
-          "message": "the area (the MOS gates plus the R and C) is 1739.66 µm² (gate area 0 µm², R and C 1739.66 µm²), above the limit 496 µm² (limits.area_um2)",
-          "source": "ota.spice:2"
-        },
         {
           "message": "E1: a controlled source (E) is not allowed in the design; use only MOS devices of the technology pack (X), ideal resistors (R), ideal capacitors (C)",
           "source": "ota.spice:3"
@@ -1639,12 +1625,7 @@
   "input_load": {
     "design_check": {
       "status": "fail",
-      "errors": [
-        {
-          "message": "the area (the MOS gates plus the R and C) is 829.758 µm² (gate area 50 µm², R and C 779.758 µm²), above the limit 496 µm² (limits.area_um2)",
-          "source": "ota.spice:5"
-        }
-      ],
+      "errors": [],
       "area_um2": 829.758129942,
       "gate_area_um2": 50,
       "passive_area_um2": 779.758129942,
