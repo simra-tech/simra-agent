@@ -5,6 +5,7 @@
 // It never logs headers, so the API key does not appear in the log.
 // If MODEL_API_KEY is set for the proxy, the proxy puts it in the Authorization header of each request.
 // Then the agent needs only a dummy key and never sees the real one.
+// MODEL_API_HEADERS (a JSON object) adds more headers to each request, for example the account of a subscription.
 //
 // Usage: node evals/model-proxy.mjs <port | socket path> <log.jsonl> [upstream]   (default upstream: https://api.deepseek.com)
 
@@ -13,6 +14,7 @@ import { createServer } from "node:http";
 
 const [port, logPath, upstream = "https://api.deepseek.com"] = process.argv.slice(2);
 const key = process.env.MODEL_API_KEY;
+const extraHeaders = JSON.parse(process.env.MODEL_API_HEADERS || "{}");
 if (!port || !logPath) {
 	console.error("usage: node evals/model-proxy.mjs <port | socket path> <log.jsonl> [upstream]");
 	process.exit(2);
@@ -64,6 +66,7 @@ const server = createServer(async (req, res) => {
 	delete headers["content-length"];
 	delete headers["accept-encoding"];
 	if (key) headers.authorization = `Bearer ${key}`;
+	for (const [k, v] of Object.entries(extraHeaders)) headers[k.toLowerCase()] = v;
 	try {
 		const up = await fetch(upstream + req.url, { method: req.method, headers, body: body.length ? body : undefined });
 		entry.status = up.status;

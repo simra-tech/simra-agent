@@ -10,6 +10,7 @@
 //   simra     pi with the Simra Agent extension (tool run_experiment)
 //   pi        stock pi
 //   opencode  OpenCode
+//   codex     Codex CLI, on the ChatGPT subscription of the host login (see codexAccess), not on the API key
 //
 // Steps:
 // 1. Make a run directory: <runs>/<task>-<arm>-<time>/ with ws/ (the agent workspace), state/ (the harness
@@ -31,15 +32,18 @@
 // The image must not hold the answers: container/build.sh copies only the runtime files.
 //
 // The model key comes from the key variable of the model in MODELS (environment or .env in the repository root).
+// For the codex arm, the proxy holds the access token of the Codex login on this host instead, and the sandbox gets
+// only the Linux Codex package (--codex-dir or SIMRA_CODEX_DIR: the vendor/<target> directory of the npm package
+// @openai/codex@<version>-linux-<arch>), mounted read-only. No login file goes into the sandbox.
 //
-// Usage: node evals/run-arm.mjs <task dir> <simra|pi|opencode> [--model <id>] [--runs <dir>] [--timeout-min <n>]
-//        [--upstream <url>]
+// Usage: node evals/run-arm.mjs <task dir> <simra|pi|opencode|codex> [--model <id>] [--runs <dir>] [--timeout-min <n>]
+//        [--upstream <url>] [--codex-dir <dir>]
 
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync, chmodSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { connect, createServer as createNetServer } from "node:net";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { loadConfig } from "@simra-tech/kernel";
 import { containerImageId, containerUser } from "../packages/kernel/src/environments.ts";
@@ -52,11 +56,15 @@ const PROXY_DIR = "/proxy";
 const FORWARD_PORT = 8080;
 const BASE_URL = `http://127.0.0.1:${FORWARD_PORT}`;
 const EXTENSION = "/opt/simra-agent/packages/pi-extension";
+const CODEX_DIR = "/opt/codex";
+/** The Codex backend of a ChatGPT subscription. */
+export const CODEX_UPSTREAM = "https://chatgpt.com/backend-api/codex";
 
 /**
  * The models for the arms. keyVar: the variable that holds the key. upstream: the API that the proxy forwards to.
  * pi: the providers block of pi's models.json. opencode: the provider block of opencode.json. Without network,
  * OpenCode uses its built-in model list, so each model needs its entry here (the values are the ones in pi's list).
+ * codex: the model name on the Codex backend (only models with this field can run on the codex arm).
  */
 export const MODELS = {
 	"deepseek/deepseek-flash": {
@@ -83,6 +91,7 @@ export const MODELS = {
 	"openai/gpt-6.1-sol": {
 		keyVar: "OPENAI_API_KEY",
 		upstream: "https://api.openai.com/v1",
+		codex: "gpt-6.1-sol",
 		pi: { openai: { baseUrl: BASE_URL } },
 		opencode: {
 			openai: {
@@ -149,8 +158,9 @@ export function makeWorkspace(taskDir, task, ws) {
 /**
  * The container command line for one sandboxed process. ws, state and proxyDir are host directories.
  * env: extra environment variables. command: the program and its arguments in the container.
+ * readOnly: more mounts, { <host directory>: <container directory> }, read-only.
  */
-export function sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar = "DEEPSEEK_API_KEY", env = {}, command }) {
+export function sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar = "DEEPSEEK_API_KEY", env = {}, readOnly = {}, command }) {
 	return [
 		"run",
 		"--rm",
@@ -176,6 +186,7 @@ export function sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar
 		`${state}:${STATE}`,
 		"-v",
 		`${proxyDir}:${PROXY_DIR}`,
+		...Object.entries(readOnly).flatMap(([from, to]) => ["-v", `${from}:${to}:ro`]),
 		"-w",
 		WORK,
 		...Object.entries({ HOME: `${STATE}/home`, [keyVar]: DUMMY_KEY, ...env }).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
@@ -237,11 +248,11 @@ export function engineEnv() {
  * the engine's host address. proxyDir is the volume. The sandbox itself still has no network. The relay has the
  * default network but no key and no host files. While the run lasts, any process on this host can use the proxy port.
  */
-export async function startProxy(run, key, upstream, { engine, imageId, relay = PROXY_RELAY } = {}) {
+export async function startProxy(run, key, upstream, { engine, imageId, relay = PROXY_RELAY, headers } = {}) {
 	const log = join(run, "models.jsonl");
 	const spawnProxy = (where) =>
 		spawn(process.execPath, [join(repo, "evals", "model-proxy.mjs"), where, log, ...(upstream ? [upstream] : [])], {
-			env: { PATH: process.env.PATH, MODEL_API_KEY: key },
+			env: { PATH: process.env.PATH, MODEL_API_KEY: key, ...(headers ? { MODEL_API_HEADERS: JSON.stringify(headers) } : {}) },
 			stdio: ["ignore", "ignore", "inherit"],
 		});
 	if (!relay) {
@@ -301,6 +312,22 @@ function loadDotEnv() {
 	return out;
 }
 
+/**
+ * The model access of the codex arm: the access token and the account of the Codex login on this host
+ * ($CODEX_HOME/auth.json, default ~/.codex), for the proxy only. The login must be valid for the whole run
+ * (run codex on the host once to renew it).
+ */
+export function codexAccess(minutes, home = process.env.CODEX_HOME ?? join(homedir(), ".codex")) {
+	const path = join(home, "auth.json");
+	if (!existsSync(path)) throw new Error(`no Codex login (${path}): run "codex login" on this host`);
+	const auth = JSON.parse(readFileSync(path, "utf8"));
+	const token = auth.tokens?.access_token;
+	if (auth.auth_mode !== "chatgpt" || !token || !auth.tokens.account_id) throw new Error("the Codex login is not a ChatGPT login");
+	const exp = JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8") || "{}").exp;
+	if (exp && exp * 1000 < Date.now() + (minutes + 10) * 60_000) throw new Error("the Codex login expires before the run ends: run codex on this host once to renew it");
+	return { key: token, headers: { "ChatGPT-Account-ID": auth.tokens.account_id } };
+}
+
 /** The agent command in the container. Configuration files go to the host directory state (mounted at STATE). */
 function armCommand(arm, state, prompt, modelId) {
 	const model = MODELS[modelId];
@@ -327,7 +354,22 @@ function armCommand(arm, state, prompt, modelId) {
 			env: { XDG_CONFIG_HOME: `${xdg}/config`, XDG_DATA_HOME: `${xdg}/data`, XDG_CACHE_HOME: `${xdg}/cache`, XDG_STATE_HOME: `${xdg}/state` },
 		};
 	}
-	throw new Error(`unknown arm "${arm}" (use simra, pi or opencode)`);
+	if (arm === "codex") {
+		if (!model.codex) throw new Error(`model "${modelId}" has no Codex name`);
+		mkdirSync(join(state, "codex"), { recursive: true });
+		// A model provider that points at the proxy, with the dummy key. The proxy puts in the subscription token.
+		writeFileSync(
+			join(state, "codex", "config.toml"),
+			`model = "${model.codex}"\nmodel_reasoning_effort = "high"\nmodel_provider = "proxy"\n\n[model_providers.proxy]\nname = "proxy"\nbase_url = "${BASE_URL}"\nwire_api = "responses"\nenv_key = "${model.keyVar}"\n`,
+		);
+		// The sandbox is the boundary, as for pi: no approvals and no Codex sandbox in the container.
+		return {
+			command: [`${CODEX_DIR}/bin/codex`, "exec", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "--ignore-rules", prompt],
+			env: { CODEX_HOME: `${STATE}/codex` },
+			codex: true,
+		};
+	}
+	throw new Error(`unknown arm "${arm}" (use simra, pi, opencode or codex)`);
 }
 
 function waitExit(child, timeoutMs, onTimeout) {
@@ -360,7 +402,7 @@ async function main() {
 	const modelId = opt("--model", DEFAULT_MODEL);
 	const model = MODELS[modelId];
 	if (!model) throw new Error(`unknown model "${modelId}" (use ${Object.keys(MODELS).join(" or ")})`);
-	const upstream = opt("--upstream", model.upstream);
+	const upstream = opt("--upstream", arm === "codex" ? CODEX_UPSTREAM : model.upstream);
 	const stamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
 	const runName = `${task.name}-${arm}-${stamp}`;
 	const run = join(runs, runName);
@@ -372,17 +414,30 @@ async function main() {
 	const imageId = containerImageId(engine, env.image);
 	if (env.image_id && env.image_id !== imageId) throw new Error(`image ${env.image} is ${imageId}, expected ${env.image_id}`);
 
-	const key = process.env[model.keyVar] ?? loadDotEnv()[model.keyVar];
-	if (!key) throw new Error(`${model.keyVar} is not set`);
-	const { proxyDir, stop: stopProxy } = await startProxy(run, key, upstream, { engine, imageId });
-
 	const prompt = readFileSync(join(taskDir, task.prompt), "utf8");
 	const cmd = armCommand(arm, state, prompt, modelId);
+	const readOnly = {};
+	if (cmd.codex) {
+		const dir = opt("--codex-dir", process.env.SIMRA_CODEX_DIR);
+		if (!dir || !existsSync(join(dir, "bin", "codex"))) throw new Error("the codex arm needs --codex-dir <vendor/<target> directory of the Linux Codex package>");
+		readOnly[realpathSync(dir)] = CODEX_DIR;
+		const pkg = join(dir, "codex-package.json");
+		cmd.version = existsSync(pkg) ? JSON.parse(readFileSync(pkg, "utf8")).version : null;
+		// The image PATH, with the rg of the Codex package in front.
+		const path = spawnSync(engine, ["image", "inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", imageId], { env: engineEnv(), encoding: "utf8" })
+			.stdout.split("\n").find((l) => l.startsWith("PATH="))?.slice(5);
+		cmd.env.PATH = `${CODEX_DIR}/codex-path:${path ?? "/usr/local/bin:/usr/bin:/bin"}`;
+	}
+
+	const access = cmd.codex ? codexAccess(timeoutMin) : { key: process.env[model.keyVar] ?? loadDotEnv()[model.keyVar] };
+	if (!access.key) throw new Error(`${model.keyVar} is not set`);
+	const { proxyDir, stop: stopProxy } = await startProxy(run, access.key, upstream, { engine, imageId, headers: access.headers });
+
 	const name = `simra-arm-${runName}`;
 	const toolEnv = Object.fromEntries(Object.entries(env.env ?? {}).filter(([k]) => k !== "HOME"));
 	// The Simra extension tells the agent how much session time is left (other arms ignore the variable).
 	const deadline = new Date(Date.now() + timeoutMin * 60_000).toISOString();
-	const argv = sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar: model.keyVar, env: { ...toolEnv, ...cmd.env, SIMRA_SESSION_DEADLINE: deadline }, command: cmd.command });
+	const argv = sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar: model.keyVar, env: { ...toolEnv, ...cmd.env, SIMRA_SESSION_DEADLINE: deadline }, readOnly, command: cmd.command });
 	const started = new Date();
 	const child = spawn(engine, argv, { env: engineEnv(), stdio: ["ignore", "pipe", "pipe"] });
 	child.stdout.pipe(createWriteStream(join(run, "transcript.jsonl")));
@@ -400,7 +455,7 @@ async function main() {
 	// The sandbox prevents access to host files. These checks remain as a second line.
 	const transcript = readFileSync(join(run, "transcript.jsonl"), "utf8");
 	const contamination = [
-		["task directory", new RegExp(`${escape(taskDir)}|expected\\.json|cross_check`)],
+		["task directory", new RegExp(`${escape(taskDir)}|expected\\.json|target\\.json|cross_check`)],
 		["this repository", new RegExp(escape(repo))],
 		["another run", new RegExp(`${escape(dirname(runs))}/(?!${escape(`${basename(runs)}/${runName}`)})`)],
 	]
@@ -410,6 +465,8 @@ async function main() {
 		task: task.name,
 		arm,
 		model: modelId,
+		model_access: cmd.codex ? "subscription" : "api",
+		...(cmd.codex ? { codex_version: cmd.version } : {}),
 		request_models: [...new Set(calls.map((c) => c.request_model))],
 		response_models: [...new Set(calls.map((c) => c.response_model))],
 		model_calls: calls.length,
@@ -417,7 +474,7 @@ async function main() {
 		started_at: started.toISOString(),
 		duration_s: Math.round((Date.now() - started.getTime()) / 1000),
 		exit,
-		sandbox: { engine, image: env.image, image_id: imageId, network: "none", read_only_root: true, mounts: { [WORK]: "ws", [STATE]: "state", [PROXY_DIR]: "proxy" } },
+		sandbox: { engine, image: env.image, image_id: imageId, network: "none", read_only_root: true, mounts: { [WORK]: "ws", [STATE]: "state", [PROXY_DIR]: "proxy", ...(cmd.codex ? { [CODEX_DIR]: "codex package (read-only)" } : {}) } },
 		contamination,
 		score: await score(ws, undefined, WORK),
 	};

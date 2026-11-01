@@ -7,23 +7,25 @@
 //    "configuration_update" input item, and the tools in an "additional_tools" input item. The proxy logs the
 //    effort and the tools of these items.
 // 4. A run directory whose socket path is longer than the unix socket limit gives a clear error.
+// 5. The headers of MODEL_API_HEADERS (the account of a subscription, codex arm) go into each request, not into the log.
+// 6. codexAccess reads the token and the account of a Codex login, and refuses a login that expires during the run.
 // In each case, the proxy puts the key from MODEL_API_KEY in the request, and the key is not in the log.
 
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { startProxy } from "../evals/run-arm.mjs";
+import { codexAccess, startProxy } from "../evals/run-arm.mjs";
 
 /** A fake upstream that answers each POST with a server-sent event stream for its path. */
 async function fakeUpstream() {
 	const seen = [];
 	const server = createServer(async (req, res) => {
 		for await (const _ of req);
-		seen.push({ path: req.url, authorization: req.headers.authorization });
+		seen.push({ path: req.url, authorization: req.headers.authorization, account: req.headers["chatgpt-account-id"] });
 		res.writeHead(200, { "content-type": "text/event-stream" });
 		if (req.url.endsWith("/responses")) {
 			const response = { id: "resp_1", object: "response", model: "gpt-6.1-sol-2026-10-01" };
@@ -113,4 +115,39 @@ test("model proxy: a socket path that is too long gives a clear error", async (t
 	const dir = mkdtempSync(join(tmpdir(), "simra-proxy-"));
 	t.after(() => rmSync(dir, { recursive: true, force: true }));
 	await assert.rejects(startProxy(join(dir, "x".repeat(100)), "key", "http://127.0.0.1:9", { relay: false }), /socket path is too long .* Use a shorter --runs directory/);
+});
+
+test("model proxy: puts the headers of MODEL_API_HEADERS in each request, not in the log", async () => {
+	const key = `tok-${randomBytes(16).toString("hex")}`;
+	const account = `acct-${randomBytes(8).toString("hex")}`;
+	const dir = mkdtempSync(join(tmpdir(), "simra-proxy-"));
+	const up = await fakeUpstream();
+	let proxy;
+	try {
+		({ proxy } = await startProxy(dir, key, up.url, { relay: false, headers: { "ChatGPT-Account-ID": account } }));
+		const r = await post(join(dir, "proxy", "model.sock"), "/responses", { model: "gpt-6.1-sol", stream: true, input: [] });
+		assert.equal(r.status, 200);
+		for (let i = 0; i < 50 && !existsSync(join(dir, "models.jsonl")); i++) await new Promise((res) => setTimeout(res, 20));
+		const log = readFileSync(join(dir, "models.jsonl"), "utf8");
+		assert.deepEqual(up.seen.map((s) => [s.authorization, s.account]), [[`Bearer ${key}`, account]]);
+		assert.ok(!log.includes(key) && !log.includes(account), "the token or the account is in the log");
+	} finally {
+		proxy?.kill("SIGTERM");
+		up.close();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("codexAccess: the token and the account of a ChatGPT login; refuses other or expiring logins", (t) => {
+	const home = mkdtempSync(join(tmpdir(), "simra-codex-"));
+	t.after(() => rmSync(home, { recursive: true, force: true }));
+	const jwt = (exp) => `h.${Buffer.from(JSON.stringify({ exp })).toString("base64url")}.s`;
+	const login = (auth) => writeFileSync(join(home, "auth.json"), JSON.stringify(auth));
+	assert.throws(() => codexAccess(30, home), /no Codex login/);
+	const valid = jwt(Math.floor(Date.now() / 1000) + 3600);
+	login({ auth_mode: "chatgpt", tokens: { access_token: valid, account_id: "acct-1" } });
+	assert.deepEqual(codexAccess(30, home), { key: valid, headers: { "ChatGPT-Account-ID": "acct-1" } });
+	assert.throws(() => codexAccess(60, home), /expires before the run ends/);
+	login({ auth_mode: "apikey", OPENAI_API_KEY: "sk-x" });
+	assert.throws(() => codexAccess(30, home), /not a ChatGPT login/);
 });
