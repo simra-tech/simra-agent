@@ -26,7 +26,7 @@ import { numbersIn, readTexts, shown, within } from "../ota-corners/score.mjs";
 export const METRICS = ["gain_db", "ugf_hz", "pm_deg", "idd_a"];
 export const STEP = 0.02;
 export const TOLERANCE = { gain_db: { abs: 0.5 }, ugf_hz: { rel: 0.05 }, pm_deg: { abs: 2 }, idd_a: { rel: 0.02 } };
-const UNIT_SCALE = { "": 1, dB: 1, Hz: 1, kHz: 1e3, MHz: 1e6, "°": 1, deg: 1, A: 1, mA: 1e-3, uA: 1e-6, µA: 1e-6, s: 1, ns: 1e-9, V: 1, mV: 1e-3 };
+const UNIT_SCALE = { "": 1, dB: 1, Hz: 1, kHz: 1e3, MHz: 1e6, "°": 1, deg: 1, A: 1, mA: 1e-3, uA: 1e-6, µA: 1e-6, nA: 1e-9, s: 1, ns: 1e-9, V: 1, mV: 1e-3 };
 const SI = { t: 1e12, g: 1e9, meg: 1e6, k: 1e3, m: 1e-3, u: 1e-6, n: 1e-9, p: 1e-12, f: 1e-15 };
 
 /** A SPICE number ("4u", "0.5", "1p", "5k", "1meg"), or NaN. */
@@ -181,7 +181,8 @@ export function loadTask(taskDir) {
  * Returns { corner: { experiment, status, errors, provenance, points, worst } }: points are the rows of the
  * sweep, and worst[m] is { value, vcm, pass } from the verdict row of requirement m at the corner (the worst
  * point over the sweep; a missing point is never a pass). The key design has the design contract check of the
- * verdict: { experiment, status, errors, gate_area_um2, mos_count }.
+ * verdict: { experiment, status, errors, area_um2, gate_area_um2, passive_area_um2, mos_count } (area_um2: the MOS
+ * gates plus the R and C, with the R and C area from the technology pack).
  */
 export async function verify(taskDir, designText, root, environment, local, { file, metrics } = {}) {
 	const task = JSON.parse(readFileSync(join(taskDir, "task.json"), "utf8"));
@@ -216,7 +217,15 @@ export async function verify(taskDir, designText, root, environment, local, { fi
 		out[corner] = { experiment: e?.id ?? null, status: e?.status ?? "not_run", errors: run?.result?.errors ?? [], provenance, points, worst };
 	}
 	const d = verdict.design_check;
-	out.design = { experiment: d?.experiment ?? null, status: d?.status ?? "not_run", errors: d?.errors ?? [], gate_area_um2: d?.measurements.gate_area_um2 ?? null, mos_count: d?.measurements.mos_count ?? null };
+	out.design = {
+		experiment: d?.experiment ?? null,
+		status: d?.status ?? "not_run",
+		errors: d?.errors ?? [],
+		area_um2: d?.measurements.area_um2 ?? null,
+		gate_area_um2: d?.measurements.gate_area_um2 ?? null,
+		passive_area_um2: d?.measurements.passive_area_um2 ?? null,
+		mos_count: d?.measurements.mos_count ?? null,
+	};
 	return out;
 }
 

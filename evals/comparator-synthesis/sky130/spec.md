@@ -33,6 +33,7 @@ differential input.
 | Input offset voltage: the mean of the two switching points of the slow ramp | `vos_v` | between -5 mV and 5 mV |
 | Hysteresis: the rising switching point minus the falling switching point | `hyst_v` | between 0 mV and 20 mV |
 | Supply current from the `vdd` source at Vd = -10 mV, with the 10 uA into `ibias` | `idd_a` | <= 70 uA |
+| Input current at the DC operating point with Vd = -10 mV: the larger magnitude of the current into `inp` and into `inn` | `iin_a` | <= 2 nA |
 
 ## Design
 
@@ -63,18 +64,25 @@ differential input.
   | `sky130_fd_pr__pfet_01v8_lvt` | 0.42 µm | 0.35 µm |
   | `sky130_fd_pr__pfet_01v8_hvt` | 0.36 µm | 0.15 µm |
 
-- Gate area: the sum of W × L over the MOS devices is <= 30 µm². W is the total width of all fingers. The
-  multiplier m and each instance of a block count.
+- Area: the gate area plus the area of the R and C is <= 30 µm². Each instance of a block counts.
+  1. Gate area: the sum of W × L over the MOS devices. W is the total width of all fingers. The multiplier m
+     counts.
+  2. A resistor R counts as the high-resistance poly resistor `sky130_fd_pr__res_xhigh_po` of the PDK at its
+     minimum width: R × (0.35 µm)² / 2000 Ω (2000 Ω/sq). For example, 10 kΩ counts as 0.61 µm².
+  3. A capacitor C counts as the MIM capacitor `sky130_fd_pr__cap_mim_m3_1` of the PDK: C / (2 fF/µm²). For
+     example, 1 pF counts as 500 µm².
 
 ## Bench
 
 `verify.spice` is the bench of this specification. It connects VDD, VSS = 0 V, 10 uA into `ibias` and
-CL = 50 fF. It sets VCM on `inn` and the differential input Vd from `inn` to `inp`, and runs one transient
-analysis for each VCM point:
+CL = 50 fF. It sets VCM on `inn` and the differential input Vd from `inn` to `inp`. For each VCM point, it
+calculates one DC operating point and runs one transient analysis:
 
-1. 0 to 100 ns: Vd = -10 mV. At 100 ns, Vd steps to +10 mV (`tpd_r_s`). At 590 ns: `voh_rel`.
-2. At 600 ns, Vd steps to -10 mV (`tpd_f_s`). At 1.09 µs: `vol_rel` and `idd_a`.
-3. 1.2 µs to 11.2 µs: Vd ramps from -50 mV to +50 mV (the rising switching point). 11.2 µs to 21.2 µs: Vd
+1. The DC operating point with Vd = -10 mV: `iin_a` (the current of the sources that drive `inp` and `inn`).
+   It has no capacitor current.
+2. 0 to 100 ns: Vd = -10 mV. At 100 ns, Vd steps to +10 mV (`tpd_r_s`). At 590 ns: `voh_rel`.
+3. At 600 ns, Vd steps to -10 mV (`tpd_f_s`). At 1.09 µs: `vol_rel` and `idd_a`.
+4. 1.2 µs to 11.2 µs: Vd ramps from -50 mV to +50 mV (the rising switching point). 11.2 µs to 21.2 µs: Vd
    ramps back to -50 mV (the falling switching point). The ramp is 10 mV/µs.
 
 A switching point is the value of Vd when v(out) crosses VDD / 2. If v(out) does not cross VDD / 2, the bench

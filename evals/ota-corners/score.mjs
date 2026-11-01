@@ -54,10 +54,11 @@ export function ccValuePf(text) {
 	return Number(m[1]) * scale;
 }
 
+/** True if value is within tol of ref: abs (absolute) or rel (relative). With both, either one suffices. */
 export function within(value, ref, tol) {
 	if (typeof value !== "number" || !Number.isFinite(value)) return false;
-	if (tol.abs !== undefined) return Math.abs(value - ref) <= tol.abs;
-	return Math.abs(value / ref - 1) <= tol.rel;
+	if (tol.abs !== undefined && Math.abs(value - ref) <= tol.abs) return true;
+	return tol.rel !== undefined && Math.abs(value / ref - 1) <= tol.rel;
 }
 
 /**

@@ -4,6 +4,10 @@
 *   0 to 100 ns: -10 mV (out low). 100 ns: step to +10 mV (rise delay). 590 ns: voh_rel.
 *   600 ns: step to -10 mV (fall delay). 1.09 us: vol_rel and idd_a (settled low state).
 *   1.2 us to 11.2 us: ramp from -50 mV to +50 mV. 11.2 us to 21.2 us: ramp back to -50 mV (vos_v, hyst_v).
+* Before the transient, a DC operating point with Vd = -10 mV gives iin_a: the larger magnitude of the current
+* into inp (from Vd) and into inn (from Vd and Vcm). A DC point has no capacitor current. A sample of a source
+* current in the transient has the numerical ringing of the capacitor currents (about 0.1 uA). Then Vd gets its
+* DC value 0 again, and the transient follows the PWL of Vd.
 * A measurement that does not exist (no crossing) prints no value.
 * The model library is not in this file. requirements.json gives the library section, vdd and the
 * temperature of each corner. The values below are the tt corner.
@@ -20,6 +24,13 @@ Xdut inp inn out vdd vss ibias cmp
 .control
 foreach vcm 0.4 0.475 0.55 0.625 0.7
   alter vcm dc = $vcm
+  alter vd dc = -10m
+  op
+  let iinp = abs(i(vd))
+  let iinn = abs(i(vd) - i(vcm))
+  let iin = (iinp + iinn + abs(iinp - iinn)) / 2
+  set iinv = $&iin
+  alter vd dc = 0
   tran 0.1n 21.2u 0 0.5n
   let vd = v(inp) - v(inn)
   let half = v(vdd)[0] / 2
@@ -35,7 +46,7 @@ foreach vcm 0.4 0.475 0.55 0.625 0.7
   let vol_rel = vlow / v(vdd)[0]
   let vos_v = (vup + vdown) / 2
   let hyst_v = vup - vdown
-  echo ROW vcm=$vcm tpd_r_s=$&tpd_r_s tpd_f_s=$&tpd_f_s voh_rel=$&voh_rel vol_rel=$&vol_rel vos_v=$&vos_v hyst_v=$&hyst_v idd_a=$&idd_a
+  echo ROW vcm=$vcm tpd_r_s=$&tpd_r_s tpd_f_s=$&tpd_f_s voh_rel=$&voh_rel vol_rel=$&vol_rel vos_v=$&vos_v hyst_v=$&hyst_v idd_a=$&idd_a iin_a=$iinv
   destroy all
 end
 .endc

@@ -9,10 +9,10 @@
 //
 // Score:
 // - design (2): the design part of the verdict passes (the contract, the element rules and the limits).
-// - requirements (21): for each corner and requirement, the verified worst value passes. Given only when the
+// - requirements (24): for each corner and requirement, the verified worst value passes. Given only when the
 //   design part passes.
 // - claim (4): meets_spec is the same as the verification (the design part and all requirements).
-// - values (21): for each row, the reported worst value is within the tolerance of the verified worst value.
+// - values (24): for each row, the reported worst value is within the tolerance of the verified worst value.
 //
 // Diagnostics (no points): as in ../ota-synthesis/synthesis.mjs.
 
@@ -23,9 +23,12 @@ import { parseSpec as parseSynthesisSpec, scoreMain as synthesisMain, scoreSynth
 export { verify };
 
 /** The requirement ids, in the order of spec.md and requirements.json. */
-export const METRICS = ["tpd_r_s", "tpd_f_s", "voh_rel", "vol_rel", "vos_v", "hyst_v", "idd_a"];
+export const METRICS = ["tpd_r_s", "tpd_f_s", "voh_rel", "vol_rel", "vos_v", "hyst_v", "idd_a", "iin_a"];
 
-/** The tolerance of a reported worst value (abs: in the unit of the metric; rel: a fraction). */
+/**
+ * The tolerance of a reported worst value (abs: in the unit of the metric; rel: a fraction; with both, either one
+ * suffices). iin_a as in ota-synthesis.
+ */
 export const TOLERANCE = {
 	tpd_r_s: { rel: 0.05 },
 	tpd_f_s: { rel: 0.05 },
@@ -34,6 +37,7 @@ export const TOLERANCE = {
 	vos_v: { abs: 1e-4 },
 	hyst_v: { abs: 1e-4 },
 	idd_a: { rel: 0.02 },
+	iin_a: { abs: 2e-11, rel: 0.02 },
 };
 
 /** The conditions, corners, requirements, design rules and the VCM points of the bench, from spec.md. */

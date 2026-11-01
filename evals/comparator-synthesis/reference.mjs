@@ -10,9 +10,13 @@
 //    node 0, with the pins of the spec. The design part must fail with two errors (the B element and node 0), and
 //    every row of the simulation must pass. The score with a correct answer gives 0 design and 0 requirement
 //    points.
-// 4. Each limit of the reference (the delays, the supply current and the gate area) is at least LIMIT_FACTOR times
+// 4. input_load: a design with a resistive divider on each input (INPUT_LOAD). The input sources of the bench supply
+//    the current of the dividers. The design part must pass, iin_a must fail at every corner, and every other row
+//    must pass. It shows that iin_a finds a design that takes its current from the inputs.
+// 5. Each limit of the reference (the delays, the supply current and the area) is at least LIMIT_FACTOR times
 //    the worst value of the reference.
-// 5. Write expected.json in the task directory: the results of the three designs and the limit margins.
+// 6. Write expected.json in the task directory: the results of the four designs, the limit margins and the input
+//    current (the iin_a limit, the worst iin_a of the reference and the least iin_a of input_load).
 //
 // The designs run one after the other: each runs its corners in parallel, and more parallel runs only slow
 // ngspice down.
@@ -21,7 +25,7 @@
 
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { answerOf as synthesisAnswer, summary } from "../ota-synthesis/reference.mjs";
+import { inputCurrent, answerOf as synthesisAnswer, summary } from "../ota-synthesis/reference.mjs";
 import { loadTask, METRICS, scoreComparator, TOLERANCE, verify } from "./synthesis.mjs";
 
 const here = new URL(".", import.meta.url).pathname;
@@ -81,11 +85,52 @@ Rb ibias 0 10k
 .ends cmp
 `;
 
-/** The three reference designs of a task: { reference, known_fail, cheat } (netlist texts). */
+/**
+ * A design with a resistive divider on each input: inp - 1k - gp - 30k - vss, and the same from inn to gn. The MOS
+ * gates that were on inp and inn go to gp and gn. The input sources then supply tens of µA, and the gates see 30/31
+ * of the input voltage.
+ */
+export function inputDivider(text) {
+	const divider = ["Rip inp gp 1k", "Rgp gp vss 30k", "Rin inn gn 1k", "Rgn gn vss 30k"];
+	const lines = text.split("\n").map((l) => (/^X/i.test(l) ? l.replace(/\binp\b/g, "gp").replace(/\binn\b/g, "gn") : l));
+	const at = lines.findIndex((l) => /^\.subckt\s/i.test(l)) + 1;
+	return [...lines.slice(0, at), ...divider, ...lines.slice(at)].join("\n");
+}
+
+/**
+ * The input-load designs. sg13cmos5l: a design of an agent run that passed every row of the bench before iin_a,
+ * with a 1k / 3k divider to vss on each input. sky130: the reference with a 1k / 30k divider (inputDivider).
+ */
+export const INPUT_LOAD = {
+	sg13cmos5l: `.subckt cmp inp inn out vdd vss ibias
+Rip inp gp 1k
+Rgp gp vss 3k
+Rin inn gn 1k
+Rgn gn vss 3k
+Xbn ibias ibias vss vss sg13_lv_nmos w=2u l=0.5u
+Xbp bp ibias vss vss sg13_lv_nmos w=2u l=0.5u
+Xpr bp bp vdd vdd sg13_lv_pmos w=4u l=0.5u
+Xtail tail bp vdd vdd sg13_lv_pmos w=8u l=0.5u
+Xip a gp tail tail sg13_lv_pmos w=6u l=0.2u
+Xin b gn tail tail sg13_lv_pmos w=6u l=0.2u
+Xnd b b vss vss sg13_lv_nmos w=1u l=0.25u
+Xnm a b vss vss sg13_lv_nmos w=1u l=0.25u
+Xp1 c bp vdd vdd sg13_lv_pmos w=4u l=0.5u
+Xn1 c a vss vss sg13_lv_nmos w=1u l=0.25u
+Xp2 d c vdd vdd sg13_lv_pmos w=2u l=0.13u
+Xn2 d c vss vss sg13_lv_nmos w=1u l=0.13u
+Xp3 out d vdd vdd sg13_lv_pmos w=4u l=0.13u
+Xn3 out d vss vss sg13_lv_nmos w=2u l=0.13u
+.ends cmp
+`,
+	sky130: inputDivider(REFERENCES.sky130),
+};
+
+/** The four reference designs of a task: { reference, known_fail, cheat, input_load } (netlist texts). */
 export function designs(name) {
 	const reference = REFERENCES[name];
 	const known_fail = reference.replace(/^(XM5\s.*\bw=)\S+/m, `$1${KNOWN_FAIL[name]}`);
-	return { reference, known_fail, cheat: CHEAT };
+	return { reference, known_fail, cheat: CHEAT, input_load: INPUT_LOAD[name] };
 }
 
 /** An answer with the verified worst values of a result. */
@@ -95,7 +140,7 @@ export const answerOf = (result, meets = result.meets_spec) => synthesisAnswer(r
 function margins(spec, reference) {
 	const worst = (m) => Math.max(...Object.values(reference.corners).map((c) => c.worst[m].value));
 	const out = Object.fromEntries(["tpd_r_s", "tpd_f_s", "idd_a"].map((m) => [m, { limit: spec.limits[m].value, worst: worst(m) }]));
-	out.gate_area_um2 = { limit: spec.design.area_um2, worst: reference.design_check.gate_area_um2 };
+	out.area_um2 = { limit: spec.design.area_um2, worst: reference.design_check.area_um2 };
 	for (const v of Object.values(out)) v.factor = Number((v.limit / v.worst).toFixed(3));
 	return out;
 }
@@ -116,9 +161,9 @@ async function main() {
 	const result = Object.fromEntries(Object.entries(runs).map(([k, v]) => [k, summary(v, METRICS)]));
 	for (const [k, r] of Object.entries(result)) {
 		const worst = Object.entries(r.corners).map(([c, v]) => `${c} ${METRICS.map((m) => `${m} ${v.worst[m].value} @${v.worst[m].vcm}`).join(", ")}`);
-		console.log(`${k}: design ${r.design_check.status}, area ${r.design_check.gate_area_um2} µm², rows pass ${r.rows_pass}, meets_spec ${r.meets_spec}\n  ${worst.join("\n  ")}`);
+		console.log(`${k}: design ${r.design_check.status}, area ${r.design_check.area_um2} µm² (gate ${r.design_check.gate_area_um2}), rows pass ${r.rows_pass}, meets_spec ${r.meets_spec}\n  ${worst.join("\n  ")}`);
 	}
-	const { reference, known_fail, cheat } = result;
+	const { reference, known_fail, cheat, input_load } = result;
 	if (!reference.meets_spec) throw new Error(`the reference does not meet the spec: ${JSON.stringify(reference.design_check.errors)}`);
 	if (known_fail.design_check.status !== "pass") throw new Error(`the known fail fails the design check: ${JSON.stringify(known_fail.design_check.errors)}`);
 	const failed = Object.values(known_fail.corners).map((v) => METRICS.filter((m) => !v.worst[m].pass).length);
@@ -144,6 +189,8 @@ async function main() {
 	const low = Object.entries(limit_margins).filter(([, v]) => v.factor < LIMIT_FACTOR);
 	if (low.length) throw new Error(`limits below ${LIMIT_FACTOR} times the reference: ${JSON.stringify(Object.fromEntries(low))}`);
 
+	const input_current = inputCurrent(spec, reference, input_load, METRICS);
+
 	const expected = {
 		task: task.name,
 		generated_by: "evals/comparator-synthesis/reference.mjs",
@@ -155,9 +202,11 @@ async function main() {
 		known_fail,
 		cheat,
 		cheat_score: { answer: "the verified worst values, meets_spec true", ...cheat_score },
+		input_load,
+		input_current,
 	};
 	writeFileSync(join(taskDir, "expected.json"), `${JSON.stringify(expected, null, 2)}\n`);
-	console.log(`limit margins ${JSON.stringify(limit_margins)}\ncheat: score ${JSON.stringify(cheat_score)}\nwrote evals/comparator-synthesis/${name}/expected.json`);
+	console.log(`limit margins ${JSON.stringify(limit_margins)}\ncheat: score ${JSON.stringify(cheat_score)}\ninput current ${JSON.stringify(input_current)}\nwrote evals/comparator-synthesis/${name}/expected.json`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) await main();

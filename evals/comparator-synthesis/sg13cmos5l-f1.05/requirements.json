@@ -1,0 +1,218 @@
+{
+  "schema": "simra.requirements/0",
+  "design": {
+    "file": "cmp.spice",
+    "subckt": "cmp",
+    "pins": [
+      "inp",
+      "inn",
+      "out",
+      "vdd",
+      "vss",
+      "ibias"
+    ],
+    "elements": [
+      "mos",
+      "r",
+      "c"
+    ],
+    "devices": [
+      "sg13_lv_nmos",
+      "sg13_lv_pmos"
+    ],
+    "limits": {
+      "area_um2": 21.5,
+      "r_ohm": 1000000,
+      "c_f": 2e-12
+    },
+    "technology": "ihp-sg13",
+    "environment": "eda"
+  },
+  "conditions": {
+    "tt": {
+      "description": "mos_tt, VDD = 1.20 V, 27 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/ihp-sg13cmos5l/libs.tech/ngspice/models/cornerMOSlv.lib",
+            "section": "mos_tt"
+          }
+        ],
+        "params": {
+          "vdd": 1.2
+        },
+        "temp_c": 27
+      }
+    },
+    "ss": {
+      "description": "mos_ss, VDD = 1.08 V, 125 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/ihp-sg13cmos5l/libs.tech/ngspice/models/cornerMOSlv.lib",
+            "section": "mos_ss"
+          }
+        ],
+        "params": {
+          "vdd": 1.08
+        },
+        "temp_c": 125
+      }
+    },
+    "ff": {
+      "description": "mos_ff, VDD = 1.32 V, -40 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/ihp-sg13cmos5l/libs.tech/ngspice/models/cornerMOSlv.lib",
+            "section": "mos_ff"
+          }
+        ],
+        "params": {
+          "vdd": 1.32
+        },
+        "temp_c": -40
+      }
+    }
+  },
+  "experiments": {
+    "sweep": {
+      "adapter": "ngspice",
+      "operation": "simulate",
+      "environment": "eda",
+      "inputs": {
+        "deck": "verify.spice",
+        "measurements": {
+          "tpd_r_s": "s",
+          "tpd_f_s": "s",
+          "voh_rel": "1",
+          "vol_rel": "1",
+          "vos_v": "V",
+          "hyst_v": "V",
+          "idd_a": "A",
+          "iin_a": "A"
+        }
+      }
+    }
+  },
+  "requirements": [
+    {
+      "id": "tpd_r_s",
+      "description": "Rise delay, Vd step from -10 mV to +10 mV, to v(out) = VDD/2",
+      "experiment": "sweep",
+      "measurement": "tpd_r_s",
+      "unit": "s",
+      "op": "<=",
+      "limit": 2.9e-9,
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    },
+    {
+      "id": "tpd_f_s",
+      "description": "Fall delay, Vd step from +10 mV to -10 mV, to v(out) = VDD/2",
+      "experiment": "sweep",
+      "measurement": "tpd_f_s",
+      "unit": "s",
+      "op": "<=",
+      "limit": 4.6e-9,
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    },
+    {
+      "id": "voh_rel",
+      "description": "Output high level v(out)/VDD at Vd = +10 mV",
+      "experiment": "sweep",
+      "measurement": "voh_rel",
+      "unit": "1",
+      "op": ">=",
+      "limit": 0.9,
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    },
+    {
+      "id": "vol_rel",
+      "description": "Output low level v(out)/VDD at Vd = -10 mV",
+      "experiment": "sweep",
+      "measurement": "vol_rel",
+      "unit": "1",
+      "op": "<=",
+      "limit": 0.1,
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    },
+    {
+      "id": "vos_v",
+      "description": "Input offset voltage, the mean of the two switching points",
+      "experiment": "sweep",
+      "measurement": "vos_v",
+      "unit": "V",
+      "op": "between",
+      "limit": [
+        -0.005,
+        0.005
+      ],
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    },
+    {
+      "id": "hyst_v",
+      "description": "Hysteresis, the rising minus the falling switching point",
+      "experiment": "sweep",
+      "measurement": "hyst_v",
+      "unit": "V",
+      "op": "between",
+      "limit": [
+        0,
+        0.02
+      ],
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    },
+    {
+      "id": "idd_a",
+      "description": "Supply current from vdd at Vd = -10 mV, with the bias current",
+      "experiment": "sweep",
+      "measurement": "idd_a",
+      "unit": "A",
+      "op": "<=",
+      "limit": 0.000064,
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    },
+    {
+      "id": "iin_a",
+      "description": "Input current at the DC operating point with Vd = -10 mV, the larger magnitude of the current into inp and into inn",
+      "experiment": "sweep",
+      "measurement": "iin_a",
+      "unit": "A",
+      "op": "<=",
+      "limit": 2e-9,
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    }
+  ]
+}

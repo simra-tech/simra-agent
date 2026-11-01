@@ -1,7 +1,7 @@
 // Known answer of the comparator-synthesis verification: the kernel check of requirements.json with the transient
-// bench verify.spice gives the recorded results of expected.json (made by reference.mjs) for the three reference
-// designs (the reference, the known fail and the cheat), on both PDKs: the status, the errors and the measurements
-// of the design part, and the worst values. It runs only with SIMRA_TEST_IMAGE, an image with ngspice and both
+// bench verify.spice gives the recorded results of expected.json (made by reference.mjs) for the four reference
+// designs (the reference, the known fail, the cheat and the input load), on both PDKs: the status, the errors and
+// the measurements of the design part, and the worst values. It runs only with SIMRA_TEST_IMAGE, an image with ngspice and both
 // PDKs (optional: SIMRA_TEST_ENGINE podman or docker, default podman; SIMRA_TEST_CPUS for taskset). The designs run
 // one after the other, as in reference.mjs. A skipped case is reported by the test runner as skipped: that check
 // did not run.
@@ -23,7 +23,7 @@ const local = { environments: { eda: { engine: process.env.SIMRA_TEST_ENGINE ?? 
 const same = (a, b) => Math.abs(a - b) <= Math.max(1e-4 * Math.abs(b), 1e-12);
 
 for (const name of ["sg13cmos5l", "sky130"]) {
-	test(`comparator-synthesis ${name}: the check gives the recorded results of the three reference designs (container)`, { skip, timeout: 2_400_000 }, async (t) => {
+	test(`comparator-synthesis ${name}: the check gives the recorded results of the four reference designs (container)`, { skip, timeout: 2_400_000 }, async (t) => {
 		const taskDir = join(repo, "evals/comparator-synthesis", name);
 		const expected = JSON.parse(readFileSync(join(taskDir, "expected.json"), "utf8"));
 		// The real path: on macOS, tmpdir() is under the /var link, which a container engine VM may not have.
@@ -34,7 +34,7 @@ for (const name of ["sg13cmos5l", "sky130"]) {
 			const e = expected[k];
 			assert.equal(design.status, e.design_check.status, `${k}: design check ${JSON.stringify(design.errors)}`);
 			assert.deepEqual(design.errors, e.design_check.errors, `${k}: design errors`);
-			assert.deepEqual([design.gate_area_um2, design.mos_count], [e.design_check.gate_area_um2, e.design_check.mos_count], `${k}: gate area and MOS count`);
+			assert.deepEqual([design.area_um2, design.gate_area_um2, design.passive_area_um2, design.mos_count], [e.design_check.area_um2, e.design_check.gate_area_um2, e.design_check.passive_area_um2, e.design_check.mos_count], `${k}: areas and MOS count`);
 			for (const [corner, c] of Object.entries(e.corners)) {
 				assert.equal(v[corner].status, "completed", `${k} ${corner}: ${JSON.stringify(v[corner].errors)}`);
 				assert.deepEqual(v[corner].points.map((p) => p.vcm), c.sweep.map((p) => p.vcm), `${k} ${corner}: the VCM points`);

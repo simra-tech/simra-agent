@@ -1,0 +1,36 @@
+* ota-sizing verification bench. The conditions of spec.md: VDD and the temperature of the corner, a 10 uA
+* current into ibias, CL = 2 pF, and a sweep of VCM over the range. One ROW line per VCM.
+* The DC operating point gives idd_a and iin_a: the larger magnitude of the DC current into inp (from Vinp)
+* and into inn (from out through Lfb; Cfb carries no DC current).
+* The model library is not in this file. requirements.json gives the library section, vdd and the
+* temperature of each corner. The values below are the tt corner.
+.param vdd=1.2
+.temp 27
+.include "ota.spice"
+Vdd vdd 0 {vdd}
+Vss vss 0 0
+Ib vdd ibias 10u
+Vinp inp 0 dc 0.4 ac 1
+Lfb out inn 1G
+Cfb inn 0 1G
+CL out 0 2p
+Xdut inp inn out vdd vss ibias ota
+.control
+foreach vcm 0.4 0.42 0.44 0.46 0.48 0.5 0.52 0.54 0.56 0.58 0.6 0.62 0.64 0.66 0.68 0.7
+  alter vinp dc = $vcm
+  op
+  let idd = -i(vdd)
+  set iddv = $&idd
+  let iinp = abs(i(vinp))
+  let iinn = abs(i(lfb))
+  let iin = (iinp + iinn + abs(iinp - iinn)) / 2
+  set iinv = $&iin
+  ac dec 100 1 10G
+  meas ac gain_db find vdb(out) at=1
+  meas ac ugf_hz when vdb(out)=0
+  meas ac ph find vp(out) at=ugf_hz
+  let pm = 180 + ph * 180 / pi
+  echo ROW vcm=$vcm idd_a=$iddv gain_db=$&gain_db ugf_hz=$&ugf_hz pm_deg=$&pm iin_a=$iinv
+  destroy all
+end
+.endc

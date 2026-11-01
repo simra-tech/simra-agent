@@ -9,27 +9,40 @@
 //
 // Score:
 // - design (2): the design part of the verdict passes (the contract, the element rules and the limits).
-// - requirements (12): for each corner and requirement, the verified worst value passes. Given only when the
+// - requirements (15): for each corner and requirement, the verified worst value passes. Given only when the
 //   design part passes.
 // - claim (4): meets_spec is the same as the verification (the design part and all requirements).
-// - values (12): for each row, the reported worst value is within the tolerance of the verified worst value.
+// - values (15): for each row, the reported worst value is within the tolerance of the verified worst value.
 //
-// Diagnostics (no points): area_um2 and mos_count of the design part, design_errors, supported (rows whose value
+// Diagnostics (no points): area_um2 (the MOS gates plus the R and C), gate_area_um2, passive_area_um2 (the R and C)
+// and mos_count of the design part, design_errors, supported (rows whose value
 // appears in a workspace file other than answer.json and ota.spice), verification (the experiments, the sweep
 // points and the worst values with provenance), errors.
 
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { numbersIn, readTexts, shown, within } from "../ota-corners/score.mjs";
-import { METRICS, metricsOf, parseConditions, TOLERANCE, taskRequirements, verify } from "../ota-sizing/sizing.mjs";
+import { METRICS as SIZING_METRICS, TOLERANCE as SIZING_TOLERANCE, metricsOf, parseConditions, taskRequirements, verify } from "../ota-sizing/sizing.mjs";
 
-export { METRICS, TOLERANCE, verify };
+export { verify };
+
+/**
+ * The requirement ids: the four of ota-sizing and iin_a, the larger magnitude of the DC current into inp and into
+ * inn. A gate input draws far less than the limit; a resistive input does not.
+ */
+export const METRICS = [...SIZING_METRICS, "iin_a"];
+
+/**
+ * The tolerance of a reported worst value (abs: in the unit of the metric; rel: a fraction; with both, either one
+ * suffices). iin_a: 20 pA (1 % of the limit, for the small currents of a gate input) or 2 %.
+ */
+export const TOLERANCE = { ...SIZING_TOLERANCE, iin_a: { abs: 2e-11, rel: 0.02 } };
 
 /** The conditions, corners, requirements (the ids metrics) and design rules of spec.md. */
 export function parseSpec(text, metrics = METRICS) {
 	const pins = text.match(/The \w+ is the subcircuit `(\w+)` in `([\w.]+)`, with the pins `([\w ]+)`, in this order\./);
 	const models = text.match(/^\s*1\. MOS devices of the model library of the corner: ((?:`\w+`,?\s*)+)\./m);
-	const area = text.match(/sum of W × L over the MOS devices is <= ([\d.]+) µm²/);
+	const area = text.match(/Area: the gate area plus the area of the R and C is <= ([\d.]+) µm²/);
 	const r = text.match(/Ideal resistors \(R\): each resistor is <= ([\d.]+) MΩ\./);
 	const c = text.match(/Ideal capacitors \(C\): each capacitor is <= ([\d.]+) pF\./);
 	if (!pins || !models || !area || !r || !c) throw new Error("spec.md: pins, devices or design limits not found");
@@ -77,6 +90,8 @@ export async function scoreSynthesis(ws, taskDir, { verifyRoot = join(dirname(ws
 		verified_meets_spec: false,
 		design_status: "not_run",
 		area_um2: null,
+		gate_area_um2: null,
+		passive_area_um2: null,
 		mos_count: null,
 		design_errors: [],
 		rows: {},
@@ -90,7 +105,9 @@ export async function scoreSynthesis(ws, taskDir, { verifyRoot = join(dirname(ws
 		report.verification = await verifier(taskDir, readFileSync(designPath, "utf8"), verifyRoot, undefined, undefined, { file: designFile, metrics });
 		const d = report.verification.design;
 		report.design_status = d.status;
-		report.area_um2 = d.gate_area_um2;
+		report.area_um2 = d.area_um2;
+		report.gate_area_um2 = d.gate_area_um2;
+		report.passive_area_um2 = d.passive_area_um2;
 		report.mos_count = d.mos_count;
 		report.design_errors = d.errors;
 		if (d.status === "pass") report.design = 2;

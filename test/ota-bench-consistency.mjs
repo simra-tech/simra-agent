@@ -1,10 +1,18 @@
 // A shared check of the tasks with a verification bench (ota-sizing, ota-synthesis, comparator-synthesis):
 // verify.spice and requirements.json say the same as spec.md (the VCM points, the corners and the requirements with
-// their limits).
+// their limits), and the area rule of the R and C in spec.md says the same as the technology pack.
 
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 import { validateRequirements } from "@simra-tech/kernel";
 import { METRICS, sweep } from "../evals/ota-sizing/sizing.mjs";
+
+/** The variant directories of a base task directory name in taskRoot (evals/synthesis-family.mjs): <name>-f<factor>. */
+export const variantDirs = (taskRoot, name) =>
+	readdirSync(taskRoot, { withFileTypes: true })
+		.filter((e) => e.isDirectory() && new RegExp(`^${name}-f\\d+(\\.\\d+)?$`).test(e.name))
+		.map((e) => e.name)
+		.sort();
 
 /**
  * spec: the result of parseConditions; bench: the text of verify.spice; req: requirements.json. The OTA tasks
@@ -37,4 +45,34 @@ export function assertBenchMatchesSpec(spec, bench, req, { points = sweep(spec.r
 		const [got, want] = [[r.limit].flat(), [spec.limits[m].value].flat()];
 		assert.ok(got.length === want.length && got.every((x, i) => same(x, want[i])), `${m}: limit ${r.limit}, spec ${spec.limits[m].value}`);
 	}
+}
+
+/** The R and C facts of a PDK in a technology pack (ngspice.passives). */
+export function passiveFacts(technology, pdk) {
+	const pack = JSON.parse(readFileSync(new URL(`../technologies/${technology}/technology.json`, import.meta.url), "utf8"));
+	const facts = pack.ngspice.passives?.[pdk];
+	assert.ok(facts, `${technology}: no ngspice.passives facts for ${pdk}`);
+	return facts;
+}
+
+/** The area in µm² of the resistors rc.r (Ω) and the capacitors rc.c (F): R × w_min² / R_sheet and C / density. */
+export function passiveArea(technology, pdk, { r = [], c = [] }) {
+	const { r: fr, c: fc } = passiveFacts(technology, pdk);
+	const sum = (xs) => xs.reduce((a, b) => a + b, 0);
+	return (sum(r) * fr.width_min_m ** 2) / fr.sheet_ohm * 1e12 + (sum(c) / fc.density_f_per_m2) * 1e12;
+}
+
+/** The area rule of spec.md gives the devices, the values and the examples of the pack facts. */
+export function assertPassiveRule(spec, technology, pdk) {
+	const text = spec.replace(/\s+/g, " ");
+	const { r, c } = passiveFacts(technology, pdk);
+	const num = (x) => String(Number(x.toPrecision(6)));
+	assert.ok(text.includes(`A resistor R counts as the high-resistance poly resistor \`${r.device}\` of the PDK at its minimum width: R × (${num(r.width_min_m * 1e6)} µm)² / ${r.sheet_ohm} Ω (${r.sheet_ohm} Ω/sq).`), `${pdk}: the R rule`);
+	assert.match(text, new RegExp(`A capacitor C counts as the \\w+ capacitor \`${c.device}\` of the PDK[^.]*: C / \\(${num(c.density_f_per_m2 * 1e3).replace(".", "\\.")} fF/µm²\\)\\.`), `${pdk}: the C rule`);
+	const example = (re, want) => {
+		const got = Number(text.match(re)?.[1]);
+		assert.ok(Math.abs(got - want) <= 0.01 * want, `${pdk}: example ${got}, from the pack ${want}`);
+	};
+	example(/10 kΩ counts as ([\d.]+) µm²/, passiveArea(technology, pdk, { r: [1e4] }));
+	example(/1 pF counts as ([\d.]+) µm²/, passiveArea(technology, pdk, { c: [1e-12] }));
 }

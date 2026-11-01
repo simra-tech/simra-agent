@@ -24,7 +24,7 @@
       "sky130_fd_pr__pfet_01v8_hvt"
     ],
     "limits": {
-      "gate_area_um2": 80,
+      "area_um2": 770,
       "r_ohm": 1000000,
       "c_f": 2e-12
     },
@@ -89,7 +89,8 @@
           "gain_db": "dB",
           "ugf_hz": "Hz",
           "pm_deg": "deg",
-          "idd_a": "A"
+          "idd_a": "A",
+          "iin_a": "A"
         }
       }
     }
@@ -144,7 +145,21 @@
       "measurement": "idd_a",
       "unit": "A",
       "op": "<=",
-      "limit": 8e-5,
+      "limit": 0.00008,
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    },
+    {
+      "id": "iin_a",
+      "description": "Input current, the larger magnitude of the DC current into inp and into inn",
+      "experiment": "sweep",
+      "measurement": "iin_a",
+      "unit": "A",
+      "op": "<=",
+      "limit": 2e-9,
       "conditions": [
         "tt",
         "ss",

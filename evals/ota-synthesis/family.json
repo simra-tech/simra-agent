@@ -1,0 +1,16 @@
+{
+  "roles": {
+    "reference": "fix",
+    "known_fail": "original",
+    "cheat": "cheat",
+    "input_load": "input_load"
+  },
+  "requirements": {
+    "gain_db": { "kind": "lower_db", "unit": "dB", "scale": 1, "step": 0.5 },
+    "ugf_hz": { "kind": "lower", "unit": "MHz", "scale": 1e6, "step": 0.5 },
+    "idd_a": { "kind": "upper", "unit": "uA", "scale": 1e-6, "step": 1 }
+  },
+  "design": {
+    "area_um2": { "kind": "upper", "unit": "um2", "scale": 1, "step": 1 }
+  }
+}

@@ -28,6 +28,7 @@ Each requirement applies at every corner and at each VCM in the range.
 | Unity-gain frequency | `ugf_hz` | >= 13 MHz |
 | Phase margin | `pm_deg` | >= 60 ° |
 | Supply current, into `vdd` | `idd_a` | <= 85 uA |
+| Input current: the larger magnitude of the DC current into `inp` and into `inn` | `iin_a` | <= 2 nA |
 
 ## Design
 
@@ -46,11 +47,17 @@ Each requirement applies at every corner and at each VCM in the range.
 - Give each size and each value as a plain number. Do not use an expression or a parameter. The sizes are in
   metres with a scale suffix: `w=2u l=0.5u`.
 - Obey the minimum sizes of the PDK: W / ng >= 0.15 µm and L >= 0.13 µm.
-- Gate area: the sum of W × L over the MOS devices is <= 60 µm². W is the total width of all fingers. The
-  multiplier m and each instance of a block count.
+- Area: the gate area plus the area of the R and C is <= 1000 µm². Each instance of a block counts.
+  1. Gate area: the sum of W × L over the MOS devices. W is the total width of all fingers. The multiplier m
+     counts.
+  2. A resistor R counts as the high-resistance poly resistor `rhigh` of the PDK at its minimum width:
+     R × (0.5 µm)² / 1360 Ω (1360 Ω/sq). For example, 10 kΩ counts as 1.84 µm².
+  3. A capacitor C counts as the MOM capacitor `cap_cmomf` of the PDK (Metal1 to Metal4; the PDK has no MIM
+     capacitor): C / (1.287 fF/µm²). For example, 1 pF counts as 777 µm².
 
 ## Bench
 
 `verify.spice` is the bench of this specification. It connects VDD, VSS = 0 V, 10 uA into `ibias` and
 CL = 2 pF. It connects `out` to `inn` with unity feedback for the DC operating point, and opens the loop for the
-AC analysis. It sweeps VCM over the range.
+AC analysis. It sweeps VCM over the range. It measures `idd_a` and `iin_a` at the DC operating point: `iin_a`
+is the current of the source that drives `inp` and of the feedback path that drives `inn`.

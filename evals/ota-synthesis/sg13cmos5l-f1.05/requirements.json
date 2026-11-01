@@ -1,0 +1,167 @@
+{
+  "schema": "simra.requirements/0",
+  "design": {
+    "file": "ota.spice",
+    "subckt": "ota",
+    "pins": [
+      "inp",
+      "inn",
+      "out",
+      "vdd",
+      "vss",
+      "ibias"
+    ],
+    "elements": [
+      "mos",
+      "r",
+      "c"
+    ],
+    "devices": [
+      "sg13_lv_nmos",
+      "sg13_lv_pmos"
+    ],
+    "limits": {
+      "area_um2": 496,
+      "r_ohm": 1000000,
+      "c_f": 2e-12
+    },
+    "technology": "ihp-sg13",
+    "environment": "eda"
+  },
+  "conditions": {
+    "tt": {
+      "description": "mos_tt, VDD = 1.20 V, 27 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/ihp-sg13cmos5l/libs.tech/ngspice/models/cornerMOSlv.lib",
+            "section": "mos_tt"
+          }
+        ],
+        "params": {
+          "vdd": 1.2
+        },
+        "temp_c": 27
+      }
+    },
+    "ss": {
+      "description": "mos_ss, VDD = 1.08 V, 125 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/ihp-sg13cmos5l/libs.tech/ngspice/models/cornerMOSlv.lib",
+            "section": "mos_ss"
+          }
+        ],
+        "params": {
+          "vdd": 1.08
+        },
+        "temp_c": 125
+      }
+    },
+    "ff": {
+      "description": "mos_ff, VDD = 1.32 V, -40 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/ihp-sg13cmos5l/libs.tech/ngspice/models/cornerMOSlv.lib",
+            "section": "mos_ff"
+          }
+        ],
+        "params": {
+          "vdd": 1.32
+        },
+        "temp_c": -40
+      }
+    }
+  },
+  "experiments": {
+    "sweep": {
+      "adapter": "ngspice",
+      "operation": "simulate",
+      "environment": "eda",
+      "inputs": {
+        "deck": "verify.spice",
+        "measurements": {
+          "gain_db": "dB",
+          "ugf_hz": "Hz",
+          "pm_deg": "deg",
+          "idd_a": "A",
+          "iin_a": "A"
+        }
+      }
+    }
+  },
+  "requirements": [
+    {
+      "id": "gain_db",
+      "description": "DC open-loop gain, at 1 Hz",
+      "experiment": "sweep",
+      "measurement": "gain_db",
+      "unit": "dB",
+      "op": ">=",
+      "limit": 51,
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    },
+    {
+      "id": "ugf_hz",
+      "description": "Unity-gain frequency",
+      "experiment": "sweep",
+      "measurement": "ugf_hz",
+      "unit": "Hz",
+      "op": ">=",
+      "limit": 18500000,
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    },
+    {
+      "id": "pm_deg",
+      "description": "Phase margin",
+      "experiment": "sweep",
+      "measurement": "pm_deg",
+      "unit": "deg",
+      "op": ">=",
+      "limit": 60,
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    },
+    {
+      "id": "idd_a",
+      "description": "Supply current, into vdd",
+      "experiment": "sweep",
+      "measurement": "idd_a",
+      "unit": "A",
+      "op": "<=",
+      "limit": 0.000082,
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    },
+    {
+      "id": "iin_a",
+      "description": "Input current, the larger magnitude of the DC current into inp and into inn",
+      "experiment": "sweep",
+      "measurement": "iin_a",
+      "unit": "A",
+      "op": "<=",
+      "limit": 2e-9,
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    }
+  ]
+}

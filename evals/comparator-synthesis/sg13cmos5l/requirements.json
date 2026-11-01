@@ -21,7 +21,7 @@
       "sg13_lv_pmos"
     ],
     "limits": {
-      "gate_area_um2": 30,
+      "area_um2": 30,
       "r_ohm": 1000000,
       "c_f": 2e-12
     },
@@ -89,7 +89,8 @@
           "vol_rel": "1",
           "vos_v": "V",
           "hyst_v": "V",
-          "idd_a": "A"
+          "idd_a": "A",
+          "iin_a": "A"
         }
       }
     }
@@ -193,6 +194,20 @@
       "unit": "A",
       "op": "<=",
       "limit": 0.00008,
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    },
+    {
+      "id": "iin_a",
+      "description": "Input current at the DC operating point with Vd = -10 mV, the larger magnitude of the current into inp and into inn",
+      "experiment": "sweep",
+      "measurement": "iin_a",
+      "unit": "A",
+      "op": "<=",
+      "limit": 2e-9,
       "conditions": [
         "tt",
         "ss",

@@ -10,13 +10,18 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { answerOf, designs, LIMIT_FACTOR } from "../evals/comparator-synthesis/reference.mjs";
 import { loadTask, METRICS, scoreComparator } from "../evals/comparator-synthesis/synthesis.mjs";
-import { assertBenchMatchesSpec } from "./ota-bench-consistency.mjs";
+import { assertBenchMatchesSpec, assertPassiveRule, passiveArea, variantDirs } from "./ota-bench-consistency.mjs";
 
 const repo = new URL("../", import.meta.url).pathname;
+/** The gate areas of the designs, and the resistors of input_load (the dividers; the other designs have no R or C). */
 const TASKS = {
-	sg13cmos5l: { technology: "ihp-sg13", reference_area: 20.39, known_fail_area: 18.39 },
-	sky130: { technology: "sky130", reference_area: 22.45, known_fail_area: 20.45 },
+	sg13cmos5l: { technology: "ihp-sg13", pdk: "ihp-sg13cmos5l", reference_area: 20.39, known_fail_area: 18.39, input_load_area: 14.32, input_load_r: [1e3, 3e3, 1e3, 3e3] },
+	sky130: { technology: "sky130", pdk: "sky130A", reference_area: 22.45, known_fail_area: 20.45, input_load_area: 22.45, input_load_r: [1e3, 30e3, 1e3, 30e3] },
 };
+/** The least factors limit / worst iin_a of a gate input, and least iin_a of input_load / limit. */
+const GATE_FACTOR = 100;
+const INPUT_LOAD_FACTOR = 1e4;
+const near = (a, b) => Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(b));
 const ROWS = 3 * METRICS.length;
 const taskDir = (name) => join(repo, "evals/comparator-synthesis", name);
 const expectedOf = (name) => JSON.parse(readFileSync(join(taskDir(name), "expected.json"), "utf8"));
@@ -53,7 +58,7 @@ for (const [name, facts] of Object.entries(TASKS)) {
 		const e = expectedOf(name);
 		assert.deepEqual([e.reference.design_check.status, e.reference.design_check.gate_area_um2, e.reference.design_check.mos_count, e.reference.meets_spec], ["pass", facts.reference_area, 10, true]);
 		// Each sweep has the 5 VCM points of the spec.
-		for (const r of [e.reference, e.known_fail, e.cheat]) for (const c of Object.values(r.corners)) assert.deepEqual(c.sweep.map((p) => p.vcm), e.spec.points);
+		for (const r of [e.reference, e.known_fail, e.cheat, e.input_load]) for (const c of Object.values(r.corners)) assert.deepEqual(c.sweep.map((p) => p.vcm), e.spec.points);
 		// The known fail (the tail current source at half its width) passes the design part and fails at least 2 rows
 		// at one corner.
 		assert.deepEqual([e.known_fail.design_check.status, e.known_fail.design_check.gate_area_um2, e.known_fail.meets_spec], ["pass", facts.known_fail_area, false]);
@@ -69,8 +74,21 @@ for (const [name, facts] of Object.entries(TASKS)) {
 		assert.match(e.cheat.design_check.errors[1].message, /Rb: node 0 is the global ground/);
 		assert.deepEqual([e.cheat_score.design, e.cheat_score.requirements], [0, 0]);
 		// The limits of the spec are at least LIMIT_FACTOR times the worst value of the reference.
-		assert.deepEqual(Object.keys(e.limit_margins), ["tpd_r_s", "tpd_f_s", "idd_a", "gate_area_um2"]);
+		assert.deepEqual(Object.keys(e.limit_margins), ["tpd_r_s", "tpd_f_s", "idd_a", "area_um2"]);
 		for (const [k, v] of Object.entries(e.limit_margins)) assert.ok(v.limit >= LIMIT_FACTOR * v.worst, `${k}: limit ${v.limit}, reference ${v.worst}`);
+		// input_load (a divider on each input) passes the design part and every row but iin_a, which it fails at every
+		// corner by more than INPUT_LOAD_FACTOR. The reference (gate inputs) passes iin_a by more than GATE_FACTOR.
+		assert.deepEqual([e.input_load.design_check.status, e.input_load.design_check.gate_area_um2, e.input_load.meets_spec], ["pass", facts.input_load_area, false]);
+		// The area is the gate area plus the area of the R and C, from the facts of the PDK in the technology pack.
+		const rc = { reference: 0, known_fail: 0, input_load: passiveArea(facts.technology, facts.pdk, { r: facts.input_load_r }) };
+		for (const [k, passive] of Object.entries(rc)) {
+			const d = e[k].design_check;
+			assert.ok(near(d.passive_area_um2, passive) && near(d.area_um2, d.gate_area_um2 + passive), `${k}: area ${d.area_um2}, gate ${d.gate_area_um2}, R and C ${d.passive_area_um2}`);
+		}
+		assert.deepEqual(failedRows(e.input_load), ["tt iin_a", "ss iin_a", "ff iin_a"]);
+		assert.ok(Math.abs(e.input_current.limit / 2e-9 - 1) < 1e-12, "iin_a <= 2 nA");
+		assert.ok(e.input_current.reference_worst * GATE_FACTOR < e.input_current.limit, `the reference: ${e.input_current.reference_worst} A`);
+		assert.ok(e.input_current.input_load_factor > INPUT_LOAD_FACTOR, `input_load: ${e.input_current.input_load_least} A`);
 	});
 
 	test(`comparator-synthesis ${name}: the reference with a correct answer gets every point`, async (t) => {
@@ -82,7 +100,7 @@ for (const [name, facts] of Object.entries(TASKS)) {
 		assert.deepEqual(s.errors, []);
 		assert.deepEqual(s.max, { design: 2, requirements: ROWS, claim: 4, values: ROWS });
 		assert.deepEqual([...parts(s), s.supported], [2, ROWS, 4, ROWS, ROWS]);
-		assert.deepEqual([s.verified_meets_spec, s.design_status, s.area_um2, s.mos_count, s.design_errors], [true, "pass", facts.reference_area, 10, []]);
+		assert.deepEqual([s.verified_meets_spec, s.design_status, s.area_um2, s.gate_area_um2, s.passive_area_um2, s.mos_count, s.design_errors], [true, "pass", facts.reference_area, facts.reference_area, 0, 10, []]);
 		assert.deepEqual(Object.keys(s.rows), ["tt", "ss", "ff"].flatMap((c) => METRICS.map((m) => `${c} ${m}`)));
 		assert.equal(calls.length, 1);
 	});
@@ -157,69 +175,79 @@ test("comparator-synthesis: answer.json or cmp.spice missing", async (t) => {
 	assert.ok((await scoreComparator(ota, taskDir(name), { verifier })).errors.includes("cmp.spice not found"));
 });
 
+// The committed variants (evals/synthesis-family.mjs) have the same consistency, with their own limits.
 for (const [name, facts] of Object.entries(TASKS)) {
-	test(`comparator-synthesis ${name}: spec.md, requirements.json, verify.spice and task.json say the same`, () => {
-		const { task, spec } = loadTask(taskDir(name));
-		const bench = readFileSync(join(taskDir(name), "verify.spice"), "utf8");
-		const req = JSON.parse(readFileSync(join(taskDir(name), "requirements.json"), "utf8"));
-		// 5 VCM points: both ends of the range and 3 inside, with the same step.
-		assert.equal(spec.points.length, 5);
-		for (let i = 1; i < 5; i++) assert.ok(Math.abs(spec.points[i] - spec.points[i - 1] - (spec.range[1] - spec.range[0]) / 4) < 1e-9);
-		const row = new RegExp(`^\\s*echo ROW vcm=\\$vcm ${METRICS.map((m) => `${m}=\\$&${m}`).join(" ")}$`, "m");
-		assertBenchMatchesSpec(spec, bench, req, { points: spec.points, metrics: METRICS, row });
-		assert.deepEqual(Object.keys(spec.limits), METRICS);
-		assert.deepEqual(
-			METRICS.map((m) => spec.limits[m].op),
-			["<=", "<=", ">=", "<=", "between", "between", "<="],
-		);
-		assert.deepEqual([spec.limits.voh_rel.value, spec.limits.vol_rel.value, spec.limits.vos_v.value, spec.limits.hyst_v.value], [0.9, 0.1, [-0.005, 0.005], [0, 0.02]]);
-		// The bench: the load, the bias, the common mode on inn, the differential source from inn to inp with steps of
-		// ±10 mV and a slow ramp, one transient analysis per point with a fixed maximum time step, and no uic.
-		assert.match(bench, /^CL out 0 50f$/m);
-		assert.match(bench, /^Ib vdd ibias 10u$/m);
-		assert.match(bench, /^Vcm inn 0 dc [\d.]+$/m);
-		assert.match(bench, /^Vd inp inn dc 0 pwl\(0 -10m 100n -10m 100\.1n 10m 600n 10m 600\.1n -10m 1\.1u -10m 1\.2u -50m 11\.2u 50m 21\.2u -50m\)$/m);
-		assert.match(bench, /^Xdut inp inn out vdd vss ibias cmp$/m);
-		assert.match(bench, /^\.include "cmp\.spice"$/m);
-		assert.match(bench, /^\s*alter vcm dc = \$vcm$/m);
-		assert.deepEqual(bench.match(/^\s*tran .*$/gm).map((l) => l.trim()), ["tran 0.1n 21.2u 0 0.5n"]);
-		assert.doesNotMatch(bench, /\buic\b/i);
-		// The same corners, design limits for R and C, devices and environment as ota-synthesis.
-		const ota = JSON.parse(readFileSync(join(repo, "evals/ota-synthesis", name, "requirements.json"), "utf8"));
-		assert.deepEqual(req.conditions, ota.conditions);
-		assert.deepEqual({ ...req.design, file: null, subckt: null, limits: { ...req.design.limits, gate_area_um2: null } }, { ...ota.design, file: null, subckt: null, limits: { ...ota.design.limits, gate_area_um2: null } });
-		assert.equal(readFileSync(join(taskDir(name), "simra.config.json"), "utf8"), readFileSync(join(repo, "evals/ota-synthesis", name, "simra.config.json"), "utf8"));
-		// The design contract: the file, the pins in their order, the element kinds, the devices and the limits of spec.md.
-		const d = spec.design;
-		assert.deepEqual([d.file, d.subckt, d.pins], ["cmp.spice", "cmp", ["inp", "inn", "out", "vdd", "vss", "ibias"]]);
-		assert.deepEqual([req.design.file, req.design.subckt, req.design.pins, req.design.elements], [d.file, d.subckt, d.pins, ["mos", "r", "c"]]);
-		assert.deepEqual(req.design.devices, d.devices);
-		assert.deepEqual(req.design.limits, { gate_area_um2: d.area_um2, r_ohm: d.r_ohm, c_f: d.c_f });
-		assert.deepEqual([req.design.technology, req.design.environment], [facts.technology, task.environment]);
-		// The devices of spec.md are devices of the technology pack, with the minimum sizes of the pack.
-		const pack = JSON.parse(readFileSync(join(repo, "technologies", facts.technology, "technology.json"), "utf8")).ngspice;
-		const text = readFileSync(join(taskDir(name), "spec.md"), "utf8");
-		const um = (x) => Number((x * 1e6).toFixed(3));
-		for (const model of d.devices) {
-			const p = pack.devices[model];
-			assert.ok(p, `${model} is not in the technology pack ${facts.technology}`);
-			if (pack.size_unit_m === 1) {
-				assert.ok(text.includes(`W / ng >= ${um(p.params.w.min)} µm and L >= ${um(p.params.l.min)} µm`), `${model}: minimum sizes`);
-			} else {
-				const line = new RegExp(`^\\s*\\| \`${model}\` \\| ${um(p.params.w.min)} µm \\| ${um(p.params.l.min)} µm \\|$`, "m");
-				assert.match(text, line, `${model}: minimum sizes`);
+	for (const dir of [name, ...variantDirs(join(repo, "evals/comparator-synthesis"), name)]) {
+		test(`comparator-synthesis ${dir}: spec.md, requirements.json, verify.spice and task.json say the same`, () => {
+			const { task, spec } = loadTask(taskDir(dir));
+			const bench = readFileSync(join(taskDir(dir), "verify.spice"), "utf8");
+			const req = JSON.parse(readFileSync(join(taskDir(dir), "requirements.json"), "utf8"));
+			// 5 VCM points: both ends of the range and 3 inside, with the same step.
+			assert.equal(spec.points.length, 5);
+			for (let i = 1; i < 5; i++) assert.ok(Math.abs(spec.points[i] - spec.points[i - 1] - (spec.range[1] - spec.range[0]) / 4) < 1e-9);
+			// The transient values are vectors ($&), iin_a is a string of the DC operating point ($iinv).
+			const row = new RegExp(`^\\s*echo ROW vcm=\\$vcm ${METRICS.filter((m) => m !== "iin_a").map((m) => `${m}=\\$&${m}`).join(" ")} iin_a=\\$iinv$`, "m");
+			assertBenchMatchesSpec(spec, bench, req, { points: spec.points, metrics: METRICS, row });
+			assert.deepEqual(Object.keys(spec.limits), METRICS);
+			assert.deepEqual(
+				METRICS.map((m) => spec.limits[m].op),
+				["<=", "<=", ">=", "<=", "between", "between", "<=", "<="],
+			);
+			assert.deepEqual([spec.limits.voh_rel.value, spec.limits.vol_rel.value, spec.limits.vos_v.value, spec.limits.hyst_v.value], [0.9, 0.1, [-0.005, 0.005], [0, 0.02]]);
+			assert.ok(Math.abs(spec.limits.iin_a.value / 2e-9 - 1) < 1e-12, "iin_a <= 2 nA");
+			// iin_a: the current of the sources that drive inp (Vd) and inn (Vd and Vcm) at a DC operating point with
+			// Vd = -10 mV, before the transient. Then Vd gets its DC value 0 again.
+			assert.match(bench, /^\s*alter vcm dc = \$vcm\n\s*alter vd dc = -10m\n\s*op\n\s*let iinp = abs\(i\(vd\)\)\n\s*let iinn = abs\(i\(vd\) - i\(vcm\)\)\n\s*let iin = \(iinp \+ iinn \+ abs\(iinp - iinn\)\) \/ 2\n\s*set iinv = \$&iin\n\s*alter vd dc = 0\n\s*tran /m);
+			assert.match(bench, /^\s*meas tran idd_a find ivdd at=1\.09u$/m);
+			// The bench: the load, the bias, the common mode on inn, the differential source from inn to inp with steps of
+			// ±10 mV and a slow ramp, one transient analysis per point with a fixed maximum time step, and no uic.
+			assert.match(bench, /^CL out 0 50f$/m);
+			assert.match(bench, /^Ib vdd ibias 10u$/m);
+			assert.match(bench, /^Vcm inn 0 dc [\d.]+$/m);
+			assert.match(bench, /^Vd inp inn dc 0 pwl\(0 -10m 100n -10m 100\.1n 10m 600n 10m 600\.1n -10m 1\.1u -10m 1\.2u -50m 11\.2u 50m 21\.2u -50m\)$/m);
+			assert.match(bench, /^Xdut inp inn out vdd vss ibias cmp$/m);
+			assert.match(bench, /^\.include "cmp\.spice"$/m);
+			assert.match(bench, /^\s*alter vcm dc = \$vcm$/m);
+			assert.deepEqual(bench.match(/^\s*tran .*$/gm).map((l) => l.trim()), ["tran 0.1n 21.2u 0 0.5n"]);
+			assert.doesNotMatch(bench, /\buic\b/i);
+			// The same corners, design limits for R and C, devices and environment as ota-synthesis.
+			const ota = JSON.parse(readFileSync(join(repo, "evals/ota-synthesis", name, "requirements.json"), "utf8"));
+			assert.deepEqual(req.conditions, ota.conditions);
+			assert.deepEqual({ ...req.design, file: null, subckt: null, limits: { ...req.design.limits, area_um2: null } }, { ...ota.design, file: null, subckt: null, limits: { ...ota.design.limits, area_um2: null } });
+			assert.equal(readFileSync(join(taskDir(dir), "simra.config.json"), "utf8"), readFileSync(join(repo, "evals/ota-synthesis", name, "simra.config.json"), "utf8"));
+			// The design contract: the file, the pins in their order, the element kinds, the devices and the limits of spec.md.
+			const d = spec.design;
+			assert.deepEqual([d.file, d.subckt, d.pins], ["cmp.spice", "cmp", ["inp", "inn", "out", "vdd", "vss", "ibias"]]);
+			assert.deepEqual([req.design.file, req.design.subckt, req.design.pins, req.design.elements], [d.file, d.subckt, d.pins, ["mos", "r", "c"]]);
+			assert.deepEqual(req.design.devices, d.devices);
+			assert.deepEqual(req.design.limits, { area_um2: d.area_um2, r_ohm: d.r_ohm, c_f: d.c_f });
+			assert.deepEqual([req.design.technology, req.design.environment], [facts.technology, task.environment]);
+			assertPassiveRule(readFileSync(join(taskDir(dir), "spec.md"), "utf8"), facts.technology, facts.pdk);
+			// The devices of spec.md are devices of the technology pack, with the minimum sizes of the pack.
+			const pack = JSON.parse(readFileSync(join(repo, "technologies", facts.technology, "technology.json"), "utf8")).ngspice;
+			const text = readFileSync(join(taskDir(dir), "spec.md"), "utf8");
+			const um = (x) => Number((x * 1e6).toFixed(3));
+			for (const model of d.devices) {
+				const p = pack.devices[model];
+				assert.ok(p, `${model} is not in the technology pack ${facts.technology}`);
+				if (pack.size_unit_m === 1) {
+					assert.ok(text.includes(`W / ng >= ${um(p.params.w.min)} µm and L >= ${um(p.params.l.min)} µm`), `${model}: minimum sizes`);
+				} else {
+					const line = new RegExp(`^\\s*\\| \`${model}\` \\| ${um(p.params.w.min)} µm \\| ${um(p.params.l.min)} µm \\|$`, "m");
+					assert.match(text, line, `${model}: minimum sizes`);
+				}
 			}
-		}
-		if (name === "sky130") assert.deepEqual(d.devices, Object.keys(pack.devices), "sky130: every MOS device of the pack");
-		else assert.deepEqual(d.devices, ["sg13_lv_nmos", "sg13_lv_pmos"], "sg13cmos5l: the devices of cornerMOSlv.lib");
-		// The reference designs use only the devices of the spec.
-		for (const [k, design] of Object.entries(designs(name))) {
-			for (const m of design.matchAll(/^X\S+(?:\s+\S+){4}\s+(\S+)/gm)) assert.ok(d.devices.includes(m[1]), `${k}: ${m[1]}`);
-		}
-		// The task gives no netlist, and no answer is a task file.
-		assert.deepEqual(Object.keys(task.files).sort(), ["requirements.json", "simra.config.json", "simra.local.json", "spec.md", "verify.spice"]);
-		for (const [f, src] of Object.entries(task.files)) if (f !== "simra.local.json") assert.ok(existsSync(join(taskDir(name), src)), `${f} exists`);
-		assert.equal(task.files["simra.local.json"], "../../../examples/ota-sg13g2/simra.local.json");
-		assert.equal(existsSync(join(taskDir(name), "cmp.spice")), false);
-	});
+			if (name === "sky130") assert.deepEqual(d.devices, Object.keys(pack.devices), "sky130: every MOS device of the pack");
+			else assert.deepEqual(d.devices, ["sg13_lv_nmos", "sg13_lv_pmos"], "sg13cmos5l: the devices of cornerMOSlv.lib");
+			// The reference designs use only the devices of the spec.
+			for (const [k, design] of Object.entries(designs(name))) {
+				for (const m of design.matchAll(/^X\S+(?:\s+\S+){4}\s+(\S+)/gm)) assert.ok(d.devices.includes(m[1]), `${k}: ${m[1]}`);
+			}
+			// The task gives no netlist, and no answer is a task file.
+			assert.deepEqual(Object.keys(task.files).sort(), ["requirements.json", "simra.config.json", "simra.local.json", "spec.md", "verify.spice"]);
+			for (const [f, src] of Object.entries(task.files)) if (f !== "simra.local.json") assert.ok(existsSync(join(taskDir(dir), src)), `${f} exists`);
+			assert.equal(task.files["simra.local.json"], "../../../examples/ota-sg13g2/simra.local.json");
+			assert.equal(existsSync(join(taskDir(dir), "cmp.spice")), false);
+		});
+	}
 }

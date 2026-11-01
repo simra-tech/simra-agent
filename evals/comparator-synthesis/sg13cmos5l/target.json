@@ -1,0 +1,338 @@
+{
+  "task": "comparator-synthesis-sg13cmos5l",
+  "generated_by": "evals/synthesis-family.mjs",
+  "source": {
+    "kind": "reference",
+    "role": "reference"
+  },
+  "design": "* comparator-synthesis reference: two stages and an output inverter.\n.subckt cmp inp inn out vdd vss ibias\nXM0 ibias ibias vss vss sg13_lv_nmos w=2u l=1u\nXM5 tail ibias vss vss sg13_lv_nmos w=4u l=1u\nXM1 x inp tail vss sg13_lv_nmos w=16u l=0.25u\nXM2 y inn tail vss sg13_lv_nmos w=16u l=0.25u\nXM3 x x vdd vdd sg13_lv_pmos w=2u l=0.25u\nXM4 y x vdd vdd sg13_lv_pmos w=2u l=0.25u\nXM6 z y vdd vdd sg13_lv_pmos w=4u l=0.25u\nXM7 z ibias vss vss sg13_lv_nmos w=4u l=1u\nXM8 out z vdd vdd sg13_lv_pmos w=2u l=0.13u\nXM9 out z vss vss sg13_lv_nmos w=1u l=0.13u\n.ends cmp\n",
+  "provenance": {
+    "image_id": "sha256:189219a0feba70bd54420999a8151b68b66bf980da3cc69fafc697294dae2d16",
+    "ngspice": "47",
+    "pdk": {
+      "PDK_ROOT": "/foss/pdks",
+      "PDK": "ihp-sg13cmos5l",
+      "commit": "a49358cc0b20635fcb53c0940505e3563763fc7a"
+    }
+  },
+  "result": {
+    "design_check": {
+      "status": "pass",
+      "errors": [],
+      "area_um2": 20.39,
+      "gate_area_um2": 20.39,
+      "passive_area_um2": 0,
+      "mos_count": 10
+    },
+    "rows_pass": true,
+    "meets_spec": true,
+    "corners": {
+      "tt": {
+        "experiment": "20261101-114828-8e63c9",
+        "worst": {
+          "tpd_r_s": {
+            "value": 2.67988e-9,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "tpd_f_s": {
+            "value": 3.55629e-9,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "voh_rel": {
+            "value": 1,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "vol_rel": {
+            "value": 4.70281e-7,
+            "vcm": 0.7,
+            "pass": true
+          },
+          "vos_v": {
+            "value": -0.00164684,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "hyst_v": {
+            "value": 0.000157322,
+            "vcm": 0.7,
+            "pass": true
+          },
+          "idd_a": {
+            "value": 0.0000582949,
+            "vcm": 0.7,
+            "pass": true
+          },
+          "iin_a": {
+            "value": 6.61977e-13,
+            "vcm": 0.7,
+            "pass": true
+          }
+        },
+        "sweep": [
+          {
+            "vcm": 0.4,
+            "tpd_r_s": 2.67988e-9,
+            "tpd_f_s": 3.55629e-9,
+            "voh_rel": 1,
+            "vol_rel": 2.88835e-7,
+            "vos_v": -0.00164684,
+            "hyst_v": 0.000194108,
+            "idd_a": 0.0000543137,
+            "iin_a": 2.76348e-13
+          },
+          {
+            "vcm": 0.475,
+            "tpd_r_s": 2.55614e-9,
+            "tpd_f_s": 2.98292e-9,
+            "voh_rel": 1,
+            "vol_rel": 3.66873e-7,
+            "vos_v": -0.00123484,
+            "hyst_v": 0.000178227,
+            "idd_a": 0.0000565805,
+            "iin_a": 3.68714e-13
+          },
+          {
+            "vcm": 0.55,
+            "tpd_r_s": 2.41812e-9,
+            "tpd_f_s": 2.69593e-9,
+            "voh_rel": 1,
+            "vol_rel": 3.31452e-7,
+            "vos_v": -0.00111564,
+            "hyst_v": 0.000169682,
+            "idd_a": 0.000057346,
+            "iin_a": 4.4623e-13
+          },
+          {
+            "vcm": 0.625,
+            "tpd_r_s": 2.28802e-9,
+            "tpd_f_s": 2.57012e-9,
+            "voh_rel": 1,
+            "vol_rel": 4.28437e-7,
+            "vos_v": -0.00102328,
+            "hyst_v": 0.000162945,
+            "idd_a": 0.0000581969,
+            "iin_a": 5.40085e-13
+          },
+          {
+            "vcm": 0.7,
+            "tpd_r_s": 2.20933e-9,
+            "tpd_f_s": 2.41517e-9,
+            "voh_rel": 1,
+            "vol_rel": 4.70281e-7,
+            "vos_v": -0.000917364,
+            "hyst_v": 0.000157322,
+            "idd_a": 0.0000582949,
+            "iin_a": 6.61977e-13
+          }
+        ]
+      },
+      "ss": {
+        "experiment": "20261101-114828-75e342",
+        "worst": {
+          "tpd_r_s": {
+            "value": 2.68343e-9,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "tpd_f_s": {
+            "value": 4.30739e-9,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "voh_rel": {
+            "value": 0.999998,
+            "vcm": 0.7,
+            "pass": true
+          },
+          "vol_rel": {
+            "value": 0.0000263564,
+            "vcm": 0.7,
+            "pass": true
+          },
+          "vos_v": {
+            "value": -0.00274501,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "hyst_v": {
+            "value": 0.000177147,
+            "vcm": 0.7,
+            "pass": true
+          },
+          "idd_a": {
+            "value": 0.0000560286,
+            "vcm": 0.7,
+            "pass": true
+          },
+          "iin_a": {
+            "value": 3.1888e-13,
+            "vcm": 0.7,
+            "pass": true
+          }
+        },
+        "sweep": [
+          {
+            "vcm": 0.4,
+            "tpd_r_s": 2.68343e-9,
+            "tpd_f_s": 4.30739e-9,
+            "voh_rel": 1,
+            "vol_rel": 0.00000739366,
+            "vos_v": -0.00274501,
+            "hyst_v": 0.000217646,
+            "idd_a": 0.0000518481,
+            "iin_a": 1.08729e-13
+          },
+          {
+            "vcm": 0.475,
+            "tpd_r_s": 2.61714e-9,
+            "tpd_f_s": 3.49377e-9,
+            "voh_rel": 0.999999,
+            "vol_rel": 0.00000739112,
+            "vos_v": -0.00191773,
+            "hyst_v": 0.000202614,
+            "idd_a": 0.0000541663,
+            "iin_a": 1.46885e-13
+          },
+          {
+            "vcm": 0.55,
+            "tpd_r_s": 2.53639e-9,
+            "tpd_f_s": 3.13973e-9,
+            "voh_rel": 0.999999,
+            "vol_rel": 0.00000838164,
+            "vos_v": -0.00160435,
+            "hyst_v": 0.000194287,
+            "idd_a": 0.0000551772,
+            "iin_a": 1.87527e-13
+          },
+          {
+            "vcm": 0.625,
+            "tpd_r_s": 2.38566e-9,
+            "tpd_f_s": 2.98221e-9,
+            "voh_rel": 0.999999,
+            "vol_rel": 0.0000111846,
+            "vos_v": -0.00147828,
+            "hyst_v": 0.000187497,
+            "idd_a": 0.0000556916,
+            "iin_a": 2.40264e-13
+          },
+          {
+            "vcm": 0.7,
+            "tpd_r_s": 2.17584e-9,
+            "tpd_f_s": 2.94408e-9,
+            "voh_rel": 0.999998,
+            "vol_rel": 0.0000263564,
+            "vos_v": -0.00160037,
+            "hyst_v": 0.000177147,
+            "idd_a": 0.0000560286,
+            "iin_a": 3.1888e-13
+          }
+        ]
+      },
+      "ff": {
+        "experiment": "20261101-114828-c66849",
+        "worst": {
+          "tpd_r_s": {
+            "value": 2.69736e-9,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "tpd_f_s": {
+            "value": 2.9854e-9,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "voh_rel": {
+            "value": 1,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "vol_rel": {
+            "value": 1.82323e-7,
+            "vcm": 0.475,
+            "pass": true
+          },
+          "vos_v": {
+            "value": -0.000995794,
+            "vcm": 0.4,
+            "pass": true
+          },
+          "hyst_v": {
+            "value": 0.000144735,
+            "vcm": 0.7,
+            "pass": true
+          },
+          "idd_a": {
+            "value": 0.0000605608,
+            "vcm": 0.7,
+            "pass": true
+          },
+          "iin_a": {
+            "value": 1.33911e-12,
+            "vcm": 0.7,
+            "pass": true
+          }
+        },
+        "sweep": [
+          {
+            "vcm": 0.4,
+            "tpd_r_s": 2.69736e-9,
+            "tpd_f_s": 2.9854e-9,
+            "voh_rel": 1,
+            "vol_rel": 1.15176e-7,
+            "vos_v": -0.000995794,
+            "hyst_v": 0.000182403,
+            "idd_a": 0.0000573115,
+            "iin_a": 5.74595e-13
+          },
+          {
+            "vcm": 0.475,
+            "tpd_r_s": 2.54432e-9,
+            "tpd_f_s": 2.68139e-9,
+            "voh_rel": 1,
+            "vol_rel": 1.82323e-7,
+            "vos_v": -0.000848241,
+            "hyst_v": 0.000168947,
+            "idd_a": 0.0000586877,
+            "iin_a": 7.73536e-13
+          },
+          {
+            "vcm": 0.55,
+            "tpd_r_s": 2.36613e-9,
+            "tpd_f_s": 2.49777e-9,
+            "voh_rel": 1,
+            "vol_rel": 8.38688e-8,
+            "vos_v": -0.000779022,
+            "hyst_v": 0.00015968,
+            "idd_a": 0.000059317,
+            "iin_a": 9.52213e-13
+          },
+          {
+            "vcm": 0.625,
+            "tpd_r_s": 2.24739e-9,
+            "tpd_f_s": 2.29613e-9,
+            "voh_rel": 1,
+            "vol_rel": 1.23003e-7,
+            "vos_v": -0.00071016,
+            "hyst_v": 0.000151696,
+            "idd_a": 0.0000601131,
+            "iin_a": 1.13067e-12
+          },
+          {
+            "vcm": 0.7,
+            "tpd_r_s": 2.1616e-9,
+            "tpd_f_s": 2.20401e-9,
+            "voh_rel": 1,
+            "vol_rel": 2.16885e-8,
+            "vos_v": -0.000633886,
+            "hyst_v": 0.000144735,
+            "idd_a": 0.0000605608,
+            "iin_a": 1.33911e-12
+          }
+        ]
+      }
+    }
+  }
+}

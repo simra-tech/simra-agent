@@ -28,6 +28,7 @@ Each requirement applies at every corner and at each VCM in the range.
 | Unity-gain frequency | `ugf_hz` | >= 15 MHz |
 | Phase margin | `pm_deg` | >= 60 ° |
 | Supply current, into `vdd` | `idd_a` | <= 80 uA |
+| Input current: the larger magnitude of the DC current into `inp` and into `inn` | `iin_a` | <= 2 nA |
 
 ## Design
 
@@ -57,11 +58,17 @@ Each requirement applies at every corner and at each VCM in the range.
   | `sky130_fd_pr__pfet_01v8_lvt` | 0.42 µm | 0.35 µm |
   | `sky130_fd_pr__pfet_01v8_hvt` | 0.36 µm | 0.15 µm |
 
-- Gate area: the sum of W × L over the MOS devices is <= 80 µm². W is the total width of all fingers. The
-  multiplier m and each instance of a block count.
+- Area: the gate area plus the area of the R and C is <= 770 µm². Each instance of a block counts.
+  1. Gate area: the sum of W × L over the MOS devices. W is the total width of all fingers. The multiplier m
+     counts.
+  2. A resistor R counts as the high-resistance poly resistor `sky130_fd_pr__res_xhigh_po` of the PDK at its
+     minimum width: R × (0.35 µm)² / 2000 Ω (2000 Ω/sq). For example, 10 kΩ counts as 0.61 µm².
+  3. A capacitor C counts as the MIM capacitor `sky130_fd_pr__cap_mim_m3_1` of the PDK: C / (2 fF/µm²). For
+     example, 1 pF counts as 500 µm².
 
 ## Bench
 
 `verify.spice` is the bench of this specification. It connects VDD, VSS = 0 V, 10 uA into `ibias` and
 CL = 2 pF. It connects `out` to `inn` with unity feedback for the DC operating point, and opens the loop for the
-AC analysis. It sweeps VCM over the range.
+AC analysis. It sweeps VCM over the range. It measures `idd_a` and `iin_a` at the DC operating point: `iin_a`
+is the current of the source that drives `inp` and of the feedback path that drives `inn`.

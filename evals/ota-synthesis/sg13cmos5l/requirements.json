@@ -21,7 +21,7 @@
       "sg13_lv_pmos"
     ],
     "limits": {
-      "gate_area_um2": 60,
+      "area_um2": 1000,
       "r_ohm": 1000000,
       "c_f": 2e-12
     },
@@ -86,7 +86,8 @@
           "gain_db": "dB",
           "ugf_hz": "Hz",
           "pm_deg": "deg",
-          "idd_a": "A"
+          "idd_a": "A",
+          "iin_a": "A"
         }
       }
     }
@@ -142,6 +143,20 @@
       "unit": "A",
       "op": "<=",
       "limit": 8.5e-5,
+      "conditions": [
+        "tt",
+        "ss",
+        "ff"
+      ]
+    },
+    {
+      "id": "iin_a",
+      "description": "Input current, the larger magnitude of the DC current into inp and into inn",
+      "experiment": "sweep",
+      "measurement": "iin_a",
+      "unit": "A",
+      "op": "<=",
+      "limit": 2e-9,
       "conditions": [
         "tt",
         "ss",

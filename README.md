@@ -233,7 +233,7 @@ design check, so its design check is `not_run`.
 | `adapters/ngspice/` | ngspice adapter (Python) and its tests |
 | `technologies/` | technology packs: the PDK facts that adapters need |
 | `examples/ota-sg13g2/` | two-stage OTA for IHP SG13G2 |
-| `evals/` | demo evaluations for the inner development loop (not decision benchmarks): the OTA at 3 corners, the OTA against a PVT spec, OTA synthesis from a pin specification (`ota-synthesis`), comparator synthesis from a pin specification (`comparator-synthesis`), their scorers and an arm runner |
+| `evals/` | demo evaluations for the inner development loop (not decision benchmarks): the OTA at 3 corners, the OTA against a PVT spec, OTA synthesis from a pin specification (`ota-synthesis`), comparator synthesis from a pin specification (`comparator-synthesis`), their scorers and an arm runner. `synthesis-family.mjs` makes variants of the two synthesis tasks with tighter limits, from a hidden target design and a difficulty factor |
 | `container/` | environment image: Containerfile, build and check scripts |
 | `test/` | smoke and integration tests |
 
