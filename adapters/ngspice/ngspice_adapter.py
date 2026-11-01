@@ -45,14 +45,16 @@ Operation "lint". Inputs:
 Operation "check_design". It checks a design netlist against the design contract (the "design" section of
 requirements.json) and runs no simulation. Inputs: file (relative to the design root), subckt, pins (in order),
 elements (the allowed kinds: "mos", "r", "c"; the default is all three), devices (the allowed devices of the
-technology pack; the default is all), limits ({gate_area_um2, r_ohm, c_f}, all maxima) and technology (optional, as
-for operating_point). The technology pack gives the MOS devices, their
-terminals, their parameters and the minimum sizes (ngspice.devices). The file holds only .subckt blocks. In a block,
+technology pack; the default is all), limits ({area_um2, gate_area_um2, r_ohm, c_f}, all maxima) and technology
+(optional, as for operating_point). The technology pack gives the MOS devices, their terminals, their parameters
+and the minimum sizes (ngspice.devices), and for each PDK the area of the ideal R and C (ngspice.passives). The file holds only .subckt blocks. In a block,
 an X line instantiates a device of the pack or another block of the file, and R and C lines are ideal elements with
 a plain value. Each other line (sources, .model, .include, .param, expressions, ...) is an error. The response has
 status "completed" also when the design has errors: each error is a diagnostic with severity "error" and the file
-and line. The measurements are gate_area_um2 (W x L x m of all MOS devices, hierarchy expanded), mos_count and
-design_errors. work/design.json has the errors, the elements and the measurements.
+and line. The measurements are gate_area_um2 (W x L x m of all MOS devices, hierarchy expanded), passive_area_um2
+(the area of the R and C elements, hierarchy expanded: R x w_min^2 / R_sheet for a resistor and C / density for a
+capacitor, from the facts of $PDK in the pack), area_um2 (gate_area_um2 + passive_area_um2), mos_count and
+design_errors. work/design.json has the errors, the elements (each R and C with its area) and the measurements.
 """
 
 import hashlib
@@ -75,7 +77,7 @@ SOURCEPATH_LINE = re.compile(r"^\s*setcs\s+sourcepath\s*=\s*\((.*)\)", re.IGNORE
 OPTION_LINE = re.compile(r"^\s*\.?options?\s+(.*)$", re.IGNORECASE)
 OPTION_ASSIGN = re.compile(r"([A-Za-z_]\w*)\s*=\s*([^\s,]+)")
 ROW_LINE = re.compile(r"^\s*ROW\s+(.*)$")
-ROW_NUMBER = re.compile(r"^(" + NUMBER + r")(meg|[tgkmunpf])?$", re.IGNORECASE)
+PLAIN_NUMBER = re.compile(r"^(" + NUMBER + r")(meg|[tgkmunpf])?$", re.IGNORECASE)
 PARAM_NAME = re.compile(r"^[A-Za-z_]\w*$")
 MAX_DIAGNOSTICS = 50
 GMIN_DEFAULT = 1e-12
@@ -263,9 +265,10 @@ def add_spiceinit(closure, path):
                     closure.missing.append("{} (from {})".format(target, path))
 
 
-def row_number(text):
-    """A ROW value: a number, optionally with a SPICE scale suffix (1k), or None."""
-    m = ROW_NUMBER.match(text)
+def plain_number(text):
+    """A plain SPICE number with an optional scale suffix (4u, 0.5, 1meg), or None. No unit letters, no expressions.
+    ROW values and the sizes and values of check_design use it."""
+    m = PLAIN_NUMBER.match(text)
     if not m:
         return None
     value = float(m.group(1)) * SCALE.get((m.group(2) or "").lower(), 1)
@@ -290,7 +293,7 @@ def parse_rows(lines):
                 sweep = key
             elif key != sweep and key not in columns:
                 columns.append(key)
-            row[key] = row_number(text)
+            row[key] = plain_number(text)
         rows.append(row)
         sources.append("work/ngspice.log:{}".format(number))
     if sweep is None:
@@ -702,8 +705,7 @@ def lint(request):
 
 # Operation check_design: the design contract (the "design" section of requirements.json) and the design lint.
 DESIGN_KINDS = ("mos", "r", "c")
-DESIGN_LIMITS = ("gate_area_um2", "r_ohm", "c_f")
-PLAIN_NUMBER = re.compile(r"^(" + NUMBER + r")(meg|[tgkmunpf])?$", re.IGNORECASE)
+DESIGN_LIMITS = ("area_um2", "gate_area_um2", "r_ohm", "c_f")
 GROUND_NODES = ("0", "gnd")
 ELEMENT_KINDS = {"v": "a voltage source", "i": "a current source", "e": "a controlled source (E)",
                  "f": "a controlled source (F)", "g": "a controlled source (G)", "h": "a controlled source (H)",
@@ -711,15 +713,6 @@ ELEMENT_KINDS = {"v": "a voltage source", "i": "a current source", "e": "a contr
                  "j": "a JFET", "l": "an inductor", "k": "a coupling (K)", "s": "a switch (S)", "w": "a switch (W)",
                  "t": "a transmission line", "a": "an XSPICE code model (A)", "n": "an OSDI device (N)"}
 PASSIVES = {"r": ("an ideal resistor", "r_ohm", "Ω"), "c": ("an ideal capacitor", "c_f", "F")}
-
-
-def plain_number(text):
-    """A plain SPICE number with an optional scale suffix (4u, 0.5, 1meg), or None. No unit letters, no expressions."""
-    m = PLAIN_NUMBER.match(text)
-    if not m:
-        return None
-    value = float(m.group(1)) * SCALE.get((m.group(2) or "").lower(), 1)
-    return value if math.isfinite(value) else None
 
 
 def logical_lines(text):
@@ -834,11 +827,24 @@ def lint_device(name, nodes, params, model, device, size_unit):
     return errors, values, width * size_unit * 1e6 * length * size_unit * 1e6 * factor
 
 
-def lint_block(block, blocks, devices, allowed, elements, limits, size_unit):
-    """[(line, message)] of the lines of one block; the elements and the gate area of its devices go to the block.
+def passive_factors(pack, pdk):
+    """{"r": µm² per Ω, "c": µm² per F} from ngspice.passives.<pdk> of the pack; a kind without facts is left out."""
+    facts = ((pack["ngspice"].get("passives") or {}).get(pdk) or {}) if pdk else {}
+    out = {}
+    r, c = facts.get("r") or {}, facts.get("c") or {}
+    if r.get("sheet_ohm") and r.get("width_min_m"):
+        out["r"] = (r["width_min_m"] * 1e6) ** 2 / r["sheet_ohm"]
+    if c.get("density_f_per_m2"):
+        out["c"] = 1 / (c["density_f_per_m2"] * 1e-12)
+    return out
+
+
+def lint_block(block, blocks, devices, allowed, elements, limits, size_unit, factors):
+    """[(line, message)] of the lines of one block; the elements, the gate area of its devices and the area of its R
+    and C (None when factors has no value for the kind) go to the block.
     allowed: the device names of the design contract, or None for every device of the pack."""
     errors, names = [], set()
-    block["elements"], block["mos_count"], block["area"] = [], 0, 0.0
+    block["elements"], block["mos_count"], block["area"], block["passive"] = [], 0, 0.0, 0.0
     for number, line, t in block["lines"]:
         name, letter = t[0], t[0][0].lower()
         if any(c in line for c in "{}'\""):
@@ -868,6 +874,9 @@ def lint_block(block, blocks, devices, allowed, elements, limits, size_unit):
                 errors.append((number, "{}: {} is above the limit {} (limits.{})".format(
                     name, si(value, unit), si(limit, unit), limit_name)))
             nodes, kind, model, values = t[1:3], letter, None, {"value": value}
+            factor = factors.get(letter)
+            values["area_um2"] = None if factor is None else round(value * factor, 9)
+            block["passive"] = None if factor is None or block["passive"] is None else block["passive"] + value * factor
         elif letter == "x":
             first = next((i for i, w in enumerate(t) if "=" in w), len(t))
             positional, params = t[:first], t[first:]
@@ -920,34 +929,37 @@ def lint_block(block, blocks, devices, allowed, elements, limits, size_unit):
 
 
 def expand(blocks, top):
-    """(mos_count, gate area in µm² or None, [(line, message)]): the hierarchy of block top, expanded.
-    A block that instantiates itself, directly or through other blocks, is an error."""
+    """(mos_count, gate area in µm² or None, R and C area in µm² or None, [(line, message)]): the hierarchy of
+    block top, expanded. A block that instantiates itself, directly or through other blocks, is an error."""
     errors, memo, visiting = [], {}, []
+
+    def add(a, b):
+        return None if a is None or b is None else a + b
 
     def visit(name):
         if name in memo:
             return memo[name]
         visiting.append(name)
         block = blocks[name]
-        count, area = block["mos_count"], block["area"]
+        count, area, passive = block["mos_count"], block["area"], block["passive"]
         for number, child in block["children"]:
             if child in visiting:
                 path = visiting[visiting.index(child):] + [child]
                 errors.append((number, ".subckt {} instantiates itself ({})".format(
                     blocks[child]["name"], " -> ".join(blocks[n]["name"] for n in path))))
-                area = None
+                area = passive = None
                 continue
-            c, a = visit(child)
+            c, a, p = visit(child)
             count += c
-            area = None if area is None or a is None else area + a
+            area, passive = add(area, a), add(passive, p)
         visiting.pop()
-        memo[name] = (count, area)
+        memo[name] = (count, area, passive)
         return memo[name]
 
-    count, area = visit(top)
+    count, area, passive = visit(top)
     for name in blocks:  # blocks that the top does not use are checked for loops too
         visit(name)
-    return count, area, errors
+    return count, area, passive, errors
 
 
 def check_design(request):
@@ -977,6 +989,8 @@ def check_design(request):
         return failure(None, error)
     devices = {k.lower(): v for k, v in pack["ngspice"]["devices"].items()}
     size_unit = pack["ngspice"].get("size_unit_m", 1)
+    pdk = os.environ.get("PDK")
+    factors = passive_factors(pack, pdk)
     unknown = [d for d in allowed or [] if d.lower() not in devices]
     if unknown:
         return failure(None, "input 'devices': {} {} not a device of technology pack {}; its devices are {}".format(
@@ -986,7 +1000,7 @@ def check_design(request):
     path = os.path.join(root, name)
     files = [{"path": display_path(pack_path, root), "sha256": sha256(pack_path),
               "bytes": os.path.getsize(pack_path), "role": "technology"}]
-    errors, mos_count, area, all_elements = [], None, None, []
+    errors, mos_count, area, passive, total, all_elements = [], None, None, None, None, []
     if not os.path.isfile(path):
         errors.append((None, "design file not found: {}".format(name)))
     else:
@@ -998,7 +1012,7 @@ def check_design(request):
             if block["name"].lower() in devices:
                 errors.append((block["line"], ".subckt {} has the name of a device of technology pack {}".format(
                     block["name"], pack["name"])))
-            errors.extend(lint_block(block, blocks, devices, allowed, elements, limits, size_unit))
+            errors.extend(lint_block(block, blocks, devices, allowed, elements, limits, size_unit, factors))
             all_elements.extend(block["elements"])
         top = blocks.get(subckt.lower())
         if top is None:
@@ -1007,7 +1021,7 @@ def check_design(request):
             if [p.lower() for p in top["pins"]] != [p.lower() for p in pins]:
                 errors.append((top["line"], ".subckt {} has the pins '{}'; the design contract gives '{}', in this "
                                             "order".format(top["name"], " ".join(top["pins"]), " ".join(pins))))
-            mos_count, area, loops = expand(blocks, subckt.lower())
+            mos_count, area, passive, loops = expand(blocks, subckt.lower())
             errors.extend(loops)
             limit = limits.get("gate_area_um2")
             if area is not None:
@@ -1015,6 +1029,20 @@ def check_design(request):
                 if limit is not None and area > limit * (1 + 1e-9):
                     errors.append((top["line"], "the gate area (W x L x m of all MOS devices) is {:g} µm², above the "
                                                 "limit {:g} µm² (limits.gate_area_um2)".format(area, limit)))
+            if passive is not None:
+                passive = round(passive, 9)
+            if area is not None and passive is not None:
+                total = round(area + passive, 9)
+            limit = limits.get("area_um2")
+            if limit is not None and total is not None and total > limit * (1 + 1e-9):
+                errors.append((top["line"], "the area (the MOS gates plus the R and C) is {:g} µm² (gate area {:g} µm², "
+                                            "R and C {:g} µm²), above the limit {:g} µm² (limits.area_um2)".format(
+                                                total, area, passive, limit)))
+            elif limit is not None and passive is None and not loops:
+                kinds = [k for k in ("r", "c") if k not in factors and any(e["kind"] == k for e in all_elements)]
+                errors.append((top["line"], "the area of {} is not known: technology pack {} has no ngspice.passives "
+                                            "facts for them for PDK '{}' (limits.area_um2)".format(
+                                                " and ".join({"r": "R", "c": "C"}[k] for k in kinds), pack["name"], pdk)))
     errors.sort(key=lambda e: e[0] or 0)
     diagnostics = [{"severity": "error", "message": m, "source": "{}:{}".format(name, n) if n else name}
                    for n, m in errors]
@@ -1022,6 +1050,10 @@ def check_design(request):
     measurements = {
         "gate_area_um2": {"value": area, "unit": "um2", "status": "measured" if area is not None else "failed",
                           "source": source},
+        "passive_area_um2": {"value": passive, "unit": "um2", "status": "measured" if passive is not None else "failed",
+                             "source": source},
+        "area_um2": {"value": total, "unit": "um2", "status": "measured" if total is not None else "failed",
+                     "source": source},
         "mos_count": {"value": mos_count, "unit": None, "status": "measured" if mos_count is not None else "failed",
                       "source": source},
         "design_errors": {"value": len(errors), "unit": None, "status": "measured", "source": source},

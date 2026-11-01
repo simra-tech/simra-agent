@@ -61,7 +61,7 @@ class SweepTest(unittest.TestCase):
         self.assertEqual(adapter.parse_rows(read_log()), (None, []))
 
     def test_row_values(self):
-        self.assertEqual([adapter.row_number(t) for t in ("1k", "2.5e-3", "1meg", "", "nan", "$&x", "1e999", "4kx")],
+        self.assertEqual([adapter.plain_number(t) for t in ("1k", "2.5e-3", "1meg", "", "nan", "$&x", "1e999", "4kx")],
                          [1e3, 2.5e-3, 1e6, None, None, None, None, None])
 
     def test_min_and_max_with_the_sweep_point(self):
@@ -619,6 +619,77 @@ class CheckDesignTest(unittest.TestCase):
         r = self.check(self.ota(), technology=None)
         self.assertEqual(r["status"], "failed")
         self.assertIn("no technology pack for PDK 'None'", r["diagnostics"][0]["message"])
+
+    def test_passive_area_from_the_pack(self):
+        # Rz 5k and Cc 1p count with the facts of $PDK in ngspice.passives: R x w_min^2 / R_sheet and C / density.
+        cases = [("ihp-sg13cmos5l", self.IHP, 30.0, 5e3 * 0.5 ** 2 / 1360 + 1e-12 / 1.287e-15),
+                 ("ihp-sg13g2", self.IHP, 30.0, 5e3 * 0.5 ** 2 / 1360 + 1e-12 / 1.5e-15),
+                 ("sky130A", self.SKY130, 42.0, 5e3 * 0.35 ** 2 / 2000 + 1e-12 / 2e-15)]
+        for pdk, path, gate, passive in cases:
+            with self.subTest(pdk=pdk):
+                os.environ["PDK"] = pdk
+                r = self.check(self.ota(path), technology=None, limits={"area_um2": 1000})
+                self.assertEqual(self.errors(r), [])
+                m = {k: v["value"] for k, v in r["measurements"].items()}
+                self.assertEqual(m["gate_area_um2"], gate)
+                self.assertAlmostEqual(m["passive_area_um2"], passive, places=6)
+                self.assertAlmostEqual(m["area_um2"], gate + passive, places=6)
+                with open(os.path.join(self.work, "design.json")) as f:
+                    elements = {e["name"]: e for e in json.load(f)["elements"]}
+                self.assertAlmostEqual(elements["Rz"]["params"]["area_um2"] + elements["Cc"]["params"]["area_um2"],
+                                       passive, places=6)
+        self.assertEqual([round(p, 3) for *_, p in cases], [777.92, 667.586, 500.306])
+
+    def test_passive_area_counts_each_instance(self):
+        # R1 10k in block top: 10e3 x 0.35^2 / 2000 = 0.6125 um2.
+        os.environ["PDK"] = "sky130A"
+        with open(os.path.join(FIXTURES, "design", "hier.spice")) as f:
+            r = self.check(f.read(), None, subckt="top", pins=["in", "out", "vdd", "vss"], elements=["mos", "r"])
+        self.assertEqual(self.errors(r), [])
+        self.assertEqual([r["measurements"][k]["value"] for k in ("gate_area_um2", "passive_area_um2", "area_um2")],
+                         [12.0, 0.6125, 12.6125])
+
+    def test_area_limit_counts_a_resistor_chain(self):
+        # Eight 1 MOhm resistors in series on an input pass each element limit; their area does not pass.
+        chain = "\n".join("Rch{} c{} c{} 1meg".format(i, i, i + 1) for i in range(8)).replace("c0 ", "inp ", 1)
+        text = self.ota(old="Rz y z 5k", new="Rz y z 5k\n" + chain.replace("c8 1meg", "vss 1meg"))
+        os.environ["PDK"] = "ihp-sg13cmos5l"
+        r = self.check(text, technology=None, limits={"area_um2": 1000, "gate_area_um2": 60, "r_ohm": 1e6})
+        errors = self.errors(r)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertEqual(errors[0][0], "d.spice:5")
+        area = r["measurements"]["area_um2"]["value"]
+        self.assertAlmostEqual(area, 30 + 8.005e6 * 0.5 ** 2 / 1360 + 1e-12 / 1.287e-15, places=6)
+        self.assertEqual(errors[0][1], "the area (the MOS gates plus the R and C) is {:g} µm² (gate area 30 µm², R and C "
+                                       "{:g} µm²), above the limit 1000 µm² (limits.area_um2)".format(
+                                           area, r["measurements"]["passive_area_um2"]["value"]))
+
+    def test_passive_area_without_pack_facts(self):
+        # sky130B has no ngspice.passives facts: the area of R and C is not known. Without R and C it is 0.
+        os.environ["PDK"] = "sky130B"
+        r = self.check(self.ota(self.SKY130), technology=None, limits={"gate_area_um2": 80})
+        self.assertEqual(self.errors(r), [])
+        self.assertEqual([r["measurements"][k]["status"] for k in ("gate_area_um2", "passive_area_um2", "area_um2")],
+                         ["measured", "failed", "failed"])
+        r = self.check(self.ota(self.SKY130), technology=None, limits={"area_um2": 1000})
+        self.assertEqual(self.errors(r), [("d.spice:6", "the area of R and C is not known: technology pack sky130 has "
+                                                        "no ngspice.passives facts for them for PDK 'sky130B' (limits.area_um2)")])
+        text = self.ota(self.SKY130, old="Rz y z 5k", new="* no Rz").replace("Cc z out 1p", "* no Cc")
+        r = self.check(text, technology=None, limits={"area_um2": 1000})
+        self.assertEqual([d["message"] for d in r["diagnostics"] if "area" in d["message"]], [])
+        self.assertEqual([r["measurements"][k]["value"] for k in ("passive_area_um2", "area_um2")], [0.0, 42.0])
+
+    def test_pack_passives(self):
+        # Each PDK of ngspice.passives is a PDK of the pack; each value is positive and has a source.
+        for name in ("ihp-sg13", "sky130"):
+            pack = adapter.find_technology(name, None, "devices")[1]
+            for pdk, facts in pack["ngspice"]["passives"].items():
+                with self.subTest(pdk=pdk):
+                    self.assertIn(pdk, pack["pdks"])
+                    self.assertTrue(facts["r"]["sheet_ohm"] > 0 and facts["r"]["width_min_m"] > 0)
+                    self.assertTrue(facts["c"]["density_f_per_m2"] > 0)
+                    self.assertTrue(facts["r"]["source"] and facts["c"]["source"])
+                    self.assertTrue(facts["r"]["device"] and facts["c"]["device"])
 
     def test_pack_devices(self):
         # Every device of both packs has its terminals, a source, and a source for each minimum.

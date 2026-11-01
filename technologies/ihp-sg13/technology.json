@@ -10,6 +10,34 @@
     },
     "size_unit_m": 1,
     "size_unit_source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_mod.lib (the subcircuit defaults are w=0.35u l=0.34u; the model files set no .option scale)",
+    "passives": {
+      "ihp-sg13g2": {
+        "r": {
+          "device": "rhigh",
+          "sheet_ohm": 1360,
+          "width_min_m": 5e-07,
+          "source": "ihp-sg13g2/libs.doc/doc/SG13G2_os_process_spec.pdf (2.9 Rhigh: sheet resistance 1360 ohm/sq target); ihp-sg13g2/libs.tech/ngspice/models/cornerRES.lib (rsh_rhigh = 1360); ihp-sg13g2/libs.doc/doc/SG13G2_os_layout_rules.pdf (6.4 Rhi.a: min. GatPoly width 0.50 um)"
+        },
+        "c": {
+          "device": "cap_cmim",
+          "density_f_per_m2": 0.0015,
+          "source": "ihp-sg13g2/libs.doc/doc/SG13G2_os_process_spec.pdf (2.12 MIM capacitor: 1.5 fF/um2 target); ihp-sg13g2/libs.tech/ngspice/models/cornerCAP.lib (cap_carea = 1.5E-15)"
+        }
+      },
+      "ihp-sg13cmos5l": {
+        "r": {
+          "device": "rhigh",
+          "sheet_ohm": 1360,
+          "width_min_m": 5e-07,
+          "source": "ihp-sg13cmos5l/libs.doc/doc/SG13CMOS5L_os_process_spec.pdf (2.2.3 Rhigh: sheet resistance 1360 ohm/sq target); ihp-sg13cmos5l/libs.tech/ngspice/models/cornerRES.lib (rsh_rhigh = 1360); ihp-sg13cmos5l/libs.doc/doc/SG13CMOS5L_os_layout_rules.pdf (6.3 Rhi.a: min. GatPoly width 0.50 um)"
+        },
+        "c": {
+          "device": "cap_cmomf",
+          "density_f_per_m2": 0.001287,
+          "source": "ihp-sg13cmos5l/libs.tech/klayout/tech/drc/docs/precheck_rules.md (CMOS5L.FORB.MIM: the MIM layer is prohibited, so the densest capacitor is a MOM capacitor); ihp-sg13cmos5l/libs.tech/ngspice/models/cap_cmomf.lib (areacap = 0.372 + (mmax - mmin) x 0.305 fF/um2; Metal1 to Metal4: 1.287 fF/um2; a simulation-derived estimate, not silicon data)"
+        }
+      }
+    },
     "devices": {
       "sg13_lv_nmos": {
         "kind": "nmos",

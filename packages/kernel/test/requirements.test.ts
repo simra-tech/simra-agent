@@ -245,7 +245,7 @@ test("an aborted check starts no new experiment", async (t) => {
 const passing = {
 	...amplifier,
 	conditions: { ...amplifier.conditions, ss: { inputs: { values: { gain_db: 60, ugf_hz: 8e6 } } } },
-	design: { file: "amp.spice", subckt: "amp", pins: ["inp", "out", "vdd", "vss"], elements: ["mos", "c"], devices: ["nch", "pch"], limits: { gate_area_um2: 40 }, adapter: "fake" },
+	design: { file: "amp.spice", subckt: "amp", pins: ["inp", "out", "vdd", "vss"], elements: ["mos", "c"], devices: ["nch", "pch"], limits: { area_um2: 40, gate_area_um2: 40 }, adapter: "fake" },
 };
 
 test("the design section is validated with the file", () => {
@@ -260,7 +260,7 @@ test("the design section is validated with the file", () => {
 		"design: a pin is given more than once",
 		'design: element kind "l" is not one of mos, r, c',
 		"design: limit gate_area_um2 is not a positive number",
-		"design: limit area is not one of gate_area_um2, r_ohm, c_f",
+		"design: limit area is not one of area_um2, gate_area_um2, r_ohm, c_f",
 	]);
 	assert.deepEqual(validateRequirements({ ...passing, design: { subckt: "amp" } } as unknown as RequirementsFile), [
 		"design: file is required (the design netlist, relative to the design root)",
@@ -277,21 +277,21 @@ test("the design section is validated with the file", () => {
 
 test("the design check runs with the rows; a pass needs a design pass", async (t) => {
 	const root = designRoot(t, passing);
-	writeFileSync(join(root, "amp.spice"), "x1\nx2\nx3\n");
+	writeFileSync(join(root, "amp.spice"), "x1\nx2\nx3\nc1\n");
 	const { id, verdict } = await runCheck({ root });
 	assert.equal(verdict.status, "pass");
 	const d = verdict.design_check;
 	assert.deepEqual({ ...d, experiment: null }, {
-		file: "amp.spice", status: "pass", experiment: null, errors: [], measurements: { gate_area_um2: 7.5, mos_count: 3 }, reason: null,
+		file: "amp.spice", status: "pass", experiment: null, errors: [], measurements: { area_um2: 17.5, gate_area_um2: 7.5, passive_area_um2: 10, mos_count: 3 }, reason: null,
 	});
 	// The design experiment has the contract as inputs, without the run settings; it is not a row experiment.
 	const source = loadExperiment(root, d?.experiment as string);
 	assert.equal(source.experiment.operation, "check_design");
-	assert.deepEqual(source.experiment.inputs, { file: "amp.spice", subckt: "amp", pins: ["inp", "out", "vdd", "vss"], elements: ["mos", "c"], devices: ["nch", "pch"], limits: { gate_area_um2: 40 } });
+	assert.deepEqual(source.experiment.inputs, { file: "amp.spice", subckt: "amp", pins: ["inp", "out", "vdd", "vss"], elements: ["mos", "c"], devices: ["nch", "pch"], limits: { area_um2: 40, gate_area_um2: 40 } });
 	assert.equal(source.experiment.purpose, `check ${id}: design check`);
 	assert.equal(verdict.experiments.length, 2);
 	assert.equal(listExperiments(root).length, 3);
-	assert.match(formatVerdict(root, verdict), new RegExp(`\n {2}DESIGN PASS {2}amp\\.spice: 3 MOS, gate area 7\\.5 um2 \\[${d?.experiment}\\]`));
+	assert.match(formatVerdict(root, verdict), new RegExp(`\n {2}DESIGN PASS {2}amp\\.spice: 3 MOS, area 17\\.5 um2, gate area 7\\.5 um2, R and C area 10 um2 \\[${d?.experiment}\\]`));
 });
 
 test("a design error fails the check, also when every row passes", async (t) => {
@@ -304,7 +304,7 @@ test("a design error fails the check, also when every row passes", async (t) => 
 	assert.deepEqual(verdict.design_check?.errors, [{ message: "V1: a voltage source is not allowed", source: "amp.spice:2" }]);
 	const text = formatVerdict(root, verdict);
 	assert.match(text, /^check \S+: FAIL \(4 pass, 0 fail/);
-	assert.match(text, /\n {2}DESIGN FAIL {2}amp\.spice: 1 MOS, gate area 2\.5 um2 \[\S+\]\n {4}error \(amp\.spice:2\): V1: a voltage source is not allowed/);
+	assert.match(text, /\n {2}DESIGN FAIL {2}amp\.spice: 1 MOS, area 2\.5 um2, gate area 2\.5 um2, R and C area 0 um2 \[\S+\]\n {4}error \(amp\.spice:2\): V1: a voltage source is not allowed/);
 });
 
 test("a design check that does not complete or is not selected is not run, never a pass", async (t) => {

@@ -53,7 +53,12 @@ export function formatVerdict(root: string, verdict: VerdictRecord): string {
 	const d = verdict.design_check;
 	if (d) {
 		const m = d.measurements;
-		const facts = [m.mos_count === undefined ? null : `${m.mos_count} MOS`, m.gate_area_um2 === undefined ? null : `gate area ${num(m.gate_area_um2)} um2`].filter((x) => x !== null);
+		const facts = [
+			m.mos_count === undefined ? null : `${m.mos_count} MOS`,
+			m.area_um2 === undefined ? null : `area ${num(m.area_um2)} um2`,
+			m.gate_area_um2 === undefined ? null : `gate area ${num(m.gate_area_um2)} um2`,
+			m.passive_area_um2 === undefined ? null : `R and C area ${num(m.passive_area_um2)} um2`,
+		].filter((x) => x !== null);
 		const source = d.experiment ? ` [${d.experiment}]` : "";
 		const reason = d.reason ? ` (${d.reason})` : "";
 		lines.push(`  ${`DESIGN ${d.status.toUpperCase()}`.padEnd(12)} ${d.file}${facts.length ? `: ${facts.join(", ")}` : ""}${source}${reason}`);

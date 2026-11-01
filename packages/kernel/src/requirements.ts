@@ -62,8 +62,11 @@ export interface ExperimentTemplate {
 }
 
 export const DESIGN_ELEMENTS = ["mos", "r", "c"] as const;
-/** Maxima: gate_area_um2 is the sum of W x L x m over all MOS devices; r_ohm and c_f apply to each element. */
-export const DESIGN_LIMITS = ["gate_area_um2", "r_ohm", "c_f"] as const;
+/**
+ * Maxima: area_um2 is gate_area_um2 plus the area of the R and C (the adapter takes it from the technology pack);
+ * gate_area_um2 is the sum of W x L x m over all MOS devices; r_ohm and c_f apply to each element.
+ */
+export const DESIGN_LIMITS = ["area_um2", "gate_area_um2", "r_ohm", "c_f"] as const;
 /** The adapter and operation that check the design contract when the design section does not name an adapter. */
 export const DESIGN_ADAPTER = "ngspice";
 export const DESIGN_OPERATION = "check_design";
@@ -129,7 +132,7 @@ export interface DesignCheck {
 	experiment: string | null;
 	/** The error diagnostics of the experiment, with file and line. */
 	errors: { message: string; source: string | null }[];
-	measurements: { gate_area_um2?: number; mos_count?: number };
+	measurements: { area_um2?: number; gate_area_um2?: number; passive_area_um2?: number; mos_count?: number };
 	reason: string | null;
 }
 
@@ -355,7 +358,7 @@ export function evaluateDesign(d: DesignContract, run: { id: string; result: Res
 		return { ...check, reason: `experiment ${run.id} ended with status ${run.result.status}${first ? `: ${first}` : ""}` };
 	}
 	const measurements: DesignCheck["measurements"] = {};
-	for (const name of ["gate_area_um2", "mos_count"] as const) {
+	for (const name of ["area_um2", "gate_area_um2", "passive_area_um2", "mos_count"] as const) {
 		const m = run.result.measurements[name];
 		if (m?.status === "measured" && isNumber(m.value)) measurements[name] = m.value;
 	}

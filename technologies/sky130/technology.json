@@ -10,6 +10,21 @@
     },
     "size_unit_m": 1e-06,
     "size_unit_source": "sky130A/libs.tech/ngspice/all.spice (.option scale=1.0u)",
+    "passives": {
+      "sky130A": {
+        "r": {
+          "device": "sky130_fd_pr__res_xhigh_po",
+          "sheet_ohm": 2000,
+          "width_min_m": 3.5e-07,
+          "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__res_xhigh_po__base.model.spice (rsheet = 2000.0); sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__res_xhigh_po_0p35.model.spice (the narrowest width, w = 0.35 um)"
+        },
+        "c": {
+          "device": "sky130_fd_pr__cap_mim_m3_1",
+          "density_f_per_m2": 0.002,
+          "source": "sky130A/libs.tech/ngspice/r+c/res_typical__cap_typical__lin.spice (camimc = 2.00e-15 F/um2); sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__cap_mim_m3_1.model.spice (carea = camimc x w x l)"
+        }
+      }
+    },
     "devices": {
       "sky130_fd_pr__nfet_01v8": {
         "kind": "nmos",

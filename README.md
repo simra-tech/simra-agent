@@ -192,7 +192,7 @@ examines the netlist. It does not simulate it. Example:
 "design": {
   "file": "ota.spice", "subckt": "ota", "pins": ["inp", "inn", "out", "vdd", "vss", "ibias"],
   "elements": ["mos", "r", "c"], "devices": ["sg13_lv_nmos", "sg13_lv_pmos"],
-  "limits": { "gate_area_um2": 60, "c_f": 2e-12 }, "technology": "ihp-sg13"
+  "limits": { "area_um2": 1000, "c_f": 2e-12 }, "technology": "ihp-sg13"
 }
 ```
 
@@ -201,7 +201,9 @@ examines the netlist. It does not simulate it. Example:
 - `devices` gives the devices of the technology pack that the design can instantiate. Without `devices`, the
   design can instantiate every device of the pack. A name that the pack does not have makes the design check `not_run`.
 - `limits` gives maximum values. `gate_area_um2` is the sum of W × L × m over all MOS devices, with each
-  subcircuit instance counted. `r_ohm` and `c_f` apply to each resistor and each capacitor.
+  subcircuit instance counted. `area_um2` is the gate area plus the area of the R and C. A resistor counts as
+  R × w_min² / R_sheet and a capacitor as C / density, with the facts of the technology pack for `$PDK`
+  (`ngspice.passives`). `r_ohm` and `c_f` apply to each resistor and each capacitor.
 - `technology` is the name of a technology pack. The default is the pack for `$PDK`. `environment` and
   `adapter` have the same defaults as an experiment (`local` and `ngspice`).
 
@@ -217,8 +219,8 @@ The rules of the design file:
    expressions in `{}`. A block that instantiates itself is also an error.
 
 The check runs the experiment `check_design` of the ngspice adapter before the other experiments. The verdict
-has the result in `design_check`: `pass`, `fail` or `not_run`, the errors with file and line, the MOS count and
-the gate area. The summary shows one `DESIGN` line and one line for each error. The status is `pass` only
+has the result in `design_check`: `pass`, `fail` or `not_run`, the errors with file and line, the MOS count, the area,
+the gate area and the area of the R and C. The summary shows one `DESIGN` line and one line for each error. The status is `pass` only
 when every row passes and the design check passes. A check with `--only` or `--conditions` does not run the
 design check, so its design check is `not_run`.
 

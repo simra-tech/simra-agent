@@ -26,8 +26,11 @@ if (request.operation === "check_design") {
 		? lines.flatMap((l, i) => (l.startsWith("error ") ? [{ severity: "error", message: l.slice(6), source: `${request.inputs.file}:${i + 1}` }] : []))
 		: [{ severity: "error", message: `design file not found: ${request.inputs.file}`, source: request.inputs.file }];
 	const mos = (lines ?? []).filter((l) => l.startsWith("x")).length;
+	const passive = (lines ?? []).filter((l) => l.startsWith("c")).length * 10;
 	const measurements = {
+		area_um2: { value: mos * 2.5 + passive, unit: "um2", status: "measured" },
 		gate_area_um2: { value: mos * 2.5, unit: "um2", status: "measured" },
+		passive_area_um2: { value: passive, unit: "um2", status: "measured" },
 		mos_count: { value: mos, unit: null, status: "measured" },
 	};
 	if (lines?.includes("failed")) respond({ ...ok, status: "failed", measurements: {}, diagnostics: [{ severity: "error", message: "fake design failure", source: "adapter" }] });
