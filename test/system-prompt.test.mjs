@@ -2,7 +2,8 @@
 // It needs no API key and no network.
 //
 // 1. The prompt starts with the chip-design preamble. It lists each tool once, keeps the rules of the tools (with the
-//    rule to run DRC and LVS through run_experiment), and has no pi documentation section.
+//    rule to run DRC and LVS through run_experiment, and the check_requirements rule only for a design with a
+//    requirements.json), and has no pi documentation section.
 // 2. A prompt that the user gives (--system-prompt) stays as it is.
 
 import assert from "node:assert/strict";
@@ -68,7 +69,9 @@ test("pi sends the chip-design preamble, the tools and their rules, and no pi do
 	assert.match(prompt, /<tools>\n[^]*- run_experiment: run and record one simulation[^]*\n<\/tools>/);
 	assert.match(prompt, /- check_requirements: run the experiments in requirements\.json/);
 	assert.doesNotMatch(prompt, /run_experiment: run_experiment|check_requirements: check_requirements/);
-	assert.match(prompt, /<rules>\n[^]*- Run simulations with run_experiment[^]*- Before you say that the design meets[^]*<\/rules>/);
+	assert.match(prompt, /<rules>\n[^]*- Run simulations with run_experiment[^]*- When the design has a requirements\.json, run check_requirements without a selection before you say that the design meets its requirements, and give its check id\.\n[^]*<\/rules>/);
+	assert.doesNotMatch(prompt, /- Before you say that the design meets/);
+	assert.match(prompt, /<rules>\n[^]*- Use the requirements and conditions parameters to check one row quickly[^]*- Report rows that are not measured or not run as such\.[^]*<\/rules>/);
 	assert.match(prompt, /<rules>\n[^]*- Run DRC and LVS with run_experiment \(adapter klayout, operations drc and lvs\), not with a DRC or LVS shell script\.[^]*<\/rules>/);
 });
 

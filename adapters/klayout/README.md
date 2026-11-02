@@ -35,7 +35,7 @@ the input `technology`), and the facts of `klayout.<$PDK>`.
 | `cell` | the top cell |
 | `rule_set` | optional: a rule set of the pack (IHP SG13G2: `full`, `main`; SKY130: `main`, `feol`, `beol`). The default is the set with `default: true` (IHP SG13G2: `full`; SKY130: `main`) |
 | `technology` | optional: the name of the pack. The default is the pack of `$PDK` |
-| `max_examples` | optional: the number of marker boxes in each diagnostic (default 3) |
+| `max_examples` | optional: the number of marker boxes in each diagnostic (default 8) |
 
 The adapter runs the deck in `work/drc/`. It reads the marker database (`.lyrdb`) and reconciles the result with
 the exit code of the deck:
@@ -55,9 +55,20 @@ A deck that printed a summary but did not write a complete report is not run.
 | `rules_violated` | the count of rules with markers |
 | `runtime_s` | the runtime of the deck |
 
-Each violated rule gives one error diagnostic, largest count first: the rule name, the count, the description of
-the deck, the cells of the markers and up to `max_examples` marker boxes in µm, in the coordinates of the cell.
-`work/drc.json` has the full table, with all boxes. The outputs have the marker database and the deck log.
+Each violated rule gives one error diagnostic, largest count first. It has the rule name, the count, the
+description of the deck and the marker boxes in µm, in the coordinates of the cell, grouped by cell:
+
+1. A rule with `max_examples` markers or fewer gives all its boxes, for example
+   `X.1: 4 markers. Boxes (µm, cell coordinates): unit: (0,0;1,1) (0.5,0;1.5,1)  idac: (2,2;3,3) (4,4;5,5)`.
+2. A rule with more markers gives the marker count of each cell, the first `max_examples` boxes and the number of
+   the other boxes. With `max_examples` 3, the same rule gives
+   `X.1: 4 markers. Cells: unit (2), idac (2). Boxes (µm, cell coordinates): unit: (0,0;1,1) (0.5,0;1.5,1)  idac: (2,2;3,3) ... 1 more in work/drc.json`.
+
+After the rules, one warning diagnostic gives the paths of the full table and of the marker database, relative to
+the design root, as the summary shows them: `Full table: simra/experiments/<id>/work/drc.json (all markers of each
+rule, by cell). Marker database: simra/experiments/<id>/work/drc/<cell>.lyrdb`. A run without markers does not give
+this line. `work/drc.json` has each rule with its description, its count, the count of each cell and all boxes,
+each with its cell. The outputs have the marker database, the deck log and `work/drc.json`.
 
 ## Operation `lvs`
 
@@ -103,15 +114,17 @@ The outputs have the extracted netlist, the LVS database, the deck log and `work
 ## Size of the summary
 
 The tool result of `run_experiment` (and the output of `simra run`) is the summary of the experiment. On the
-seeded block of `evals/layout-block-fix/` (DRC, default rule set, `max_examples` 3), the sizes are:
+seeded block of `evals/layout-block-fix/` (DRC, default rule set, default `max_examples` 8), the sizes are:
 
 | PDK | Summary of `klayout drc` | Output of `drc.sh` |
 | --- | --- | --- |
-| IHP SG13G2 | 3427 bytes (38 markers, 11 rules) | 222 bytes |
-| SKY130 | 2654 bytes (33 markers, 10 rules) | 194 bytes |
+| IHP SG13G2 | 4312 bytes (38 markers, 11 rules) | 222 bytes |
+| SKY130 | 3024 bytes (33 markers, 10 rules) | 194 bytes |
 
-The output of `drc.sh` gives only the count of each rule. The summary also gives the description of each rule, the
-cells and up to three marker boxes, and the record of the run.
+The output of `drc.sh` gives only the count of each rule. The summary also gives the description of each rule, all
+the marker boxes (no rule of this block has more than 8 markers), the outputs with their sizes, the paths of the full
+table and the marker database, and the record of the run. The earlier summary (3 boxes for each rule, no outputs)
+had 3427 bytes (IHP SG13G2) and 2654 bytes (SKY130).
 
 ## Tests
 

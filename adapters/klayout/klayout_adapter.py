@@ -14,7 +14,7 @@ Operation "drc". Inputs:
   cell          the top cell
   rule_set      optional; a rule set of klayout.<pdk>.drc.rule_sets (default: the set with "default": true)
   technology    optional; the name of a technology pack (default: the pack whose "pdks" has $PDK)
-  max_examples  optional; the number of marker boxes in each diagnostic (default 3)
+  max_examples  optional; the number of marker boxes in each diagnostic (default 8)
 Measurements: markers, rules_violated, runtime_s. The counts are measured only when the deck wrote a complete
 marker database and its exit code agrees with the marker count. Else they are failed and the response is failed,
 with one error diagnostic that starts with "not run". work/drc.json has the full table of the rules.
@@ -325,18 +325,30 @@ def fmt(x):
 
 
 def rule_message(r, max_examples):
-    cells = ", ".join("{} ({})".format(c, n) for c, n in r["cells"].items())
+    """One line for a violated rule: the count, the description and the first max_examples marker boxes, grouped by
+    cell. When the boxes do not show every marker, the line also gives the marker count of each cell."""
     text = "{}: {} marker{}".format(r["rule"], r["count"], "" if r["count"] == 1 else "s")
     if r["description"] and r["description"] != r["rule"]:
         text += ". {}".format(r["description"].rstrip(". "))
-    text += ". Cells: {}".format(cells)
     examples = r["boxes"][:max_examples]
+    if len(examples) < r["count"]:
+        text += ". Cells: {}".format(", ".join("{} ({})".format(c, n) for c, n in r["cells"].items()))
     if examples:
-        text += ". Boxes (µm, cell coordinates): " + "; ".join(
-            "{} ({},{};{},{})".format(b["cell"], *[fmt(v) for v in b["box"]]) for b in examples)
-        if len(r["boxes"]) > len(examples):
-            text += "; {} more".format(len(r["boxes"]) - len(examples))
+        groups = {}
+        for b in examples:
+            groups.setdefault(b["cell"], []).append("({},{};{},{})".format(*[fmt(v) for v in b["box"]]))
+        text += ". Boxes (µm, cell coordinates): " + "  ".join(
+            "{}: {}".format(c, " ".join(boxes)) for c, boxes in groups.items())
+    more = len(r["boxes"]) - len(examples)
+    if more:
+        text += " ... {} more in work/drc.json".format(more) if examples else ". Boxes: {} in work/drc.json".format(more)
     return text
+
+
+def table_message(table_path, report_path, root):
+    """The last DRC diagnostic: where the full table and the marker database are, as the summary shows the paths."""
+    return "Full table: {} (all markers of each rule, by cell). Marker database: {}".format(
+        display_path(table_path, root), display_path(report_path, root))
 
 
 def drc_verdict(code, report_path, log_text, rule_set):
@@ -375,7 +387,7 @@ def drc(request):
     if name not in sets:
         return failure(ctx["tool"], "rule set '{}' is not in the technology pack; known sets: {}".format(name, ", ".join(sets)))
     rule_set = sets[name]
-    max_examples = inputs.get("max_examples", 3)
+    max_examples = inputs.get("max_examples", 8)
     if not isinstance(max_examples, int) or isinstance(max_examples, bool) or max_examples < 0:
         return failure(ctx["tool"], "input 'max_examples' must be an integer of 0 or more")
     gds = ctx["files"]["gds"]
@@ -412,7 +424,11 @@ def drc(request):
                                     "runtime_s": measured(runtime, "s", rel(ctx, log_path))}
         for r in table:
             response["diagnostics"].append({"severity": "error", "source": report_src, "message": rule_message(r, max_examples)})
-        write_json(os.path.join(ctx["work_dir"], "drc.json"), {
+        table_path = os.path.join(ctx["work_dir"], "drc.json")
+        if table:
+            response["diagnostics"].append({"severity": "warning", "source": "adapter",
+                                            "message": table_message(table_path, values["report"], ctx["root"])})
+        write_json(table_path, {
             "rule_set": name, "report": report_src, "exit_code": code, "markers": sum(r["count"] for r in table),
             "rules": [{"rule": r["rule"], "description": r["description"], "count": r["count"], "cells": r["cells"],
                        "boxes": r["boxes"]} for r in table]})

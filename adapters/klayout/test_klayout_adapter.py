@@ -87,14 +87,35 @@ class MarkerDatabase(unittest.TestCase):
         self.assertEqual(ka.value_box("polygon: (1,2;3,2;3,4;1,4)"), [1, 2, 3, 4])
         self.assertIsNone(ka.value_box("text: 'abc'"))
 
-    def test_rule_message(self):
+    def test_rule_message_at_the_limit(self):
+        # M3.d has 8 markers, all in idac: with the default limit 8 the line gives all boxes and no cell counts.
         table, _ = ka.parse_lyrdb(fixture("drc-sg13g2-seeded.lyrdb"))
-        message = ka.rule_message(table[0], 2)
-        self.assertTrue(message.startswith("M3.d: 8 markers. "))
-        self.assertIn("Cells: idac (8)", message)
-        self.assertEqual(message.count("idac ("), 3)  # the cell list and two boxes
-        self.assertTrue(message.endswith("; 6 more"))
-        self.assertNotIn("Boxes", ka.rule_message(table[0], 0))
+        message = ka.rule_message(table[0], 8)
+        self.assertTrue(message.startswith("M3.d: 8 markers. Min. Metal3 area"), message)
+        self.assertIn(". Boxes (µm, cell coordinates): idac: (-10.185,-7.035;-9.815,-6.665) (-9.185,", message)
+        self.assertEqual(len(re.findall(r"\([-\d.]+,[-\d.]+;[-\d.]+,[-\d.]+\)", message)), 8)
+        self.assertEqual(message.count("idac"), 1)
+        self.assertNotIn("Cells", message)
+        self.assertNotIn("more", message)
+        self.assertNotIn("drc.json", message)
+
+    def test_rule_message_above_the_limit(self):
+        table, _ = ka.parse_lyrdb(fixture("drc-sg13g2-seeded.lyrdb"))
+        message = ka.rule_message(table[0], 3)
+        self.assertIn(". Cells: idac (8). Boxes (µm, cell coordinates): idac: (", message)
+        self.assertEqual(len(re.findall(r"\([-\d.]+,[-\d.]+;[-\d.]+,[-\d.]+\)", message)), 3)
+        self.assertTrue(message.endswith(" ... 5 more in work/drc.json"), message)
+        self.assertTrue(ka.rule_message(table[0], 0).endswith(". Cells: idac (8). Boxes: 8 in work/drc.json"))
+
+    def test_rule_message_groups_boxes_by_cell(self):
+        rule = {"rule": "X.1", "description": "X.1", "count": 4, "cells": {"unit": 2, "idac": 2},
+                "boxes": [{"cell": "unit", "box": [0, 0, 1, 1]}, {"cell": "idac", "box": [2, 2, 3, 3]},
+                          {"cell": "unit", "box": [0.5, 0, 1.5, 1]}, {"cell": "idac", "box": [4, 4, 5, 5]}]}
+        self.assertEqual(ka.rule_message(rule, 8),
+                         "X.1: 4 markers. Boxes (µm, cell coordinates): unit: (0,0;1,1) (0.5,0;1.5,1)  idac: (2,2;3,3) (4,4;5,5)")
+        self.assertEqual(ka.rule_message(rule, 3),
+                         "X.1: 4 markers. Cells: unit (2), idac (2). Boxes (µm, cell coordinates): unit: (0,0;1,1) (0.5,0;1.5,1)"
+                         "  idac: (2,2;3,3) ... 1 more in work/drc.json")
 
 
 class DrcVerdict(unittest.TestCase):
@@ -332,6 +353,10 @@ class EndToEnd(unittest.TestCase):
         errors = [d for d in r["diagnostics"] if d["severity"] == "error"]
         self.assertEqual(len(errors), 10)
         self.assertTrue(errors[0]["message"].startswith("m3.6: 8 markers. m3.6 : min. m3 area"))
+        self.assertTrue(errors[0]["message"].endswith(" ... 7 more in work/drc.json"), errors[0]["message"])
+        self.assertEqual(r["diagnostics"][-1], {"severity": "warning", "source": "adapter", "message": (
+            "Full table: simra/experiments/e1/work/drc.json (all markers of each rule, by cell). "
+            "Marker database: simra/experiments/e1/work/drc/idac.lyrdb")})
         self.assertEqual([f["role"] for f in r["input_files"]["files"]], ["layout", "deck", "technology"])
         paths = [o["path"] for o in r["outputs"]]
         self.assertIn("simra/experiments/e1/work/drc/idac.lyrdb", paths)
@@ -340,6 +365,19 @@ class EndToEnd(unittest.TestCase):
             table = json.load(f)
         self.assertEqual(table["markers"], 33)
         self.assertEqual(len(table["rules"][0]["boxes"]), 8)
+
+    def test_drc_default_limit_and_clean(self):
+        # With the default max_examples (8), every rule of the seeded block gives all its boxes.
+        r, _ = self.run_op("drc", {"gds": "block.gds", "cell": "idac"}, FAKE_REPORT=fixture("drc-sky130-seeded.lyrdb"))
+        errors = [d["message"] for d in r["diagnostics"] if d["severity"] == "error"]
+        self.assertEqual(len(errors), 10)
+        self.assertFalse([m for m in errors if "more in work/drc.json" in m or "Cells:" in m])
+        self.assertIn("idac: (", errors[0])
+        self.assertTrue(r["diagnostics"][-1]["message"].startswith("Full table: simra/experiments/e1/work/drc.json"))
+        # A clean report gives no rule errors and no table line.
+        r, _ = self.run_op("drc", {"gds": "block.gds", "cell": "idac"}, FAKE_REPORT=fixture("drc-sky130-clean.lyrdb"))
+        self.assertEqual(r["measurements"]["markers"]["value"], 0)
+        self.assertEqual([d["severity"] for d in r["diagnostics"]], ["info"])
 
     def test_drc_not_run(self):
         for fake, reason in (({"FAKE_REPORT": fixture("drc-sg13g2-truncated.lyrdb")}, "truncated"),

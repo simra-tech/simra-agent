@@ -23,6 +23,11 @@ export function formatOutcome(root: string, experiment: ExperimentRecord, result
 			lines.push(`  ${f.role ?? "file"} ${f.path} sha256:${f.sha256.slice(0, 12)}`);
 		}
 	}
+	// The outputs that the adapter recorded, in its order, with paths relative to the design root (as in result.json).
+	if (result.outputs.length) {
+		lines.push("outputs:");
+		for (const f of result.outputs) lines.push(`  ${f.path}${f.bytes === undefined ? "" : ` (${f.bytes} bytes)`}`);
+	}
 	const names = Object.keys(result.measurements);
 	if (names.length) {
 		lines.push("measurements:");

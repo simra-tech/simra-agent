@@ -5,8 +5,9 @@
 // 3. the files that the broken lvs.sh of layout-false-pass leaves (a printed match, a truncated LVS database,
 //    exit code 139) give "not run".
 // 4. `simra run` (the CLI) runs the adapter with the eda environment of a design (examples/ota-sg13g2 for IHP, the
-//    task configuration for SKY130). The test prints the size of the summary of a DRC of the seeded block, and the
-//    size of the output of drc.sh on the same block.
+//    task configuration for SKY130). The summary of a DRC of the seeded block lists the outputs, gives every marker
+//    box and the paths of the full table, and is under 6 kB for IHP. The test prints its size, and the size of the
+//    output of drc.sh on the same block.
 // It runs only with SIMRA_TEST_IMAGE, an image with KLayout and both PDKs (optional: SIMRA_TEST_ENGINE podman or
 // docker, default podman). A skipped case is reported by the test runner as skipped: that check did not run.
 
@@ -115,6 +116,13 @@ for (const pdk of PDKS) {
 		assert.equal(cli.status, 0, cli.stderr);
 		assert.match(cli.stdout, /^\s+markers = \d+$/m);
 		assert.match(cli.stdout, /^tool: klayout /m);
+		// The summary lists the outputs, gives every box of each rule (at most 8 markers per rule on this block) and
+		// ends the DRC diagnostics with the paths of the full table and the marker database.
+		assert.match(cli.stdout, /^outputs:\n(  simra\/experiments\/\S+ \(\d+ bytes\)\n)+/m);
+		assert.match(cli.stdout, /^  simra\/experiments\/\S+\/work\/drc\.json \(\d+ bytes\)$/m);
+		assert.doesNotMatch(cli.stdout, /more in work\/drc\.json/);
+		assert.match(cli.stdout, /^warning: Full table: simra\/experiments\/\S+\/work\/drc\.json \(all markers of each rule, by cell\)\. Marker database: simra\/experiments\/\S+\.lyrdb$/m);
+		if (pdk === "sg13g2") assert.ok(Buffer.byteLength(cli.stdout) < 6000, `the IHP summary has ${Buffer.byteLength(cli.stdout)} bytes`);
 		// The output of drc.sh on the same block, for the comparison of the sizes.
 		mkdirSync(join(root, "sh"));
 		copyFileSync(join(root, "block-seeded.gds"), join(root, "sh/block.gds"));

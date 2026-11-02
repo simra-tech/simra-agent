@@ -243,7 +243,7 @@ export default function (pi: ExtensionAPI) {
 		].join("\n"),
 		promptSnippet: "run the experiments in requirements.json and compare each measurement with its limit",
 		promptGuidelines: [
-			"Before you say that the design meets its requirements, run check_requirements without a selection and give its check id.",
+			"When the design has a requirements.json, run check_requirements without a selection before you say that the design meets its requirements, and give its check id.",
 			"Use the requirements and conditions parameters to check one row quickly while you work; that result is not a pass.",
 			"Report rows that are not measured or not run as such. Do not replace them with your own estimate.",
 		],

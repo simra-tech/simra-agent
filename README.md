@@ -62,7 +62,8 @@ From a plain command line:
 
 1. Write a spec file, for example `run.json`:
    `{"adapter": "ngspice", "operation": "simulate", "purpose": "check the RC filter", "inputs": {"deck": "rc.spice"}}`
-2. Run `npx simra run run.json` in the design root.
+2. Run `npx simra run run.json` in the design root. It prints a summary: the records, the input files, the outputs
+   (path and size), the measurements, and the errors and warnings.
 3. Run `npx simra list` and `npx simra show <id>` to read the records.
 
 In pi:
