@@ -427,6 +427,10 @@ async function main() {
 		const path = spawnSync(engine, ["image", "inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", imageId], { env: engineEnv(), encoding: "utf8" })
 			.stdout.split("\n").find((l) => l.startsWith("PATH="))?.slice(5);
 		cmd.env.PATH = `${CODEX_DIR}/codex-path:${path ?? "/usr/local/bin:/usr/bin:/bin"}`;
+		// Codex CLI panics ("failed printing to stdout: Resource temporarily unavailable") when a large event (for
+		// example a tool output of 100 kB and more) goes to the non-blocking stdout pipe of the sandbox. Its event
+		// stream goes to a file in the state mount instead, and the run copies it to transcript.jsonl.
+		cmd.command = ["/bin/sh", "-c", `exec "$0" "$@" > ${STATE}/transcript.jsonl`, ...cmd.command];
 	}
 
 	const access = cmd.codex ? codexAccess(timeoutMin) : { key: process.env[model.keyVar] ?? loadDotEnv()[model.keyVar] };
@@ -440,10 +444,14 @@ async function main() {
 	const argv = sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar: model.keyVar, env: { ...toolEnv, ...cmd.env, SIMRA_SESSION_DEADLINE: deadline }, readOnly, command: cmd.command });
 	const started = new Date();
 	const child = spawn(engine, argv, { env: engineEnv(), stdio: ["ignore", "pipe", "pipe"] });
-	child.stdout.pipe(createWriteStream(join(run, "transcript.jsonl")));
+	child.stdout.pipe(createWriteStream(join(run, cmd.codex ? "stdout.log" : "transcript.jsonl")));
 	child.stderr.pipe(createWriteStream(join(run, "stderr.log")));
 	const exit = await waitExit(child, timeoutMin * 60_000, () => spawnSync(engine, ["kill", name], { stdio: "ignore" }));
 	stopProxy();
+	if (cmd.codex) {
+		const file = join(state, "transcript.jsonl");
+		writeFileSync(join(run, "transcript.jsonl"), existsSync(file) ? readFileSync(file) : "");
+	}
 
 	const log = join(run, "models.jsonl");
 	const calls = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
