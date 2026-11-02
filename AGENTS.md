@@ -12,7 +12,7 @@ also work without pi. See [README.md](README.md) for the status.
 
 | Path | Contents |
 | --- | --- |
-| `packages/kernel/` | runner, experiment records, environments, `simra` CLI (no pi dependency) |
+| `packages/kernel/` | runner, experiment records, environments, PDF reader, `simra` CLI (no pi dependency) |
 | `packages/pi-extension/` | the pi extension (the only package that imports pi) |
 | `adapters/` | tool adapters (JSON-in / JSON-out), one directory per tool |
 | `technologies/` | technology packs: the PDK facts that adapters need, one directory per PDK family |

@@ -1,13 +1,15 @@
 // The extension against a fake pi API: it registers run_experiment, wait_experiments, check_requirements and design_record, and the tools run and record.
 // Its tool_result hook adds the netlist check to the result of a call that names a netlist.
+// Its tool_call hook sends a read of a PDF to the page-marked text in the cache.
 
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { validateRequirements } from "@simra-tech/kernel";
-import extension, { netlistsOf, REQUIREMENTS_EXAMPLE, sessionClock } from "../index.ts";
+import { makePdf } from "../../kernel/test/pdf-fixture.ts";
+import extension, { netlistsOf, readPath, REQUIREMENTS_EXAMPLE, sessionClock } from "../index.ts";
 
 const fakeAdapters = new URL("../../kernel/test/fixtures/adapters", import.meta.url).pathname;
 
@@ -165,6 +167,49 @@ test("the tool_result hook adds each netlist warning once", async (t) => {
 	// The same finding is not added again; a call without a netlist is not changed.
 	assert.equal(await hook({ toolName: "bash", input: { command: "ngspice -b tb.spice" }, content, isError: false }, ctx), undefined);
 	assert.equal(await hook({ toolName: "bash", input: { command: "ls" }, content, isError: false }, ctx), undefined);
+});
+
+test("the tool_call hook sends a read of a PDF to document.md in the cache", async (t) => {
+	let hook: any;
+	extension({ registerTool: () => {}, registerCommand: () => {}, on: (event: string, fn: any) => event === "tool_call" && (hook = fn) } as any);
+	assert.ok(hook, "no tool_call hook");
+
+	const root = mkdtempSync(join(tmpdir(), "simra-ext-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	const saved = process.env.SIMRA_CACHE_DIR;
+	process.env.SIMRA_CACHE_DIR = join(root, "cache");
+	t.after(() => (saved === undefined ? delete process.env.SIMRA_CACHE_DIR : (process.env.SIMRA_CACHE_DIR = saved)));
+	writeFileSync(join(root, "manual.pdf"), makePdf([{ lines: ["VDD = 1.2 V"] }, {}]));
+	writeFileSync(join(root, "broken.pdf"), "not a pdf");
+	const ctx = { cwd: root };
+
+	const read = { toolName: "read", input: { path: "manual.pdf", offset: 5 } };
+	assert.equal(await hook(read, ctx), undefined);
+	assert.match(read.input.path, new RegExp(`^${join(root, "cache", "pdf")}/[0-9a-f]{64}/document\\.md$`));
+	assert.equal(read.input.offset, 5);
+	assert.match(readFileSync(read.input.path, "utf8"), /\[page 1\]\nVDD = 1\.2 V\n\n\[page 2\]\n\(no text layer\)\n/);
+	// A broken PDF blocks the call with the reason. Other calls do not change.
+	assert.deepEqual(await hook({ toolName: "read", input: { path: "broken.pdf" } }, ctx), {
+		block: true,
+		reason: `Simra PDF reader: ${join(root, "broken.pdf")}: cannot read the PDF (Invalid PDF structure.). The file is broken or is not a PDF.`,
+	});
+	for (const call of [{ toolName: "read", input: { path: "notes.txt" } }, { toolName: "bash", input: { command: "cat manual.pdf" } }]) {
+		const before = structuredClone(call);
+		assert.equal(await hook(call, ctx), undefined);
+		assert.deepEqual(call, before);
+	}
+});
+
+test("readPath gives the path that pi's read opens", async (t) => {
+	assert.equal(await readPath("docs/a.pdf", "/w"), "/w/docs/a.pdf");
+	assert.equal(await readPath("@a.pdf", "/w"), "/w/a.pdf");
+	assert.equal(await readPath("file:///x/a%20b.pdf", "/w"), "/x/a b.pdf");
+	assert.equal(await readPath("~/a.pdf", "/w"), join(homedir(), "a.pdf"));
+	// pi's fallback for a macOS file name: a straight apostrophe finds the file with a curly one.
+	const root = mkdtempSync(join(tmpdir(), "simra-ext-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	writeFileSync(join(root, "Capture d\u2019écran.pdf"), "");
+	assert.equal(await readPath("Capture d'écran.pdf", root), join(root, "Capture d\u2019écran.pdf"));
 });
 
 test("netlistsOf finds the netlists that a call names", (t) => {

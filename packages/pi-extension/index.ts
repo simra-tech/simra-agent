@@ -4,6 +4,8 @@
 // that ran on each file of record, current or stale), and the command /simra-version.
 // After a read, write, edit or bash call that names a netlist, it adds the ngspice adapter's netlist check
 // (operation "lint") to the tool result: for example a warning about ".option rshunt".
+// Before a read call on a .pdf file, it extracts the PDF into the cache (kernel extractPdf) and points the call at the
+// page-marked text, document.md. pi's read then applies offset and limit as for any text file.
 // When SIMRA_SESSION_DEADLINE (an ISO 8601 time) is set, it adds a time note to the first tool result after 50 %
 // and after 80 % of the session time: the agent must write its output files before the session ends.
 // It replaces pi's coding-assistant preamble with a chip-design preamble (SIMRA_PREAMBLE) and leaves out pi's own
@@ -15,6 +17,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import {
 	type BeforeAgentStartEvent,
+	createReadToolDefinition,
 	type ExtensionAPI,
 	type ToolResultEvent,
 	VERSION as PI_VERSION,
@@ -22,6 +25,7 @@ import {
 import {
 	BUILTIN_ADAPTER_DIR,
 	designRecord,
+	extractPdf,
 	findRoot,
 	formatDesignRecord,
 	formatDiagnostic,
@@ -101,6 +105,29 @@ export function netlistsOf(event: Pick<ToolResultEvent, "toolName" | "input">, c
 			: ["read", "write", "edit"].includes(event.toolName) ? [String(event.input.path ?? "")] : [];
 	const files = words.filter((w) => NETLIST.test(w)).map((w) => (isAbsolute(w) ? w : resolve(cwd, w)));
 	return [...new Set(files)].filter((f) => existsSync(f));
+}
+
+const RESOLVED = Symbol("resolved");
+
+/**
+ * The absolute path that pi's read opens for a path. pi does not export its path resolution ("@", "~", file:// URLs,
+ * fallbacks for macOS file names), so a read tool whose access step keeps the path and stops asks pi for it.
+ */
+export async function readPath(path: string, cwd: string): Promise<string> {
+	let resolved = "";
+	const probe = createReadToolDefinition(cwd, {
+		operations: {
+			access: async (absolutePath) => {
+				resolved = absolutePath;
+				throw RESOLVED;
+			},
+			readFile: async () => Buffer.alloc(0),
+		},
+	});
+	await probe.execute("simra-read-path", { path }, undefined, undefined, undefined as never).catch((e) => {
+		if (e !== RESOLVED) throw e;
+	});
+	return resolved;
 }
 
 export const TIME_MARKS = [0.5, 0.8];
@@ -185,6 +212,18 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("before_agent_start", (event) => {
 		chipDesignPrompt(event.systemPromptOptions);
+	});
+
+	// A read of a PDF reads its page-marked text from the cache. An encrypted or broken PDF blocks the call with the reason.
+	pi.on("tool_call", async (event, ctx) => {
+		if (event.toolName !== "read" || !/\.pdf$/i.test(String(event.input.path ?? ""))) return;
+		try {
+			const path = await readPath(String(event.input.path), ctx.cwd);
+			if (!existsSync(path)) return;
+			event.input.path = (await extractPdf(path)).document;
+		} catch (e) {
+			return { block: true, reason: `Simra PDF reader: ${(e as Error).message}` };
+		}
 	});
 
 	pi.on("tool_result", async (event, ctx) => {

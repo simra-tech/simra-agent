@@ -192,6 +192,30 @@ for `rshunt`, `cshunt` and a `gmin` above 1e-12:
 In pi, the extension adds these warnings to the result of a `read`, `write`, `edit` or `bash` call that names a
 netlist. It adds each warning one time per session.
 
+## PDF reader
+
+In pi, the agent reads a PDF with `read`. Before the call, the extension extracts the text of the PDF into a cache
+one time. Then `read` gives the text with a `[page N]` marker before each page. `offset` and `limit` work as for a
+text file.
+
+The cache is `$SIMRA_CACHE_DIR`, else `$XDG_CACHE_HOME/simra`, else `~/.cache/simra`. Each PDF has a folder
+`pdf/<sha256>/` with these files:
+
+- `document.md`: a short header, then the pages. The header gives the source, the page count, the outline (with the
+  page and the line of each entry) and the warnings. Page N starts with the line `[page N]`. N is the page number in
+  the file, not the printed page label.
+- `meta.json`: the hash, the page count, the outline, the warnings and the line of each page marker.
+
+The cache is per user, and you can delete it. The reader does not write into the design repository or the PDK tree.
+
+A page without text, for example a scanned page, gets the warning "No text layer". The reader does no OCR. An
+encrypted or broken PDF gives an error, and the reader writes nothing to the cache.
+
+From a plain command line:
+
+1. Run `npx simra pdf <file>` to print the header and all pages.
+2. Add `--pages 12-14` to print the header and only these pages.
+
 ## Session time
 
 Set `SIMRA_SESSION_DEADLINE` to an ISO 8601 time, for example `2026-10-30T15:00:00Z`, to give pi a time limit.
@@ -372,7 +396,7 @@ boxes and the shapes do not tell which edge to move, and to write Python only to
 
 | Path | Contents |
 | --- | --- |
-| `packages/kernel/` | runner, experiment records, environments, `simra` CLI (no pi dependency) |
+| `packages/kernel/` | runner, experiment records, environments, PDF reader, `simra` CLI (no pi dependency) |
 | `packages/pi-extension/` | the pi extension (the only package that imports pi) |
 | `adapters/ngspice/` | ngspice adapter (Python) and its tests; `design_check.py` has the operation `check_design` |
 | `adapters/klayout/` | klayout adapter (Python) and its tests: DRC and LVS with the stock KLayout decks of the PDK, with typed verdicts, questions about a layout (`query`), the comparison of two layouts (`diff`) and pictures of a region or a marker (`render`) |
