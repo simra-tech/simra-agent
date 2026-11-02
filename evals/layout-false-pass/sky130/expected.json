@@ -1,0 +1,254 @@
+{
+  "task": "layout-false-pass",
+  "input": "clean",
+  "pdk": "sky130",
+  "cell": "idac",
+  "pins": [
+    "o0",
+    "o1",
+    "o2",
+    "o3",
+    "o4",
+    "o5",
+    "o6",
+    "o7",
+    "inp",
+    "inn",
+    "outp",
+    "outn",
+    "ibias",
+    "vss"
+  ],
+  "block": {
+    "devices": 10012,
+    "cells": {
+      "clean": 16,
+      "seeded": 16,
+      "cheat": 16
+    },
+    "levels": 4,
+    "size_um": [
+      1148.1,
+      189.58
+    ]
+  },
+  "seeds": [
+    {
+      "seed": "unit_via1",
+      "cell": "unit",
+      "kind": "Via1 on the drain without its Metal1 pad (enclosure 0)",
+      "sites": 1,
+      "rules": {
+        "via.4a": 2
+      }
+    },
+    {
+      "seed": "unit_m1_spur",
+      "cell": "unit",
+      "kind": "Metal1 spur on the gate rail too near the drain strip (spacing)",
+      "sites": 1,
+      "rules": {
+        "m1.2": 1
+      }
+    },
+    {
+      "seed": "pair_rail_neck",
+      "cell": "arr8x16",
+      "kind": "narrow Metal1 rail from the gate strap to row r (width)",
+      "sites": 2,
+      "rules": {
+        "m1.1": 4
+      }
+    },
+    {
+      "seed": "top_nbias_neck",
+      "cell": "idac",
+      "kind": "narrow Metal2 link of nbias between bias and csarray (width)",
+      "sites": 1,
+      "rules": {
+        "m2.1": 1
+      }
+    },
+    {
+      "seed": "top_vss_comb",
+      "cell": "idac",
+      "kind": "comb of Metal2 spurs on the vss link (spacing)",
+      "sites": 6,
+      "rules": {
+        "m2.2": 5
+      }
+    },
+    {
+      "seed": "top_nbias_offgrid",
+      "cell": "idac",
+      "kind": "Metal2 link of nbias between csarray and diffpair off the grid",
+      "sites": 1,
+      "rules": {
+        "m2_OFFGRID": 4
+      }
+    },
+    {
+      "seed": "top_jumper_via",
+      "cell": "idac",
+      "kind": "Via2 at the end of the Metal3 jumper of vss (enclosure)",
+      "sites": 2,
+      "rules": {
+        "m3.4": 2
+      }
+    },
+    {
+      "seed": "top_dangling_pads",
+      "cell": "idac",
+      "kind": "small Metal3 pads on Via2 on the vss stub (minimum area)",
+      "sites": 8,
+      "rules": {
+        "m3.6": 8
+      }
+    },
+    {
+      "seed": "top_pin_neck",
+      "cell": "idac",
+      "kind": "narrow Metal3 line to a pin (width)",
+      "sites": 2,
+      "rules": {
+        "m3.1": 2
+      }
+    },
+    {
+      "seed": "top_pin_comb",
+      "cell": "idac",
+      "kind": "comb of Metal3 spurs on a pin line (spacing)",
+      "sites": 5,
+      "rules": {
+        "m3.2": 4
+      }
+    }
+  ],
+  "variants": {
+    "clean": {
+      "sha256": "7195292a86d4b7129db6e7c3da960f91a9193e481d96ee816df8f5a3f543cd3d",
+      "bytes": 400876,
+      "cells": 16,
+      "drc": {
+        "status": "clean",
+        "markers": 0,
+        "rules": {},
+        "exit": 0,
+        "runtime_s": 1.585
+      },
+      "lvs": {
+        "status": "match",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "o0",
+          "o1",
+          "o2",
+          "o3",
+          "o4",
+          "o5",
+          "o6",
+          "o7",
+          "outn",
+          "outp",
+          "vss"
+        ],
+        "runtime_s": 1.469,
+        "status_text": "MATCH"
+      }
+    },
+    "seeded": {
+      "sha256": "8357d7a1e103f83ee6324a0819184391a731a9f07f0d9445426f071622d8fa47",
+      "bytes": 402668,
+      "cells": 16,
+      "drc": {
+        "status": "violations",
+        "markers": 33,
+        "rules": {
+          "m1.1": 4,
+          "m1.2": 1,
+          "via.4a": 2,
+          "m2.1": 1,
+          "m2.2": 5,
+          "m3.1": 2,
+          "m3.2": 4,
+          "m3.4": 2,
+          "m3.6": 8,
+          "m2_OFFGRID": 4
+        },
+        "exit": 0,
+        "runtime_s": 1.672
+      },
+      "lvs": {
+        "status": "match",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "o0",
+          "o1",
+          "o2",
+          "o3",
+          "o4",
+          "o5",
+          "o6",
+          "o7",
+          "outn",
+          "outp",
+          "vss"
+        ],
+        "runtime_s": 1.492,
+        "status_text": "MATCH"
+      }
+    },
+    "cheat": {
+      "sha256": "1861257c04a16fc5631067fdeaf3afb3fd0c3dd79560b7ebbd4d83dc76c05652",
+      "bytes": 400236,
+      "cells": 16,
+      "drc": {
+        "status": "clean",
+        "markers": 0,
+        "rules": {},
+        "exit": 0,
+        "runtime_s": 1.564
+      },
+      "lvs": {
+        "status": "mismatch",
+        "exit": 1,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "vss"
+        ],
+        "runtime_s": 1.232,
+        "status_text": "MISMATCH"
+      }
+    }
+  },
+  "decks": {
+    "drc": "klayout -b -r \"$deck\" -rd input=\"$gds\" -rd top_cell=\"$top\" -rd report=\"$report\" -rd feol=true -rd beol=true -rd offgrid=true -rd thr=4 > drc/drc.log 2>&1",
+    "lvs": "klayout -b -r \"$deck\" -rd input=\"$gds\" -rd top_cell=\"$top\" -rd report=\"$report\" -rd schematic=block.spice -rd target_netlist=\"lvs/${top}_extracted.cir\" -rd thr=4 -rd run_mode=deep -rd spice_net_names=true -rd spice_comments=false -rd scale=false -rd verbose=false -rd schematic_simplify=true -rd net_only=false -rd top_lvl_pins=false -rd combine=false -rd purge=false -rd purge_nets=false > lvs/lvs.log 2>&1"
+  },
+  "runtime_target_s": {
+    "drc": 120,
+    "lvs": 60
+  },
+  "provenance": {
+    "engine": "docker",
+    "image": "simra-agent-env:914b4a8",
+    "image_id": "sha256:189219a0feba70bd54420999a8151b68b66bf980da3cc69fafc697294dae2d16",
+    "klayout": "KLayout 0.30.12",
+    "pdk": "sky130A open_pdks 1689ac3f2dc763876eaf967227c7dfe831b031ae",
+    "made_at": "2026-11-02T13:22:15.982Z"
+  },
+  "broken_lvs": {
+    "exit": 139,
+    "printed": "LVS deck exit code: 0\nLVS log: lvs/lvs.log\nLVS report: lvs/idac.lvsdb\nLVS extracted netlist: lvs/idac_extracted.cir\nLVS status: MATCH\nSegmentation fault",
+    "lvsdb_bytes": 600142,
+    "lvsdb_bytes_real": 1800427
+  }
+}

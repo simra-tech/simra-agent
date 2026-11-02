@@ -1,0 +1,19 @@
+{
+  "name": "layout-false-pass-sg13g2",
+  "prompt": "task.md",
+  "score": "score.mjs",
+  "environment": "eda",
+  "files": {
+    "block.gds": "../../layout-block-fix/sg13g2/block-clean.gds",
+    "block.spice": "../../layout-block-fix/sg13g2/block.spice",
+    "spec.md": "../../layout-block-fix/sg13g2/spec.md",
+    "task.md": "task.md",
+    "drc.sh": "../../layout-block-fix/sg13g2/drc.sh",
+    "lvs.sh": "lvs.sh",
+    "simra.config.json": "../../layout-block-fix/sg13g2/simra.config.json",
+    "simra.local.json": "../../../examples/ota-sg13g2/simra.local.json"
+  },
+  "verify": {
+    "lvs.sh": "../../layout-block-fix/sg13g2/lvs.sh"
+  }
+}

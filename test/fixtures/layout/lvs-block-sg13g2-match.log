@@ -1,0 +1,25 @@
+2026-11-02 14:17:46 +0100: Memory Usage (695460K) : [schematic_netlist] make_top_level_pins: SKIPPED
+2026-11-02 14:17:46 +0100: Memory Usage (695460K) : [schematic_netlist] combine_devices: SKIPPED
+2026-11-02 14:17:46 +0100: Memory Usage (695460K) : [schematic_netlist] purge: SKIPPED
+2026-11-02 14:17:46 +0100: Memory Usage (695460K) : [schematic_netlist] purge_nets: SKIPPED
+2026-11-02 14:17:46 +0100: Memory Usage (695460K) : [schematic_netlist] purge_devices: SKIPPED
+2026-11-02 14:17:46 +0100: Memory Usage (695460K) : Starting SG13G2 LVS Comparison in strict port mode.
+2026-11-02 14:17:46 +0100: Memory Usage (695460K) : flag_missing_ports enabled: missing/mislabeled top-level ports are treated as errors.
+2026-11-02 14:17:46 +0100: Memory Usage (695588K) : ==========================================
+2026-11-02 14:17:46 +0100: Memory Usage (695588K) : INFO : Congratulations! Netlists match.
+2026-11-02 14:17:46 +0100: Memory Usage (695588K) : ==========================================
+2026-11-02 14:17:46 +0100: Memory Usage (695588K) : LVS Total Run time 7.348288 seconds
+02-Nov-2026 14:17:47 | INFO    | ==============================================================================
+02-Nov-2026 14:17:47 | INFO    | Important Summary
+02-Nov-2026 14:17:47 | INFO    | +------------------+--------------------------------------------------------------------------------------------+
+02-Nov-2026 14:17:47 | INFO    | | Status           | PASS                                                                                       |
+02-Nov-2026 14:17:47 | INFO    | | Mode             | COMPARE                                                                                    |
+02-Nov-2026 14:17:47 | INFO    | | Outcome          | Comparison mode: PASS (netlists match).                                                    |
+02-Nov-2026 14:17:47 | INFO    | | Layout           | block.gds                                                                                  |
+02-Nov-2026 14:17:47 | INFO    | | Top Cell         | idac                                                                                       |
+02-Nov-2026 14:17:47 | INFO    | | Results Dir      | /work/lvs |
+02-Nov-2026 14:17:47 | INFO    | | Warnings         | 0                                                                                          |
+02-Nov-2026 14:17:47 | INFO    | | Errors           | 0                                                                                          |
+02-Nov-2026 14:17:47 | INFO    | | Run Time (s)     | 8.289                                                                                      |
+02-Nov-2026 14:17:47 | INFO    | +------------------+--------------------------------------------------------------------------------------------+
+02-Nov-2026 14:17:47 | INFO    | ==============================================================================

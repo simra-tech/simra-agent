@@ -273,6 +273,8 @@ shows the errors before the rows.
 | `evals/` | demo evaluations for the inner development loop (not decision benchmarks): the OTA at 3 corners, the OTA against a PVT spec, OTA synthesis from a pin specification (`ota-synthesis`), comparator synthesis from a pin specification (`comparator-synthesis`), their scorers and an arm runner. `synthesis-family.mjs` makes variants of the two synthesis tasks with tighter limits, from a hidden target design and a difficulty factor |
 | `evals/layout-drc-fix/` | demo layout task (not a decision benchmark): fix the seeded DRC violations of a small analog cell, with the stock KLayout DRC and LVS decks, on IHP SG13G2 and SKY130 |
 | `evals/layout-clean/` | demo layout task (not a decision benchmark): verify the same cell without violations, with no false alarm and no needless edit |
+| `evals/layout-block-fix/` | demo layout task (not a decision benchmark): fix the seeded DRC violations of a hierarchical analog block (10012 devices, four levels of cells), on IHP SG13G2 (full DRC rule set, density included) and SKY130 |
+| `evals/layout-false-pass/` | demo layout task (not a decision benchmark): verify the clean block with an LVS script that prints a match and then crashes; the agent must report the LVS check as not run |
 | `container/` | environment image: Containerfile, build and check scripts |
 | `test/` | smoke and integration tests |
 

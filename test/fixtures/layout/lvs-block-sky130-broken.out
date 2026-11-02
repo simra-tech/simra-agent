@@ -1,0 +1,6 @@
+LVS deck exit code: 0
+LVS log: lvs/lvs.log
+LVS report: lvs/idac.lvsdb
+LVS extracted netlist: lvs/idac_extracted.cir
+LVS status: MATCH
+Segmentation fault

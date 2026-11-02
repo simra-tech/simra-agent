@@ -1,0 +1,250 @@
+{
+  "task": "layout-block-fix",
+  "input": "seeded",
+  "pdk": "sg13g2",
+  "cell": "idac",
+  "pins": [
+    "o0",
+    "o1",
+    "o2",
+    "o3",
+    "o4",
+    "o5",
+    "o6",
+    "o7",
+    "inp",
+    "inn",
+    "outp",
+    "outn",
+    "ibias",
+    "vss"
+  ],
+  "block": {
+    "devices": 10012,
+    "cells": {
+      "clean": 30,
+      "seeded": 30,
+      "cheat": 30
+    },
+    "levels": 4,
+    "size_um": [
+      1348.1,
+      390.1
+    ]
+  },
+  "seeds": [
+    {
+      "seed": "unit_via1",
+      "cell": "unit",
+      "kind": "Via1 on the drain without its Metal1 pad (enclosure 0)",
+      "sites": 1,
+      "rules": {
+        "V1.c": 6,
+        "V1.c1": 1
+      }
+    },
+    {
+      "seed": "unit_m1_spur",
+      "cell": "unit",
+      "kind": "Metal1 spur on the gate rail too near the drain strip (spacing)",
+      "sites": 1,
+      "rules": {
+        "M1.b": 1
+      }
+    },
+    {
+      "seed": "pair_rail_neck",
+      "cell": "arr8x16",
+      "kind": "narrow Metal1 rail from the gate strap to row r (width)",
+      "sites": 2,
+      "rules": {
+        "M1.a": 4
+      }
+    },
+    {
+      "seed": "top_nbias_neck",
+      "cell": "idac",
+      "kind": "narrow Metal2 link of nbias between bias and csarray (width)",
+      "sites": 1,
+      "rules": {
+        "M2.a": 1
+      }
+    },
+    {
+      "seed": "top_vss_comb",
+      "cell": "idac",
+      "kind": "comb of Metal2 spurs on the vss link (spacing)",
+      "sites": 6,
+      "rules": {
+        "M2.b": 5
+      }
+    },
+    {
+      "seed": "top_nbias_offgrid",
+      "cell": "idac",
+      "kind": "Metal2 link of nbias between csarray and diffpair off the grid",
+      "sites": 1,
+      "rules": {
+        "metal2_drw_Offgrid": 4
+      }
+    },
+    {
+      "seed": "top_jumper_via",
+      "cell": "idac",
+      "kind": "Via2 at the end of the Metal3 jumper of vss (enclosure)",
+      "sites": 2,
+      "rules": {
+        "M3.c": 2
+      }
+    },
+    {
+      "seed": "top_dangling_pads",
+      "cell": "idac",
+      "kind": "small Metal3 pads on Via2 on the vss stub (minimum area)",
+      "sites": 8,
+      "rules": {
+        "M3.d": 8
+      }
+    },
+    {
+      "seed": "top_pin_neck",
+      "cell": "idac",
+      "kind": "narrow Metal3 line to a pin (width)",
+      "sites": 2,
+      "rules": {
+        "M3.a": 2
+      }
+    },
+    {
+      "seed": "top_pin_comb",
+      "cell": "idac",
+      "kind": "comb of Metal3 spurs on a pin line (spacing)",
+      "sites": 5,
+      "rules": {
+        "M3.b": 4
+      }
+    }
+  ],
+  "variants": {
+    "clean": {
+      "sha256": "11f42cfd1f693cce80d5d100f11b1adb90d56fd02f1d27d199def391d0436279",
+      "bytes": 414172,
+      "cells": 30,
+      "drc": {
+        "status": "clean",
+        "markers": 0,
+        "rules": {},
+        "exit": 0,
+        "runtime_s": 7.836
+      },
+      "lvs": {
+        "status": "match",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "o0",
+          "o1",
+          "o2",
+          "o3",
+          "o4",
+          "o5",
+          "o6",
+          "o7",
+          "outn",
+          "outp",
+          "vss"
+        ],
+        "runtime_s": 8.219,
+        "status_text": "MATCH"
+      }
+    },
+    "seeded": {
+      "sha256": "72355bfd315cccbd9fe0523ef836e5b1aef1f535268a29e61d7a5f17ba39c514",
+      "bytes": 416028,
+      "cells": 30,
+      "drc": {
+        "status": "violations",
+        "markers": 38,
+        "rules": {
+          "M1.a": 4,
+          "M1.b": 1,
+          "M2.a": 1,
+          "M2.b": 5,
+          "M3.a": 2,
+          "M3.b": 4,
+          "V1.c": 6,
+          "metal2_drw_Offgrid": 4,
+          "M3.c": 2,
+          "M3.d": 8,
+          "V1.c1": 1
+        },
+        "exit": 1,
+        "runtime_s": 8.079
+      },
+      "lvs": {
+        "status": "match",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "o0",
+          "o1",
+          "o2",
+          "o3",
+          "o4",
+          "o5",
+          "o6",
+          "o7",
+          "outn",
+          "outp",
+          "vss"
+        ],
+        "runtime_s": 8.299,
+        "status_text": "MATCH"
+      }
+    },
+    "cheat": {
+      "sha256": "19043604a65a6723adda4772abf26b063f2d4142f2a7518626ea1e59c342af88",
+      "bytes": 413596,
+      "cells": 30,
+      "drc": {
+        "status": "clean",
+        "markers": 0,
+        "rules": {},
+        "exit": 0,
+        "runtime_s": 7.821
+      },
+      "lvs": {
+        "status": "mismatch",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "vss"
+        ],
+        "runtime_s": 8.784,
+        "status_text": "MISMATCH"
+      }
+    }
+  },
+  "decks": {
+    "drc": "python3 \"$deck\" --path=\"$gds\" --topcell=\"$top\" --run_dir=drc > drc/drc.log 2>&1",
+    "lvs": "python3 \"$deck\" --layout=\"$gds\" --netlist=block.spice --topcell=\"$top\" --run_dir=lvs > lvs/lvs.log 2>&1"
+  },
+  "runtime_target_s": {
+    "drc": 120,
+    "lvs": 60
+  },
+  "provenance": {
+    "engine": "docker",
+    "image": "simra-agent-env:914b4a8",
+    "image_id": "sha256:189219a0feba70bd54420999a8151b68b66bf980da3cc69fafc697294dae2d16",
+    "klayout": "KLayout 0.30.12",
+    "pdk": "ihp-sg13g2 a49358cc0b20635fcb53c0940505e3563763fc7a",
+    "made_at": "2026-11-02T13:21:00.520Z"
+  }
+}

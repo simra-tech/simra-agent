@@ -455,7 +455,7 @@ async function main() {
 	// The sandbox prevents access to host files. These checks remain as a second line.
 	const transcript = readFileSync(join(run, "transcript.jsonl"), "utf8");
 	const contamination = [
-		["task directory", new RegExp(`${escape(taskDir)}|expected\\.json|target\\.json|cross_check|layout-drc-fix/|cell-(?:seeded|clean|cheat)\\.gds`)],
+		["task directory", new RegExp(`${escape(taskDir)}|expected\\.json|target\\.json|cross_check|layout-(?:drc-fix|block-fix|false-pass)/|(?:cell|block)-(?:seeded|clean|cheat)\\.gds`)],
 		["this repository", new RegExp(escape(repo))],
 		["another run", new RegExp(`${escape(dirname(runs))}/(?!${escape(`${basename(runs)}/${runName}`)})`)],
 	]

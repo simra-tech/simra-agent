@@ -1,0 +1,13 @@
+{
+  "environments": {
+    "eda": {
+      "kind": "container",
+      "image": "docker.io/hpretl/iic-osic-tools:2026.10",
+      "env": {
+        "PDK_ROOT": "/foss/pdks",
+        "PDK": "sky130A",
+        "HOME": "/tmp"
+      }
+    }
+  }
+}

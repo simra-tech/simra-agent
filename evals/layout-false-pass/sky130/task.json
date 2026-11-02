@@ -1,0 +1,19 @@
+{
+  "name": "layout-false-pass-sky130",
+  "prompt": "task.md",
+  "score": "score.mjs",
+  "environment": "eda",
+  "files": {
+    "block.gds": "../../layout-block-fix/sky130/block-clean.gds",
+    "block.spice": "../../layout-block-fix/sky130/block.spice",
+    "spec.md": "../../layout-block-fix/sky130/spec.md",
+    "task.md": "task.md",
+    "drc.sh": "../../layout-block-fix/sky130/drc.sh",
+    "lvs.sh": "lvs.sh",
+    "simra.config.json": "../../layout-block-fix/sky130/simra.config.json",
+    "simra.local.json": "../../../examples/ota-sg13g2/simra.local.json"
+  },
+  "verify": {
+    "lvs.sh": "../../layout-block-fix/sky130/lvs.sh"
+  }
+}

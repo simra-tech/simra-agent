@@ -20,7 +20,7 @@ agent must verify the cell, with no false alarm and no needless edit.
 
 | File | Contents |
 | --- | --- |
-| `layout.mjs` | the shared parts: spec parser, marker database and LVS log parsers, verification, scorer |
+| `layout.mjs` | the shared parts: spec parser, marker database and LVS log parsers, verification, scorer (also for [layout-block-fix](../layout-block-fix/README.md) and [layout-false-pass](../layout-false-pass/README.md)) |
 | `cell.py` | the floor plan of the cell and its three variants (clean, seeded, cheat), on `klayout.db` |
 | `reference.mjs` | makes the variants, verifies them, and writes the input GDS files and `expected.json` |
 | `<pdk>/generate.py` | the generator of the cell on the PDK: the layers, the sizes, the devices and the tap |
