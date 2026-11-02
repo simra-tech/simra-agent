@@ -1,0 +1,45 @@
+{
+ "loaded": true,
+ "error": null,
+ "compared": true,
+ "match": true,
+ "circuits": [],
+ "devices": [],
+ "nets": [],
+ "top": {
+  "layout": "idac",
+  "layout_pins": [
+   "ibias",
+   "inn",
+   "inp",
+   "o0",
+   "o1",
+   "o2",
+   "o3",
+   "o4",
+   "o5",
+   "o6",
+   "o7",
+   "outn",
+   "outp",
+   "vss"
+  ],
+  "reference": "IDAC",
+  "reference_pins": [
+   "O0",
+   "O1",
+   "O2",
+   "O3",
+   "O4",
+   "O5",
+   "O6",
+   "O7",
+   "INP",
+   "INN",
+   "OUTP",
+   "OUTN",
+   "IBIAS",
+   "VSS"
+  ]
+ }
+}

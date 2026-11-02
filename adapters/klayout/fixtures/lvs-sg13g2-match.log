@@ -1,0 +1,40 @@
+2026-11-02 15:03:37 +0100: Memory Usage (668360K) : Extracting Inductor3 device
+2026-11-02 15:03:37 +0100: Memory Usage (668360K) : Starting Taps EXTRACTION
+2026-11-02 15:03:37 +0100: Memory Usage (668360K) : Extracting ntap1 device
+2026-11-02 15:03:37 +0100: Memory Usage (668360K) : Extracting ptap1 device
+2026-11-02 15:03:37 +0100: Memory Usage (668360K) : Starting SG13G2 LVS Options Preparations
+2026-11-02 15:03:37 +0100: Memory Usage (668360K) : SG13G2 LVS flow: extraction -> alignment -> option preparation -> comparison.
+2026-11-02 15:03:37 +0100: Memory Usage (668360K) : Starting SG13G2 LVS Alignment
+2026-11-02 15:03:39 +0100: Memory Usage (679452K) : Starting SG13G2 LVS Simplification
+2026-11-02 15:03:39 +0100: Memory Usage (679452K) : [layout_netlist] simplify: ENABLED
+2026-11-02 15:03:39 +0100: Memory Usage (679452K) : [layout_netlist] make_top_level_pins: SKIPPED
+2026-11-02 15:03:39 +0100: Memory Usage (679452K) : [layout_netlist] combine_devices: SKIPPED
+2026-11-02 15:03:39 +0100: Memory Usage (679452K) : [layout_netlist] purge: SKIPPED
+2026-11-02 15:03:39 +0100: Memory Usage (679452K) : [layout_netlist] purge_nets: SKIPPED
+2026-11-02 15:03:39 +0100: Memory Usage (679452K) : [layout_netlist] purge_devices: SKIPPED
+2026-11-02 15:03:39 +0100: Memory Usage (679452K) : [schematic_netlist] simplify: ENABLED
+2026-11-02 15:03:39 +0100: Memory Usage (679452K) : [schematic_netlist] make_top_level_pins: SKIPPED
+2026-11-02 15:03:39 +0100: Memory Usage (679452K) : [schematic_netlist] combine_devices: SKIPPED
+2026-11-02 15:03:39 +0100: Memory Usage (679452K) : [schematic_netlist] purge: SKIPPED
+2026-11-02 15:03:39 +0100: Memory Usage (679452K) : [schematic_netlist] purge_nets: SKIPPED
+2026-11-02 15:03:39 +0100: Memory Usage (679452K) : [schematic_netlist] purge_devices: SKIPPED
+2026-11-02 15:03:39 +0100: Memory Usage (679452K) : Starting SG13G2 LVS Comparison in strict port mode.
+2026-11-02 15:03:39 +0100: Memory Usage (679452K) : flag_missing_ports enabled: missing/mislabeled top-level ports are treated as errors.
+2026-11-02 15:03:39 +0100: Memory Usage (679580K) : ==========================================
+2026-11-02 15:03:39 +0100: Memory Usage (679580K) : INFO : Congratulations! Netlists match.
+2026-11-02 15:03:39 +0100: Memory Usage (679580K) : ==========================================
+2026-11-02 15:03:39 +0100: Memory Usage (679580K) : LVS Total Run time 7.284098 seconds
+02-Nov-2026 15:03:39 | INFO    | ==============================================================================
+02-Nov-2026 15:03:39 | INFO    | Important Summary
+02-Nov-2026 15:03:39 | INFO    | +------------------+---------------------------------------------------------------------------------+
+02-Nov-2026 15:03:39 | INFO    | | Status           | PASS                                                                            |
+02-Nov-2026 15:03:39 | INFO    | | Mode             | COMPARE                                                                         |
+02-Nov-2026 15:03:39 | INFO    | | Outcome          | Comparison mode: PASS (netlists match).                                         |
+02-Nov-2026 15:03:39 | INFO    | | Layout           | block-seeded.gds                                                                |
+02-Nov-2026 15:03:39 | INFO    | | Top Cell         | idac                                                                            |
+02-Nov-2026 15:03:39 | INFO    | | Results Dir      | /work/lvs |
+02-Nov-2026 15:03:39 | INFO    | | Warnings         | 0                                                                               |
+02-Nov-2026 15:03:39 | INFO    | | Errors           | 0                                                                               |
+02-Nov-2026 15:03:39 | INFO    | | Run Time (s)     | 8.221                                                                           |
+02-Nov-2026 15:03:39 | INFO    | +------------------+---------------------------------------------------------------------------------+
+02-Nov-2026 15:03:39 | INFO    | ==============================================================================

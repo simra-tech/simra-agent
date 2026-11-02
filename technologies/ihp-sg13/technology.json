@@ -180,5 +180,42 @@
         "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moshv_mod.lib"
       }
     }
+  },
+  "klayout": {
+    "ihp-sg13g2": {
+      "drc": {
+        "rule_sets": {
+          "main": {
+            "command": ["python3", "{pdk_root}/ihp-sg13g2/libs.tech/klayout/tech/drc/run_drc.py", "--path={gds}", "--topcell={cell}", "--run_dir={run_dir}", "--disable_extra_rules", "--no_density"],
+            "report": "{run_dir}/{gds_stem}_{cell}_main.lyrdb",
+            "description": "the main rule table of ihp-sg13g2.drc, without the extra rules (sg13g2_maximal.drc) and the density rules (density.drc)",
+            "exit_code_violations": 1,
+            "incomplete_texts": ["generated an exception"],
+            "default": false,
+            "source": "ihp-sg13g2/libs.tech/klayout/tech/drc/run_drc.py (main runs the table main always, density.drc unless --no_density, sg13g2_maximal.drc unless --disable_extra_rules; run_check writes <layout>_<topcell>_<table>.lyrdb in --run_dir; check_drc_results returns 1 when the report has violations and 0 when it has none; run_parallel_run logs '<table> generated an exception' when a table fails); ihp-sg13g2/libs.tech/klayout/tech/drc/README.md (Usage)"
+          },
+          "full": {
+            "command": ["python3", "{pdk_root}/ihp-sg13g2/libs.tech/klayout/tech/drc/run_drc.py", "--path={gds}", "--topcell={cell}", "--run_dir={run_dir}"],
+            "report": "{run_dir}/{gds_stem}_{cell}_full.lyrdb",
+            "description": "all rules of the PDK script: the main table, the extra rules (sg13g2_maximal.drc) and the density rules (density.drc)",
+            "exit_code_violations": 1,
+            "incomplete_texts": ["generated an exception"],
+            "default": true,
+            "source": "ihp-sg13g2/libs.tech/klayout/tech/drc/run_drc.py (check_drc_results merges more than one report into <layout>_<topcell>_full.lyrdb and deletes the partial reports; it returns 1 when the report has violations and 0 when it has none); ihp-sg13g2/libs.tech/klayout/tech/drc/README.md (Usage)"
+          }
+        }
+      },
+      "lvs": {
+        "command": ["python3", "{pdk_root}/ihp-sg13g2/libs.tech/klayout/tech/lvs/run_lvs.py", "--layout={gds}", "--netlist={netlist}", "--topcell={cell}", "--run_dir={run_dir}"],
+        "report": "{run_dir}/{gds_stem}.lvsdb",
+        "extracted": "{run_dir}/{gds_stem}_extracted.cir",
+        "match_text": "Congratulations! Netlists match.",
+        "mismatch_text": "Netlists don't match",
+        "exit_codes": { "match": [0], "mismatch": [0] },
+        "netlist_format": "SPICE (.spice, .cdl or .cir) with one .subckt per cell; MOS devices as M lines with the device name of the PDK as the model, for example 'M1 d g s b sg13_lv_nmos w=1u l=0.5u ng=1 m=1'. The deck reads it with its own reader (rule_decks/custom_reader.lvs).",
+        "description": "the stock LVS of the PDK script run_lvs.py (sg13g2.lvs), with schematic simplification on (the default)",
+        "source": "ihp-sg13g2/libs.tech/klayout/tech/lvs/run_lvs.py (the database <layout>.lvsdb and the extracted netlist <layout>_extracted.cir in --run_dir); ihp-sg13g2/libs.tech/klayout/tech/lvs/sg13g2.lvs (it logs 'ERROR : Netlists don't match' or 'INFO : Congratulations! Netlists match.'; the script exits with 0 in both cases); ihp-sg13g2/libs.tech/klayout/tech/lvs/README.md (Usage)"
+      }
+    }
   }
 }

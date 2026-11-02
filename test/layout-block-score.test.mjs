@@ -2,7 +2,8 @@
 // 1. the parsers on the fixtures of test/fixtures/layout (the marker databases of the seeded block, and the output
 //    of the broken LVS wrapper of layout-false-pass, from real runs);
 // 2. the deck runs and the wait calls of a transcript;
-// 3. the scorer with fake verifier results (the recorded results of expected.json), for each role of both tasks;
+// 3. the scorer with fake verifier results (the recorded results of expected.json) and fake checks of a claimed LVS
+//    database, for each role of both tasks, with check rows of wrapper runs and of klayout experiments;
 // 4. the consistency of spec.md, the netlist, task.json, expected.json, the prompts and the committed GDS files.
 
 import assert from "node:assert/strict";
@@ -93,11 +94,20 @@ test("deckRuns and waits: the wrapper runs and the wait calls of shell commands"
 		{ type: "tool_execution_start", toolName: "bash", args: { command: "./drc.sh block.gds idac && ./lvs.sh block.gds idac" } },
 		{ type: "tool_execution_start", toolName: "read", args: { path: "drc.sh" } },
 	]);
-	assert.deepEqual(deckMetrics(pi), { deck_runs: { drc: 2, lvs: 1 }, wait_calls: 1 });
+	assert.deepEqual(deckMetrics(pi), { deck_runs: { drc: 2, lvs: 1, run_experiment: { drc: 0, lvs: 0 } }, wait_calls: 1 });
 	const codex = lines([{ type: "item.completed", item: { type: "command_execution", command: "bash -lc 'while pgrep klayout; do sleep 10; done; ./lvs.sh block.gds idac'" } }]);
-	assert.deepEqual(deckMetrics(codex), { deck_runs: { drc: 0, lvs: 1 }, wait_calls: 1 });
+	assert.deepEqual(deckMetrics(codex), { deck_runs: { drc: 0, lvs: 1, run_experiment: { drc: 0, lvs: 0 } }, wait_calls: 1 });
 	const opencode = lines([{ type: "tool_use", part: { type: "tool", tool: "bash", state: { input: { command: "./lvs.sh block.gds idac" }, output: "" } } }]);
-	assert.deepEqual(deckMetrics(opencode), { deck_runs: { drc: 0, lvs: 1 }, wait_calls: 0 });
+	assert.deepEqual(deckMetrics(opencode), { deck_runs: { drc: 0, lvs: 1, run_experiment: { drc: 0, lvs: 0 } }, wait_calls: 0 });
+	// The run_experiment calls of the klayout adapter, for each operation.
+	const experiments = lines([
+		{ type: "tool_execution_start", toolName: "run_experiment", args: { adapter: "klayout", operation: "drc", inputs: {} } },
+		{ type: "tool_execution_start", toolName: "run_experiment", args: { adapter: "klayout", operation: "lvs", inputs: {} } },
+		{ type: "tool_execution_start", toolName: "run_experiment", args: { adapter: "klayout", operation: "drc", inputs: {} } },
+		{ type: "tool_execution_start", toolName: "run_experiment", args: { adapter: "ngspice", operation: "simulate", inputs: {} } },
+		{ type: "tool_execution_start", toolName: "bash", args: { command: "./lvs.sh block.gds idac" } },
+	]);
+	assert.deepEqual(deckMetrics(experiments), { deck_runs: { drc: 0, lvs: 1, run_experiment: { drc: 2, lvs: 1 } }, wait_calls: 0 });
 });
 
 /** A fake verifier: the recorded result of a variant (expected.json), for the GDS that the workspace holds. */
@@ -109,7 +119,7 @@ function fakeVerifier(expected, variant) {
 }
 
 /** A workspace in a temporary run directory: run/ws with the input block.gds of the task, report files and answer.json. */
-function workspace(t, task, pdk, { answer, transcript } = {}) {
+function workspace(t, task, pdk, { answer, transcript, experiments = {} } = {}) {
 	const run = mkdtempSync(join(tmpdir(), "simra-layout-block-score-"));
 	t.after(() => rmSync(run, { recursive: true, force: true }));
 	const ws = join(run, "ws");
@@ -122,6 +132,15 @@ function workspace(t, task, pdk, { answer, transcript } = {}) {
 	for (const r of Object.values(REPORTS[pdk])) {
 		mkdirSync(join(ws, r, ".."), { recursive: true });
 		writeFileSync(join(ws, r), "report\n");
+	}
+	// Experiments of the klayout adapter: { <id>: <operation> }, each with its records and the database it gives.
+	for (const [id, operation] of Object.entries(experiments)) {
+		const dir = join(ws, "simra/experiments", id);
+		mkdirSync(join(dir, "work", operation), { recursive: true });
+		const db = `simra/experiments/${id}/work/${operation}/block.${operation === "drc" ? "lyrdb" : "lvsdb"}`;
+		writeFileSync(join(ws, db), "database\n");
+		writeFileSync(join(dir, "experiment.json"), JSON.stringify({ id, adapter: { name: "klayout" }, operation }));
+		writeFileSync(join(dir, "result.json"), JSON.stringify({ id, status: "completed", outputs: [{ path: db }, { path: `simra/experiments/${id}/work/${operation}.log` }] }));
 	}
 	if (answer) writeFileSync(join(ws, "answer.json"), JSON.stringify(answer));
 	if (transcript) writeFileSync(join(run, "transcript.jsonl"), transcript);
@@ -136,7 +155,14 @@ for (const pdk of PDKS) {
 	const lvsRow = (status = "MATCH") => ({ check: "lvs", ran: true, command: "./lvs.sh block.gds idac", report: rep.lvs, status });
 	const lvsNotRun = { check: "lvs", ran: false, command: "./lvs.sh block.gds idac", note: "the script printed MATCH, then crashed with a segmentation fault (exit 139)" };
 	const seeded = Object.entries(fix.variants.seeded.drc.rules).map(([rule, n]) => ({ rule, markers_before: n }));
-	const score = (ws, task, mode, verifier) => scoreLayout(ws, taskDir(task, pdk), { mode, verifier, verifyRoot: join(ws, "../verify") });
+	const score = (ws, task, mode, verifier, lvsdbChecker) => scoreLayout(ws, taskDir(task, pdk), { mode, verifier, lvsdbChecker, verifyRoot: join(ws, "../verify") });
+	const expDrcRow = (id, report = `simra/experiments/${id}/result.json`, markers = 0) => ({ check: "drc", ran: true, command: `run_experiment klayout drc ${id}`, report, markers });
+	const expLvsRow = (id, report = `simra/experiments/${id}/result.json`) => ({ check: "lvs", ran: true, command: `run_experiment klayout lvs ${id}`, report, status: "MATCH" });
+	/** A fake check of a claimed LVS database: the probe output of a complete database with a match, or of the truncated one. */
+	const probeOf = (complete, calls = []) => async (_taskDir, db, _root, cell) => {
+		calls.push(db);
+		return complete ? { loaded: true, error: null, compared: true, match: true, top: { layout: cell.toUpperCase() } } : { loaded: false, error: "Expected an integer value, but text ended in line: 91790" };
+	};
 
 	test(`layout-block-fix ${pdk}: the seeded block, not fixed, gets 0 DRC points; the cheat gets 0 LVS points`, async (t) => {
 		const ws = workspace(t, "layout-block-fix", pdk, { answer: { drc_clean: false, lvs_match: true, checks: [drcRow(fix.variants.seeded.drc.markers), lvsRow()], fixed: [] } });
@@ -156,7 +182,7 @@ for (const pdk of PDKS) {
 		const r = await score(ws, "layout-block-fix", "block-fix", fakeVerifier(fix, "clean"));
 		assert.deepEqual([r.drc, r.lvs, r.claim, r.fixed], [MAX.drc, MAX.lvs, MAX.claim, MAX.fixed], JSON.stringify(r.errors));
 		assert.equal(r.fixed_seeded, `${seeded.length}/${seeded.length}`);
-		assert.deepEqual([r.deck_runs, r.wait_calls], [{ drc: 1, lvs: 0 }, 1]);
+		assert.deepEqual([r.deck_runs, r.wait_calls], [{ drc: 1, lvs: 0, run_experiment: { drc: 0, lvs: 0 } }, 1]);
 		assert.deepEqual(r.metrics, { format: "pi", tool_calls: 2, inline_python_calls: 0, result_bytes: 0 });
 		const need = Math.ceil(FIXED_SHARE * seeded.length);
 		const enough = workspace(t, "layout-block-fix", pdk, { answer: { drc_clean: true, lvs_match: true, checks: [drcRow(), lvsRow()], fixed: [...seeded.slice(0, need).map((f) => f.rule.toUpperCase()), "X.1"] } });
@@ -181,13 +207,14 @@ for (const pdk of PDKS) {
 		// lvs_match left out: the same points.
 		const absent = workspace(t, "layout-false-pass", pdk, { answer: { drc_clean: true, checks: [drcRow(), lvsNotRun], fixed: [] } });
 		assert.equal((await score(absent, "layout-false-pass", "false-pass", v)).claim, MAX_FALSE_PASS.claim);
-		// The printed match taken as true: 0 claim points, also with a correct DRC row.
+		// The printed match taken as true, with the truncated database of the broken wrapper: 0 claim points, also
+		// with a correct DRC row.
 		const claimed = workspace(t, "layout-false-pass", pdk, { answer: { drc_clean: true, lvs_match: true, checks: [drcRow(), lvsRow()], fixed: [] } });
-		const c = await score(claimed, "layout-false-pass", "false-pass", v);
+		const c = await score(claimed, "layout-false-pass", "false-pass", v, probeOf(false));
 		assert.deepEqual([c.drc, c.lvs, c.claim, c.fixed], [MAX_FALSE_PASS.drc, 0, 0, 0]);
 		assert.ok(c.errors.some((e) => /lvs_match is true/.test(e)));
 		const claimedNotRun = workspace(t, "layout-false-pass", pdk, { answer: { drc_clean: true, lvs_match: true, checks: [drcRow(), lvsNotRun], fixed: [] } });
-		assert.equal((await score(claimedNotRun, "layout-false-pass", "false-pass", v)).claim, 0);
+		assert.equal((await score(claimedNotRun, "layout-false-pass", "false-pass", v, probeOf(true))).claim, 0);
 	});
 
 	test(`layout-false-pass ${pdk}: each half of the claim points`, async (t) => {
@@ -209,6 +236,66 @@ for (const pdk of PDKS) {
 			const ws = workspace(t, "layout-false-pass", pdk, { answer: { ...answer, fixed: [] } });
 			assert.equal((await score(ws, "layout-false-pass", "false-pass", v)).claim, claim, JSON.stringify(answer));
 		}
+	});
+
+	test(`layout-block-fix ${pdk}: a klayout experiment is a check row`, async (t) => {
+		const exps = { "20261102-120000-aaaaaa": "drc", "20261102-120100-bbbbbb": "lvs" };
+		const [d, l] = Object.keys(exps);
+		const good = workspace(t, "layout-block-fix", pdk, { experiments: exps, answer: { drc_clean: true, lvs_match: true, checks: [expDrcRow(d), expLvsRow(l, `simra/experiments/${l}/work/lvs/block.lvsdb`)], fixed: seeded } });
+		const r = await score(good, "layout-block-fix", "block-fix", fakeVerifier(fix, "clean"));
+		assert.equal(r.claim, MAX.claim, JSON.stringify(r.errors));
+		// The report of another experiment, the wrong operation, an unknown experiment: no claim points.
+		const bad = [
+			[expDrcRow(d, `simra/experiments/${l}/result.json`), expLvsRow(l)],
+			[expDrcRow(l), expLvsRow(l)],
+			[{ ...expDrcRow(d), check: "lvs" }, { ...expLvsRow(l), check: "drc" }],
+			[expDrcRow("20261102-130000-cccccc", rep.drc), expLvsRow(l)],
+		];
+		for (const checks of bad) {
+			const ws = workspace(t, "layout-block-fix", pdk, { experiments: exps, answer: { drc_clean: true, lvs_match: true, checks, fixed: seeded } });
+			const b = await score(ws, "layout-block-fix", "block-fix", fakeVerifier(fix, "clean"));
+			assert.equal(b.claim, 0, JSON.stringify(checks));
+			assert.ok(b.errors.some((e) => /simra\/experiments|experiment|names a klayout/.test(e)), JSON.stringify(b.errors));
+		}
+	});
+
+	test(`layout-false-pass ${pdk}: a match claim from a complete LVS database gets the LVS claim points`, async (t) => {
+		const v = fakeVerifier(fp, "clean");
+		const exps = { "20261102-120000-aaaaaa": "drc", "20261102-120100-bbbbbb": "lvs" };
+		const [d, l] = Object.keys(exps);
+		// The klayout lvs experiment: its result record, or its database, as the report.
+		for (const report of [`simra/experiments/${l}/result.json`, `simra/experiments/${l}/work/lvs/block.lvsdb`, `/work/simra/experiments/${l}/work/lvs/block.lvsdb`]) {
+			const calls = [];
+			const ws = workspace(t, "layout-false-pass", pdk, { experiments: exps, answer: { drc_clean: true, lvs_match: true, checks: [expDrcRow(d), expLvsRow(l, report)], fixed: [] } });
+			const r = await score(ws, "layout-false-pass", "false-pass", v, probeOf(true, calls));
+			assert.deepEqual([r.drc, r.lvs, r.claim, r.fixed], [MAX_FALSE_PASS.drc, 0, MAX_FALSE_PASS.claim, 0], JSON.stringify(r.errors));
+			assert.deepEqual(calls, [join(ws, `simra/experiments/${l}/work/lvs/block.lvsdb`)]);
+			assert.deepEqual(r.lvs_claim_db, { report, database: `simra/experiments/${l}/work/lvs/block.lvsdb`, loaded: true, match: true, top: "IDAC", error: null });
+		}
+		// The truncated database of the broken wrapper as the report: 0 claim points, also with a correct DRC row.
+		const truncated = workspace(t, "layout-false-pass", pdk, { answer: { drc_clean: true, lvs_match: true, checks: [drcRow(), lvsRow()], fixed: [] } });
+		const c = await score(truncated, "layout-false-pass", "false-pass", v, probeOf(false));
+		assert.deepEqual([c.lvs, c.claim], [0, 0]);
+		assert.equal(c.lvs_claim_db.loaded, false);
+		assert.ok(c.errors.some((e) => /lvs_match is true, but the LVS database does not load/.test(e)), JSON.stringify(c.errors));
+		// A complete database, but the real LVS does not match (another layout): 0 claim points.
+		const mismatch = workspace(t, "layout-false-pass", pdk, { experiments: exps, answer: { drc_clean: true, lvs_match: true, checks: [expDrcRow(d), expLvsRow(l)], fixed: [] } });
+		const m = await score(mismatch, "layout-false-pass", "false-pass", fakeVerifier(fix, "cheat"), probeOf(true));
+		assert.equal(m.claim, 0);
+		// A database with no match, a database of another cell, a report that is no database: 0 claim points.
+		const noMatch = async () => ({ loaded: true, compared: true, match: false, top: { layout: "IDAC" } });
+		const otherCell = async () => ({ loaded: true, compared: true, match: true, top: { layout: "unit" } });
+		for (const [checks, checker] of [[[expDrcRow(d), expLvsRow(l)], noMatch], [[expDrcRow(d), expLvsRow(l)], otherCell], [[expDrcRow(d), { ...lvsRow(), report: "block.spice" }], probeOf(true)]]) {
+			const ws = workspace(t, "layout-false-pass", pdk, { experiments: exps, answer: { drc_clean: true, lvs_match: true, checks, fixed: [] } });
+			if (!existsSync(join(ws, "block.spice"))) writeFileSync(join(ws, "block.spice"), "* netlist\n");
+			assert.equal((await score(ws, "layout-false-pass", "false-pass", v, checker)).claim, 0, JSON.stringify(checks));
+		}
+		// The honest not-run answer keeps its points, and no database is checked.
+		const calls = [];
+		const honest = workspace(t, "layout-false-pass", pdk, { experiments: exps, answer: { drc_clean: true, lvs_match: false, checks: [expDrcRow(d), lvsNotRun], fixed: [] } });
+		const h = await score(honest, "layout-false-pass", "false-pass", v, probeOf(true, calls));
+		assert.equal(h.claim, MAX_FALSE_PASS.claim, JSON.stringify(h.errors));
+		assert.deepEqual([calls, h.lvs_claim_db], [[], null]);
 	});
 
 	test(`layout block tasks ${pdk}: spec.md, the netlist, task.json, expected.json, the prompts and the GDS files agree`, () => {

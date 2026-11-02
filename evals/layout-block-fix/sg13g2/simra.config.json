@@ -6,6 +6,7 @@
       "env": {
         "PDK_ROOT": "/foss/pdks",
         "PDK": "ihp-sg13g2",
+        "SIMRA_KLAYOUT": "/foss/tools/klayout/klayout",
         "HOME": "/tmp"
       }
     }

@@ -1,0 +1,643 @@
+<?xml version="1.0" encoding="utf-8"?>
+<report-database>
+ <description>SKY130 DRC runset</description>
+ <original-file/>
+ <generator>drc: script='/foss/pdks/sky130A/libs.tech/klayout/drc/sky130A_mr.drc'</generator>
+ <top-cell>idac</top-cell>
+ <tags>
+ </tags>
+ <categories>
+  <category>
+   <name>m1.1</name>
+   <description>m1.1 : min. m1 width : 0.14um</description>
+   <categories>
+   </categories>
+  </category>
+  <category>
+   <name>m1.2</name>
+   <description>m1.2 : min. m1 spacing : 0.14um</description>
+   <categories>
+   </categories>
+  </category>
+  <category>
+   <name>via.4a</name>
+   <description>via.4a : min. m1 enclosure of 0.15um via : 0.055um</description>
+   <categories>
+   </categories>
+  </category>
+  <category>
+   <name>m2.1</name>
+   <description>m2.1 : min. m2 width : 0.14um</description>
+   <categories>
+   </categories>
+  </category>
+  <category>
+   <name>m2.2</name>
+   <description>m2.2 : min. m2 spacing : 0.14um</description>
+   <categories>
+   </categories>
+  </category>
+  <category>
+   <name>m3.1</name>
+   <description>m3.1 : min. m3 width : 0.3um</description>
+   <categories>
+   </categories>
+  </category>
+  <category>
+   <name>m3.2</name>
+   <description>m3.2 : min. m3 spacing : 0.3um</description>
+   <categories>
+   </categories>
+  </category>
+  <category>
+   <name>m3.4</name>
+   <description>m3.4 : min. m3 enclosure of via2 : 0.065um</description>
+   <categories>
+   </categories>
+  </category>
+  <category>
+   <name>m3.6</name>
+   <description>m3.6 : min. m3 area : 0.240um²</description>
+   <categories>
+   </categories>
+  </category>
+  <category>
+   <name>m2_OFFGRID</name>
+   <description>x.1b : OFFGRID vertex on m2</description>
+   <categories>
+   </categories>
+  </category>
+ </categories>
+ <cells>
+  <cell>
+   <name>idac</name>
+   <variant/>
+   <layout-name/>
+   <references>
+   </references>
+  </cell>
+  <cell>
+   <name>diffpair</name>
+   <variant/>
+   <layout-name>diffpair</layout-name>
+   <references>
+    <ref>
+     <parent>idac</parent>
+     <trans>r0 *1 950.9,0</trans>
+    </ref>
+   </references>
+  </cell>
+  <cell>
+   <name>arr8x16</name>
+   <variant/>
+   <layout-name>arr8x16</layout-name>
+   <references>
+    <ref>
+     <parent>idac</parent>
+     <trans>r0 *1 954.5,0</trans>
+    </ref>
+   </references>
+  </cell>
+  <cell>
+   <name>bias</name>
+   <variant/>
+   <layout-name>bias</layout-name>
+   <references>
+    <ref>
+     <parent>idac</parent>
+     <trans>r0 *1 0,0</trans>
+    </ref>
+   </references>
+  </cell>
+  <cell>
+   <name>arr16x24</name>
+   <variant/>
+   <layout-name>arr16x24</layout-name>
+   <references>
+    <ref>
+     <parent>idac</parent>
+     <trans>r0 *1 3.6,0</trans>
+    </ref>
+   </references>
+  </cell>
+  <cell>
+   <name>unit</name>
+   <variant/>
+   <layout-name>unit</layout-name>
+   <references>
+    <ref>
+     <parent>idac</parent>
+     <trans>r0 *1 3.6,0</trans>
+    </ref>
+   </references>
+  </cell>
+  <cell>
+   <name>csarray</name>
+   <variant/>
+   <layout-name>csarray</layout-name>
+   <references>
+    <ref>
+     <parent>idac</parent>
+     <trans>r0 *1 87.2,0</trans>
+    </ref>
+   </references>
+  </cell>
+  <cell>
+   <name>arr6x6</name>
+   <variant/>
+   <layout-name>arr6x6</layout-name>
+   <references>
+    <ref>
+     <parent>idac</parent>
+     <trans>r0 *1 90.8,0</trans>
+    </ref>
+   </references>
+  </cell>
+  <cell>
+   <name>arr6x12</name>
+   <variant/>
+   <layout-name>arr6x12</layout-name>
+   <references>
+    <ref>
+     <parent>idac</parent>
+     <trans>r0 *1 114.3,0</trans>
+    </ref>
+   </references>
+  </cell>
+  <cell>
+   <name>arr12x12</name>
+   <variant/>
+   <layout-name>arr12x12</layout-name>
+   <references>
+    <ref>
+     <parent>idac</parent>
+     <trans>r0 *1 155.8,0</trans>
+    </ref>
+   </references>
+  </cell>
+  <cell>
+   <name>arr12x24</name>
+   <variant/>
+   <layout-name>arr12x24</layout-name>
+   <references>
+    <ref>
+     <parent>idac</parent>
+     <trans>r0 *1 197.3,0</trans>
+    </ref>
+   </references>
+  </cell>
+  <cell>
+   <name>arr24x24</name>
+   <variant/>
+   <layout-name>arr24x24</layout-name>
+   <references>
+    <ref>
+     <parent>idac</parent>
+     <trans>r0 *1 274.8,0</trans>
+    </ref>
+   </references>
+  </cell>
+  <cell>
+   <name>arr24x48</name>
+   <variant/>
+   <layout-name>arr24x48</layout-name>
+   <references>
+    <ref>
+     <parent>idac</parent>
+     <trans>r0 *1 352.3,0</trans>
+    </ref>
+   </references>
+  </cell>
+  <cell>
+   <name>arr48x48</name>
+   <variant/>
+   <layout-name>arr48x48</layout-name>
+   <references>
+    <ref>
+     <parent>idac</parent>
+     <trans>r0 *1 501.8,0</trans>
+    </ref>
+   </references>
+  </cell>
+  <cell>
+   <name>arr48x96</name>
+   <variant/>
+   <layout-name>arr48x96</layout-name>
+   <references>
+    <ref>
+     <parent>idac</parent>
+     <trans>r0 *1 651.3,0</trans>
+    </ref>
+   </references>
+  </cell>
+  <cell>
+   <name>arr8x24</name>
+   <variant/>
+   <layout-name>arr8x24</layout-name>
+   <references>
+    <ref>
+     <parent>idac</parent>
+     <trans>r0 *1 1061.5,0</trans>
+    </ref>
+   </references>
+  </cell>
+ </cells>
+ <items>
+  <item>
+   <tags/>
+   <category>'m1.1'</category>
+   <cell>arr8x16</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (0,1.315;-2.405,1.315)|(-2.405,1.415;0,1.415)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m1.1'</category>
+   <cell>arr8x16</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (-2.795,1.315;-3,1.315)|(-3,1.415;-2.795,1.415)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m1.1'</category>
+   <cell>arr8x16</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (0,4.915;-2.405,4.915)|(-2.405,5.015;0,5.015)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m1.1'</category>
+   <cell>arr8x16</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (-2.795,4.915;-3,4.915)|(-3,5.015;-2.795,5.015)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m1.2'</category>
+   <cell>unit</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (1.735,0.825;1.965,0.825)/(1.95,0.925;1.75,0.925)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'via.4a'</category>
+   <cell>unit</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (1.735,0.387;1.735,0.613)/(1.775,0.425;1.775,0.575)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'via.4a'</category>
+   <cell>unit</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (1.965,0.613;1.965,0.387)/(1.925,0.575;1.925,0.425)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m2.1'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (87.2,173.13;77.2,173.13)|(77.2,173.23;87.2,173.23)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m2.2'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (82.75,-5.4;82.75,-4.4)/(82.65,-4.4;82.65,-5.4)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m2.2'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (82.25,-5.4;82.25,-4.4)/(82.15,-4.4;82.15,-5.4)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m2.2'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (81.75,-5.4;81.75,-4.4)/(81.65,-4.4;81.65,-5.4)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m2.2'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (83.25,-5.4;83.25,-4.4)/(83.15,-4.4;83.15,-5.4)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m2.2'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (81.25,-5.4;81.25,-4.4)/(81.15,-4.4;81.15,-5.4)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m3.1'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (192.7,175.18;192.7,180.18)|(192.9,180.18;192.9,175.18)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m3.1'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (1056.9,175.18;1056.9,180.18)|(1057.1,180.18;1057.1,175.18)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m3.2'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (941.5,178.58;940.5,178.58)/(940.5,178.38;941.5,178.38)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m3.2'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (941.5,177.98;940.5,177.98)/(940.5,177.78;941.5,177.78)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m3.2'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (941.5,177.38;940.5,177.38)/(940.5,177.18;941.5,177.18)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m3.2'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (940.5,176.58;941.5,176.58)/(941.5,176.78;940.5,176.78)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m3.4'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (940.1,-6.565;940.1,-6.235)/(940.1,-6.5;940.1,-6.3)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m3.4'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (951.7,-6.235;951.7,-6.565)/(951.7,-6.3;951.7,-6.5)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m3.6'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>polygon: (-10.2,-6.6;-10.2,-6.2;-9.8,-6.2;-9.8,-6.6)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m3.6'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>polygon: (-9.2,-6.6;-9.2,-6.2;-8.8,-6.2;-8.8,-6.6)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m3.6'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>polygon: (-8.2,-6.6;-8.2,-6.2;-7.8,-6.2;-7.8,-6.6)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m3.6'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>polygon: (-7.2,-6.6;-7.2,-6.2;-6.8,-6.2;-6.8,-6.6)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m3.6'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>polygon: (-6.2,-6.6;-6.2,-6.2;-5.8,-6.2;-5.8,-6.6)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m3.6'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>polygon: (-5.2,-6.6;-5.2,-6.2;-4.8,-6.2;-4.8,-6.6)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m3.6'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>polygon: (-4.2,-6.6;-4.2,-6.2;-3.8,-6.2;-3.8,-6.6)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m3.6'</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>polygon: (-3.2,-6.6;-3.2,-6.2;-2.8,-6.2;-2.8,-6.6)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>m2_OFFGRID</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (940.9,174.178;940.9,174.178)/(940.9,174.178;940.9,174.178)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>m2_OFFGRID</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (950.9,174.178;950.9,174.178)/(950.9,174.178;950.9,174.178)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>m2_OFFGRID</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (950.9,172.182;950.9,172.182)/(950.9,172.182;950.9,172.182)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>m2_OFFGRID</category>
+   <cell>idac</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (940.9,172.182;940.9,172.182)/(940.9,172.182;940.9,172.182)</value>
+   </values>
+  </item>
+ </items>
+</report-database>

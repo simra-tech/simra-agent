@@ -1,8 +1,8 @@
 // The system prompt that the pinned pi sends with the Simra extension loaded, captured by a fake model API.
 // It needs no API key and no network.
 //
-// 1. The prompt starts with the chip-design preamble. It lists each tool once, keeps the rules of the tools, and has
-//    no pi documentation section.
+// 1. The prompt starts with the chip-design preamble. It lists each tool once, keeps the rules of the tools (with the
+//    rule to run DRC and LVS through run_experiment), and has no pi documentation section.
 // 2. A prompt that the user gives (--system-prompt) stays as it is.
 
 import assert from "node:assert/strict";
@@ -69,6 +69,7 @@ test("pi sends the chip-design preamble, the tools and their rules, and no pi do
 	assert.match(prompt, /- check_requirements: run the experiments in requirements\.json/);
 	assert.doesNotMatch(prompt, /run_experiment: run_experiment|check_requirements: check_requirements/);
 	assert.match(prompt, /<rules>\n[^]*- Run simulations with run_experiment[^]*- Before you say that the design meets[^]*<\/rules>/);
+	assert.match(prompt, /<rules>\n[^]*- Run DRC and LVS with run_experiment \(adapter klayout, operations drc and lvs\), not with a DRC or LVS shell script\.[^]*<\/rules>/);
 });
 
 test("a system prompt that the user gives stays as it is", { timeout: 60_000 }, async (t) => {

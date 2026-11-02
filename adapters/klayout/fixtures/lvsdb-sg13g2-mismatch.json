@@ -1,0 +1,434 @@
+{
+ "loaded": true,
+ "error": null,
+ "compared": true,
+ "match": false,
+ "circuits": [
+  {
+   "layout": "idac",
+   "reference": "IDAC",
+   "status": "NoMatch",
+   "pins": []
+  }
+ ],
+ "devices": [
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "3.3.0.1",
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "3.1.0.1",
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "3.2.0.1",
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "2.7.0.1",
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "2.6.0.1",
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "2.5.0.1",
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "2.4.0.1",
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "2.3.0.1",
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "2.2.0.1",
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "2.1.0.1",
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "2.0.0.1",
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "1.1.0.1",
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$1",
+   "reference": null,
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$2",
+   "reference": null,
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$3",
+   "reference": null,
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$4",
+   "reference": null,
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$5",
+   "reference": null,
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$6",
+   "reference": null,
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$7",
+   "reference": null,
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$8",
+   "reference": null,
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$9",
+   "reference": null,
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$10",
+   "reference": null,
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$11",
+   "reference": null,
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$12",
+   "reference": null,
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$13",
+   "reference": null,
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$14",
+   "reference": null,
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$15",
+   "reference": null,
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$16",
+   "reference": null,
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$17",
+   "reference": null,
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$18",
+   "reference": null,
+   "class": "sg13_lv_nmos",
+   "status": "Mismatch"
+  }
+ ],
+ "nets": [
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "3.TAIL",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "IBIAS",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "INN",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "INP",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "O0",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "O1",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "O2",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "O3",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "O4",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "O5",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "O6",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "O7",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "OUTN",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "OUTP",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": null,
+   "reference": "VSS",
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$41876",
+   "reference": null,
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$44070",
+   "reference": null,
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$44071",
+   "reference": null,
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$44072",
+   "reference": null,
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$44073",
+   "reference": null,
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$44074",
+   "reference": null,
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$44075",
+   "reference": null,
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$44076",
+   "reference": null,
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$44077",
+   "reference": null,
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$44078",
+   "reference": null,
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$44079",
+   "reference": null,
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$44080",
+   "reference": null,
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$44081",
+   "reference": null,
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$44082",
+   "reference": null,
+   "status": "Mismatch"
+  },
+  {
+   "circuit": "idac",
+   "layout": "$44083",
+   "reference": null,
+   "status": "Mismatch"
+  }
+ ],
+ "top": {
+  "layout": "idac",
+  "layout_pins": [
+   "ibias",
+   "inn",
+   "inp",
+   "vss"
+  ],
+  "reference": "IDAC",
+  "reference_pins": [
+   "O0",
+   "O1",
+   "O2",
+   "O3",
+   "O4",
+   "O5",
+   "O6",
+   "O7",
+   "INP",
+   "INN",
+   "OUTP",
+   "OUTN",
+   "IBIAS",
+   "VSS"
+  ]
+ }
+}

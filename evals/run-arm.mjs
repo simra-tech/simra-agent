@@ -156,6 +156,14 @@ export function makeWorkspace(taskDir, task, ws) {
 }
 
 /**
+ * The environment variables of the task environment that the sandbox gets (for example PDK, PDK_ROOT and
+ * SIMRA_KLAYOUT), so that the tools and the adapters in the sandbox see them. The sandbox sets its own HOME.
+ */
+export function sandboxToolEnv(env) {
+	return Object.fromEntries(Object.entries(env.env ?? {}).filter(([k]) => k !== "HOME"));
+}
+
+/**
  * The container command line for one sandboxed process. ws, state and proxyDir are host directories.
  * env: extra environment variables. command: the program and its arguments in the container.
  * readOnly: more mounts, { <host directory>: <container directory> }, read-only.
@@ -438,7 +446,7 @@ async function main() {
 	const { proxyDir, stop: stopProxy } = await startProxy(run, access.key, upstream, { engine, imageId, headers: access.headers });
 
 	const name = `simra-arm-${runName}`;
-	const toolEnv = Object.fromEntries(Object.entries(env.env ?? {}).filter(([k]) => k !== "HOME"));
+	const toolEnv = sandboxToolEnv(env);
 	// The Simra extension tells the agent how much session time is left (other arms ignore the variable).
 	const deadline = new Date(Date.now() + timeoutMin * 60_000).toISOString();
 	const argv = sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar: model.keyVar, env: { ...toolEnv, ...cmd.env, SIMRA_SESSION_DEADLINE: deadline }, readOnly, command: cmd.command });

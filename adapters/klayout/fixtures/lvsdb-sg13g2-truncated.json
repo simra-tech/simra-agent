@@ -1,0 +1,10 @@
+{
+ "loaded": false,
+ "error": "Expected an integer value, but text ended in line: 91790 of /work/lvs-broken/block.lvsdb in LayoutVsSchematic.read",
+ "compared": false,
+ "match": false,
+ "circuits": [],
+ "devices": [],
+ "nets": [],
+ "top": null
+}

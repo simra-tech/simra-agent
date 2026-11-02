@@ -1,0 +1,138 @@
+{
+ "loaded": true,
+ "error": null,
+ "compared": true,
+ "match": false,
+ "circuits": [
+  {
+   "layout": "arr12x12",
+   "reference": "ARR12X12",
+   "status": "Skipped",
+   "pins": []
+  },
+  {
+   "layout": "arr12x24",
+   "reference": "ARR12X24",
+   "status": "Skipped",
+   "pins": []
+  },
+  {
+   "layout": "arr16x24",
+   "reference": "ARR16X24",
+   "status": "Skipped",
+   "pins": []
+  },
+  {
+   "layout": "arr24x24",
+   "reference": "ARR24X24",
+   "status": "Skipped",
+   "pins": []
+  },
+  {
+   "layout": "arr24x48",
+   "reference": "ARR24X48",
+   "status": "Skipped",
+   "pins": []
+  },
+  {
+   "layout": "arr48x48",
+   "reference": "ARR48X48",
+   "status": "Skipped",
+   "pins": []
+  },
+  {
+   "layout": "arr48x96",
+   "reference": "ARR48X96",
+   "status": "Skipped",
+   "pins": []
+  },
+  {
+   "layout": "arr6x12",
+   "reference": "ARR6X12",
+   "status": "Skipped",
+   "pins": []
+  },
+  {
+   "layout": "arr6x6",
+   "reference": "ARR6X6",
+   "status": "Skipped",
+   "pins": []
+  },
+  {
+   "layout": "arr8x16",
+   "reference": "ARR8X16",
+   "status": "Skipped",
+   "pins": []
+  },
+  {
+   "layout": "arr8x24",
+   "reference": "ARR8X24",
+   "status": "Skipped",
+   "pins": []
+  },
+  {
+   "layout": "bias",
+   "reference": "BIAS",
+   "status": "Skipped",
+   "pins": []
+  },
+  {
+   "layout": "csarray",
+   "reference": "CSARRAY",
+   "status": "Skipped",
+   "pins": []
+  },
+  {
+   "layout": "diffpair",
+   "reference": "DIFFPAIR",
+   "status": "Skipped",
+   "pins": []
+  },
+  {
+   "layout": "idac",
+   "reference": "IDAC",
+   "status": "Skipped",
+   "pins": []
+  },
+  {
+   "layout": "unit",
+   "reference": "UNIT",
+   "status": "NoMatch",
+   "pins": [
+    {
+     "layout": null,
+     "reference": "S",
+     "status": "Mismatch"
+    }
+   ]
+  }
+ ],
+ "devices": [],
+ "nets": [],
+ "top": {
+  "layout": "idac",
+  "layout_pins": [
+   "ibias",
+   "inn",
+   "inp",
+   "vss"
+  ],
+  "reference": "IDAC",
+  "reference_pins": [
+   "O0",
+   "O1",
+   "O2",
+   "O3",
+   "O4",
+   "O5",
+   "O6",
+   "O7",
+   "INP",
+   "INN",
+   "OUTP",
+   "OUTN",
+   "IBIAS",
+   "VSS"
+  ]
+ }
+}

@@ -24,6 +24,8 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
   against `requirements.json`. They run the experiments that the requirements need and write a verdict to
   `simra/checks/<id>/verdict.json`. Each row of the verdict names the experiment that gave its value.
 - The ngspice adapter has four operations: `simulate`, `operating_point`, `lint` and `check_design`.
+- The klayout adapter has two operations: `drc` and `lvs`. They run the stock KLayout decks of the PDK and give
+  typed verdicts. A check that did not complete gives "not run", not a pass.
 - One example design exists: a two-stage OTA for the open IHP SG13G2 PDK.
 
 ## Requirements
@@ -268,6 +270,7 @@ shows the errors before the rows.
 | `packages/kernel/` | runner, experiment records, environments, `simra` CLI (no pi dependency) |
 | `packages/pi-extension/` | the pi extension (the only package that imports pi) |
 | `adapters/ngspice/` | ngspice adapter (Python) and its tests; `design_check.py` has the operation `check_design` |
+| `adapters/klayout/` | klayout adapter (Python) and its tests: DRC and LVS with the stock KLayout decks of the PDK, with typed verdicts |
 | `technologies/` | technology packs: the PDK facts that adapters need |
 | `examples/ota-sg13g2/` | two-stage OTA for IHP SG13G2 |
 | `evals/` | demo evaluations for the inner development loop (not decision benchmarks): the OTA at 3 corners, the OTA against a PVT spec, OTA synthesis from a pin specification (`ota-synthesis`), comparator synthesis from a pin specification (`comparator-synthesis`), their scorers and an arm runner. `synthesis-family.mjs` makes variants of the two synthesis tasks with tighter limits, from a hidden target design and a difficulty factor |

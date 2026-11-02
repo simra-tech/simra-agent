@@ -120,9 +120,17 @@ reference netlist of the task directory.
 A rule name in `fixed` that is not a seeded rule does not remove points. The score shows the names in
 `fixed_extra`, and the count of seeded rules found in `fixed_seeded` (for example `11/11`).
 
+A check row can also be an experiment of the `klayout` adapter (the `run_experiment` tool of the Simra arm). Then
+the row has `"ran": true`, the command `run_experiment klayout <drc|lvs> <experiment id>`, and a report under
+`simra/experiments/<experiment id>/`: the result record `result.json`, or an output of the experiment (the marker
+database or the LVS database). The experiment must be a `klayout` run of the operation of the row. Else the row
+does not count, and the answer gets no claim points.
+
 The score has the diagnostics of layout-drc-fix, and two more from `transcript.jsonl` (they give no points):
 
-1. `deck_runs`: the count of runs of `drc.sh` and of `lvs.sh` in the shell commands of the agent.
+1. `deck_runs`: the count of runs of `drc.sh` and of `lvs.sh` in the shell commands of the agent, and in
+   `deck_runs.run_experiment` the count of `run_experiment` calls of the `klayout` adapter for `drc` and for `lvs`
+   (pi transcripts only).
 2. `wait_calls`: the count of shell commands that wait: `sleep`, a `while` or `until` loop, or `tail -f`.
 
 Without a transcript, both are "not_run".

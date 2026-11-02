@@ -197,5 +197,48 @@
         "source": "sky130A/libs.ref/sky130_fd_pr/spice/sky130_fd_pr__pfet_01v8_hvt__tt.pm3.spice"
       }
     }
+  },
+  "klayout": {
+    "sky130A": {
+      "drc": {
+        "rule_sets": {
+          "main": {
+            "command": ["{klayout}", "-b", "-r", "{pdk_root}/sky130A/libs.tech/klayout/drc/sky130A_mr.drc", "-rd", "input={gds}", "-rd", "top_cell={cell}", "-rd", "report={report}", "-rd", "feol=true", "-rd", "beol=true", "-rd", "offgrid=true", "-rd", "thr=4"],
+            "report": "{run_dir}/{cell}.lyrdb",
+            "description": "the FEOL, BEOL and off-grid rules of sky130A_mr.drc, as the run_drc_full macro of the PDK (the deck has no density rules)",
+            "exit_code_violations": null,
+            "default": true,
+            "source": "sky130A/libs.tech/klayout/macros/run_drc_full.lydrc (feol, beol and offgrid true); sky130A/libs.tech/klayout/drc/sky130A_mr.drc (the switches input, top_cell, report, feol, beol, offgrid and thr; the deck exits with 0 also when it finds violations)"
+          },
+          "feol": {
+            "command": ["{klayout}", "-b", "-r", "{pdk_root}/sky130A/libs.tech/klayout/drc/sky130A_mr.drc", "-rd", "input={gds}", "-rd", "top_cell={cell}", "-rd", "report={report}", "-rd", "feol=true", "-rd", "thr=4"],
+            "report": "{run_dir}/{cell}.lyrdb",
+            "description": "the FEOL rules of sky130A_mr.drc only, as the run_drc_feol macro of the PDK",
+            "exit_code_violations": null,
+            "default": false,
+            "source": "sky130A/libs.tech/klayout/macros/run_drc_feol.lydrc (feol true); sky130A/libs.tech/klayout/drc/sky130A_mr.drc"
+          },
+          "beol": {
+            "command": ["{klayout}", "-b", "-r", "{pdk_root}/sky130A/libs.tech/klayout/drc/sky130A_mr.drc", "-rd", "input={gds}", "-rd", "top_cell={cell}", "-rd", "report={report}", "-rd", "beol=true", "-rd", "thr=4"],
+            "report": "{run_dir}/{cell}.lyrdb",
+            "description": "the BEOL rules of sky130A_mr.drc only, as the run_drc_beol macro of the PDK",
+            "exit_code_violations": null,
+            "default": false,
+            "source": "sky130A/libs.tech/klayout/macros/run_drc_beol.lydrc (beol true); sky130A/libs.tech/klayout/drc/sky130A_mr.drc"
+          }
+        }
+      },
+      "lvs": {
+        "command": ["{klayout}", "-b", "-r", "{pdk_root}/sky130A/libs.tech/klayout/lvs/sky130.lvs", "-rd", "input={gds}", "-rd", "top_cell={cell}", "-rd", "report={report}", "-rd", "schematic={netlist}", "-rd", "target_netlist={extracted}", "-rd", "thr=4", "-rd", "run_mode=deep", "-rd", "spice_net_names=true", "-rd", "spice_comments=false", "-rd", "scale=false", "-rd", "verbose=false", "-rd", "schematic_simplify=true", "-rd", "net_only=false", "-rd", "top_lvl_pins=false", "-rd", "combine=false", "-rd", "purge=false", "-rd", "purge_nets=false"],
+        "report": "{run_dir}/{cell}.lvsdb",
+        "extracted": "{run_dir}/{cell}_extracted.cir",
+        "match_text": "Congratulations! Netlists match.",
+        "mismatch_text": "Netlists don't match",
+        "exit_codes": { "match": [0], "mismatch": [1] },
+        "netlist_format": "SPICE with one .subckt per cell; MOS devices as M lines with the device name of the PDK as the model, for example 'M1 d g s b sky130_fd_pr__nfet_01v8 L=0.5u W=1u'.",
+        "description": "the stock LVS deck sky130.lvs, with the switches of the PDK script run_lvs.py and schematic simplification on (run_lvs.py itself is not used: with PDK_ROOT set it does not find the deck)",
+        "source": "sky130A/libs.tech/klayout/lvs/run_lvs.py (the switches and their defaults); sky130A/libs.tech/klayout/lvs/README.md (Switches); sky130A/libs.tech/klayout/lvs/sky130.lvs (it logs 'ERROR : Netlists don't match' and exits with 1, or logs 'INFO : Congratulations! Netlists match.')"
+      }
+    }
   }
 }

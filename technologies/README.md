@@ -30,6 +30,22 @@ contain PDK facts. Each directory has one `technology.json` (schema `simra.techn
 | `...params.<p>.source` | the PDK file (relative to `$PDK_ROOT`) and the fact in it that gives the value |
 | `ngspice.devices.<name>.width_total` | `true` when the width parameter is the total width of all fingers; when `false`, the gate area is multiplied by the number of fingers |
 | `ngspice.devices.<name>.source` | the PDK file that defines the device subcircuit |
+| `klayout.<pdk>` | the KLayout decks of one value of `$PDK` (operations `drc` and `lvs` of the klayout adapter) |
+| `klayout.<pdk>.drc.rule_sets.<set>` | one DRC rule set: the deck command and its report |
+| `...<set>.command` | the deck command, one word per item; placeholders are listed below |
+| `...<set>.report` | the path of the marker database (`.lyrdb`) that the command writes |
+| `...<set>.description` | the rules that the set checks |
+| `...<set>.exit_code_violations` | the exit code of a completed run with markers; `null` when the deck exits with 0 also when it finds markers |
+| `...<set>.incomplete_texts` | optional; log texts that show that a part of the deck did not finish (the run is then not run) |
+| `...<set>.default` | `true` for the set that the adapter runs when the request gives no `rule_set`; exactly one set has it |
+| `...<set>.source` | the PDK files (relative to `$PDK_ROOT`) and the facts in them that give the command, the report path and the exit codes |
+| `klayout.<pdk>.lvs.command` | the LVS deck command, one word per item |
+| `klayout.<pdk>.lvs.report` | the path of the LVS database (`.lvsdb`) that the command writes |
+| `klayout.<pdk>.lvs.extracted` | the path of the extracted netlist that the command writes |
+| `klayout.<pdk>.lvs.match_text`, `.mismatch_text` | the texts that the deck log has when the netlists match, and when they do not match |
+| `klayout.<pdk>.lvs.exit_codes.match`, `.mismatch` | the exit codes of a completed run with a match, and with a mismatch |
+| `klayout.<pdk>.lvs.netlist_format` | the form of the reference netlist that the deck reads |
+| `klayout.<pdk>.lvs.description`, `.source` | the LVS that the command runs, and the PDK files that give the facts |
 
 | Pack | PDKs | MOS model |
 | --- | --- | --- |
@@ -37,6 +53,24 @@ contain PDK facts. Each directory has one `technology.json` (schema `simra.techn
 | `sky130` | `sky130A`, `sky130B` | BSIM4 |
 
 The `sky130` pack has `ngspice.passives` only for `sky130A`. The image has no `sky130B` files to cite.
+The `ihp-sg13` pack has `klayout` only for `ihp-sg13g2`, and the `sky130` pack only for `sky130A`.
+
+The commands of `klayout` can have these placeholders:
+
+| Placeholder | Value |
+| --- | --- |
+| `{gds}` | the absolute path of the layout |
+| `{gds_stem}` | the file name of the layout without `.gds` |
+| `{cell}` | the top cell |
+| `{run_dir}` | the output directory of the run (`work/drc` or `work/lvs` of the experiment) |
+| `{report}` | the expanded `report` path |
+| `{extracted}` | the expanded `extracted` path (LVS only) |
+| `{netlist}` | the absolute path of the reference netlist (LVS only) |
+| `{pdk_root}` | `$PDK_ROOT` |
+| `{klayout}` | the KLayout binary that the adapter found (on `PATH`, else in `SIMRA_KLAYOUT`) |
+
+`report` and `extracted` can have only `{gds_stem}`, `{cell}` and `{run_dir}`. The pack gives no path of the
+KLayout binary.
 
 The kernel gives the directory to the adapter in `SIMRA_TECHNOLOGY_DIR`. A container environment mounts it
 read-only at the same path.
@@ -59,3 +93,14 @@ To add a PDK:
 8. Write `<name>/technology.json`.
 9. Add a fixture of the `show` output to the ngspice adapter tests, and a `check_design` test of a design of
    the new PDK to `adapters/ngspice/test_design_check.py`.
+
+To add the KLayout decks of a PDK:
+
+1. Find the DRC and LVS decks of the PDK under `$PDK_ROOT` and the command that runs each of them.
+2. Write each DRC rule set with its command and its report path. Mark one set as the default.
+3. Run each set on a clean layout and on a layout with violations. Write the exit code of a run with markers in
+   `exit_code_violations`, or `null` when the deck exits with 0.
+4. Run the LVS on a layout that matches and on a layout that does not match. Write the texts and the exit codes
+   of the two results, and the paths of the LVS database and the extracted netlist.
+5. Write the `source` of each fact.
+6. Run the container tests of the klayout adapter (`test/klayout-container.test.mjs`) on the new PDK.

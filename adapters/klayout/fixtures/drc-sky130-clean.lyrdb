@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<report-database>
+ <description>SKY130 DRC runset</description>
+ <original-file />
+ <generator>drc: script='/foss/pdks/sky130A/libs.tech/klayout/drc/sky130A_mr.drc'</generator>
+ <top-cell>idac</top-cell>
+ <tags>
+ </tags>
+ <categories>
+  <category>
+   <name>dnwell.1</name>
+   <description>dnwell.1: min. dnwell width : 3.0um</description>
+   <categories>
+   </categories>
+  </category>
+  <category>
+   <name>dnwell.2</name>
+   <description>dnwell.2 : min. dnwell spacing : 6.3um</description>
+   <categories>
+   </categories>
+  </category>
+  <category>
+   <name>nwell.1</name>
+   <description>nwell.1 : min. nwell width : 0.84um</description>
+   <categories>
+   </categories>
+  </category>
+  </categories>
+ <cells>
+  <cell>
+   <name>idac</name>
+   <variant />
+   <layout-name />
+   <references>
+   </references>
+  </cell>
+ </cells>
+ <items>
+ </items>
+</report-database>

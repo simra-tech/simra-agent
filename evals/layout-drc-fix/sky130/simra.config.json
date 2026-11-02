@@ -6,6 +6,7 @@
       "env": {
         "PDK_ROOT": "/foss/pdks",
         "PDK": "sky130A",
+        "SIMRA_KLAYOUT": "/foss/tools/klayout/klayout",
         "HOME": "/tmp"
       }
     }
