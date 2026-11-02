@@ -1,14 +1,15 @@
 // The PDF reader on PDFs that the test writes: page markers, header, meta.json, the cache, the no-text warning,
-// encrypted and broken files, and the command simra pdf. It needs no network.
+// encrypted and broken files, page images, and the command simra pdf. It needs no network.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { cacheRoot, extractPdf, pdfPages } from "../src/index.ts";
+import { PNG } from "pngjs";
+import { cacheRoot, extractPdf, pdfPages, renderPage } from "../src/index.ts";
 import { makePdf } from "./pdf-fixture.ts";
 
 const cli = new URL("../src/cli.ts", import.meta.url).pathname;
@@ -49,21 +50,23 @@ test("extractPdf writes document.md with page markers and a header, and meta.jso
 	assert.equal(meta.source, pdf);
 	assert.equal(meta.pages, 3);
 	assert.deepEqual(meta.outline, [{ title: "Rules", level: 0, page: 1 }, { title: "Spec", level: 0, page: 3 }]);
-	assert.deepEqual(meta.warnings, ["No text layer on page 2. There is no OCR."]);
+	assert.deepEqual(meta.warnings, ["No text layer on page 2. There is no OCR. To see a page, read the PDF path with #page=N at the end."]);
+	assert.deepEqual(readdirSync(doc.dir).sort(), ["document.md", "meta.json"]);
 
 	// Each marker is at its line in meta.json, and the text of the page follows it.
 	const lines = readFileSync(doc.document, "utf8").split("\n");
 	assert.deepEqual(meta.page_lines.map((n: number) => lines[n - 1]), ["[page 1]", "[page 2]", "[page 3]"]);
 	assert.deepEqual(lines.slice(meta.page_lines[0], meta.page_lines[0] + 2), ["Design rules", "M1.a min width = 0.16 um"]);
-	assert.equal(lines[meta.page_lines[1]], "(no text layer)");
+	assert.equal(lines[meta.page_lines[1]], "(no text layer. To see this page, read the PDF path with #page=2 at the end)");
 	assert.deepEqual(lines.slice(meta.page_lines[2], meta.page_lines[2] + 2), ["Process spec", "VDD = 1.2 V (nominal)"]);
 
 	const header = lines.slice(0, meta.page_lines[0] - 1).join("\n");
 	assert.match(header, /^# rules\.pdf\n/);
 	assert.ok(header.includes(`Source: ${pdf}\nSHA-256: ${sha256}\nPages: 3\nText file: ${doc.document}\n`));
 	assert.ok(header.includes(`Outline:\n- Rules: page 1, line ${meta.page_lines[0]}\n- Spec: page 3, line ${meta.page_lines[2]}\n`));
-	assert.ok(header.includes("Warnings:\n- No text layer on page 2. There is no OCR.\n"));
+	assert.ok(header.includes("Warnings:\n- No text layer on page 2. There is no OCR. To see a page, read the PDF path with #page=N at the end.\n"));
 	assert.match(header, /grep the text file/);
+	assert.ok(header.includes(`To see page N as an image (for example a figure or a table), read ${pdf}#page=N, or run simra pdf <file> --render N.`));
 	assert.match(header, /Cite each fact with its page, for example \[page 12\]\./);
 });
 
@@ -120,4 +123,39 @@ test("pdfPages and simra pdf --pages give the header and the selected pages", as
 	const bad = run("--pages", "0-9");
 	assert.equal(bad.status, 1);
 	assert.match(bad.stderr, /^simra: pages 0-9: the PDF has pages 1-3/);
+});
+
+test("renderPage renders a page to a PNG at about 150 dpi, once", async (t) => {
+	const { pdf } = setup(t);
+	const doc = await extractPdf(pdf);
+	const page1 = await renderPage(pdf, 1);
+	assert.equal(page1, join(doc.dir, "page-1.png"));
+	const png = PNG.sync.read(readFileSync(page1));
+	// A Letter page (612 x 792 pt) at 150 dpi. Page 1 has text at the top and is white in the center.
+	assert.deepEqual([png.width, png.height], [1275, 1650]);
+	assert.deepEqual([...png.data.subarray((825 * png.width + 637) * 4, (825 * png.width + 637) * 4 + 3)], [255, 255, 255]);
+	const mtime = statSync(page1).mtimeMs;
+	assert.equal(await renderPage(pdf, 1), page1);
+	assert.equal(statSync(page1).mtimeMs, mtime);
+
+	// Page 2 has no text but a blue rectangle from 1 to 7.5 inch: blue in the center, white in the corner.
+	const page2 = PNG.sync.read(readFileSync(await renderPage(pdf, 2)));
+	const rgb = (x: number, y: number) => [...page2.data.subarray((y * page2.width + x) * 4, (y * page2.width + x) * 4 + 3)];
+	assert.deepEqual(rgb(637, 825), [0, 0, 255]);
+	assert.deepEqual(rgb(10, 10), [255, 255, 255]);
+
+	await assert.rejects(renderPage(pdf, 4), { message: "page 4: the PDF has pages 1-3" });
+});
+
+test("simra pdf --render renders a page and prints its path", async (t) => {
+	const { pdf, cache, sha256 } = setup(t);
+	const run = spawnSync(process.execPath, [cli, "pdf", pdf, "--render", "3"], { env: { ...process.env, SIMRA_CACHE_DIR: cache }, encoding: "utf8" });
+	assert.equal(run.status, 0, run.stderr);
+	const path = join(cache, "pdf", sha256, "page-3.png");
+	assert.equal(run.stdout, `${path}\n`);
+	assert.deepEqual([...readFileSync(path).subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+	// --pages and --render together are a usage error.
+	const both = spawnSync(process.execPath, [cli, "pdf", pdf, "--pages", "1", "--render", "1"], { env: { ...process.env, SIMRA_CACHE_DIR: cache }, encoding: "utf8" });
+	assert.equal(both.status, 2);
+	assert.match(both.stderr, /^usage: /);
 });

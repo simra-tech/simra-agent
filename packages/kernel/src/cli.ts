@@ -14,14 +14,15 @@
 //   simra list                list experiments, oldest first
 //   simra check               check requirements.json; options --file <path>, --only <id,...>, --conditions <name,...>,
 //                             --parallel <n> (experiments at the same time, default 4)
-//   simra pdf <file>          print the text of a PDF with a [page N] marker before each page; option --pages <a-b>
+//   simra pdf <file>          print the text of a PDF with a [page N] marker before each page; option --pages <a-b>,
+//                             or --render <N> (render page N to a PNG in the cache and print its path)
 //
 // Option: --root <dir> (default: the nearest directory upward with simra.config.json, else the current directory)
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { findRoot } from "./config.ts";
-import { extractPdf, pdfPages } from "./pdf.ts";
+import { extractPdf, pdfPages, renderPage } from "./pdf.ts";
 import { runCheck } from "./requirements.ts";
 import { runtimeEstimate } from "./estimate.ts";
 import { designRecord, formatDesignRecord } from "./record.ts";
@@ -32,7 +33,7 @@ import { waitExperiments } from "./wait.ts";
 
 function usage(): never {
 	console.error(
-		"usage: simra run [--detach] <spec.json> | simra wait <id> [<id>...] [--timeout-s <n>] | simra show <id> [--json] | simra record [<path>...] | simra list | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>] | simra pdf <file> [--pages <a-b>]   [--root <dir>]",
+		"usage: simra run [--detach] <spec.json> | simra wait <id> [<id>...] [--timeout-s <n>] | simra show <id> [--json] | simra record [<path>...] | simra list | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>] | simra pdf <file> [--pages <a-b> | --render <N>]   [--root <dir>]",
 	);
 	process.exit(2);
 }
@@ -53,7 +54,7 @@ async function main(argv: string[]): Promise<number> {
 			// Internal: the supervisor of a detached run (see runExperiment). The argument is the experiment directory.
 			const result = await runDetachedWorker(argv[++i] ?? usage());
 			return result.status === "completed" ? 0 : 1;
-		} else if (["--file", "--only", "--conditions", "--parallel", "--timeout-s", "--pages"].includes(argv[i])) options[argv[i].slice(2)] = argv[++i] ?? usage();
+		} else if (["--file", "--only", "--conditions", "--parallel", "--timeout-s", "--pages", "--render"].includes(argv[i])) options[argv[i].slice(2)] = argv[++i] ?? usage();
 		else args.push(argv[i]);
 	}
 	root ??= findRoot(process.cwd()) ?? process.cwd();
@@ -112,7 +113,10 @@ async function main(argv: string[]): Promise<number> {
 	}
 	if (command === "pdf" && arg) {
 		const range = options.pages === undefined ? [] : (options.pages.match(/^(\d+)(?:-(\d+))?$/) ?? usage()).slice(1).filter(Boolean).map(Number);
-		process.stdout.write(pdfPages(await extractPdf(arg), range[0], range[1] ?? range[0]));
+		if (options.pages !== undefined && options.render !== undefined) usage();
+		const page = options.render === undefined ? undefined : positive(options.render);
+		if (page === undefined) process.stdout.write(pdfPages(await extractPdf(arg), range[0], range[1] ?? range[0]));
+		else console.log(await renderPage(arg, page));
 		return 0;
 	}
 	if (command === "list") {

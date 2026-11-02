@@ -1,20 +1,28 @@
-// PDF reader: the text of a PDF with a "[page N]" marker before each page, in a per-user cache. It does not need pi.
+// PDF reader: the text of a PDF with a "[page N]" marker before each page, and page images, in a per-user cache.
+// It does not need pi.
 //
 // extractPdf(file) writes pdf/<sha256>/ in the cache: document.md (a short header, then the pages) and meta.json
-// (hash, page count, outline, warnings, the line of each page marker). The cache is $SIMRA_CACHE_DIR, else
-// $XDG_CACHE_HOME/simra, else ~/.cache/simra. It is safe to delete. A second call for the same content uses the cache.
-// An encrypted or broken file gives an error and leaves nothing in the cache. There is no OCR.
+// (hash, page count, outline, warnings, the line of each page marker). renderPage(file, N) also renders page N to
+// page-N.png in that folder (PDFium), at about 150 dpi.
+// The cache is $SIMRA_CACHE_DIR, else $XDG_CACHE_HOME/simra, else ~/.cache/simra. It is safe to delete. A second call
+// for the same content uses the cache. An encrypted or broken file gives an error and leaves nothing in the cache.
+// There is no OCR.
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
+import { PDFiumLibrary } from "@hyzyla/pdfium";
+import { PNG } from "pngjs";
 import { extractText, getDocumentProxy } from "unpdf";
 
 export const PDF_SCHEMA = "simra.pdf/0";
 
 /** The outline entries that the header of document.md shows. meta.json has all entries. */
 const OUTLINE_IN_HEADER = 200;
+/** Page images: about 150 dpi, with at most 2000 pixels on the long side (the limit at which pi resizes an image). */
+const RENDER_DPI = 150;
+const RENDER_MAX_PX = 2000;
 
 export interface PdfOutlineEntry {
 	title: string;
@@ -37,7 +45,7 @@ export interface PdfMeta {
 }
 
 export interface PdfDocument {
-	/** The cache folder of the file: pdf/<sha256>/. */
+	/** The cache folder of the file: pdf/<sha256>/, with page-N.png for page N after renderPage. */
 	dir: string;
 	/** document.md in dir. */
 	document: string;
@@ -125,7 +133,7 @@ async function readPdf(source: string, data: Buffer): Promise<{ texts: string[];
 /** document.md and its meta.json. The page lines do not change the number of lines of the header. */
 function buildDocument(source: string, sha256: string, dir: string, texts: string[], outline: PdfOutlineEntry[]) {
 	const empty = texts.flatMap((text, i) => (text ? [] : [i + 1]));
-	const warnings = empty.length > 0 ? [`No text layer on ${pageList(empty)}. There is no OCR.`] : [];
+	const warnings = empty.length > 0 ? [`No text layer on ${pageList(empty)}. There is no OCR. To see a page, read the PDF path with #page=N at the end.`] : [];
 	const shown = outline.slice(0, OUTLINE_IN_HEADER);
 	const header = (pageLines: number[]) => [
 		`# ${basename(source)}`,
@@ -147,10 +155,12 @@ function buildDocument(source: string, sha256: string, dir: string, texts: strin
 		"",
 		'Each page starts with a line "[page N]". N is the page number in the PDF file (the first page is 1), not the printed page label.',
 		"To find a term, grep the text file. To read page N, read from the line of its marker (the outline and meta.json give the lines).",
+		`To see page N as an image (for example a figure or a table), read ${source}#page=N, or run simra pdf <file> --render N.`,
 		"Cite each fact with its page, for example [page 12].",
 		"",
 	];
-	const pages = texts.map((text, i) => [`[page ${i + 1}]`, text || "(no text layer)", ""].join("\n").split("\n"));
+	const noText = (n: number) => `(no text layer. To see this page, read the PDF path with #page=${n} at the end)`;
+	const pages = texts.map((text, i) => [`[page ${i + 1}]`, text || noText(i + 1), ""].join("\n").split("\n"));
 	const pageLines: number[] = [];
 	// A path in the header can contain a line break.
 	let line = header([]).join("\n").split("\n").length + 1;
@@ -163,11 +173,19 @@ function buildDocument(source: string, sha256: string, dir: string, texts: strin
 	return { document, meta };
 }
 
-/** Extract a PDF into the cache, or use the cache when it has the file. */
-export async function extractPdf(file: string): Promise<PdfDocument> {
+/** The absolute path, the content and the SHA-256 of a file. */
+function load(file: string) {
 	const source = resolve(file);
 	const data = readFileSync(source);
-	const sha256 = createHash("sha256").update(data).digest("hex");
+	return { source, data, sha256: createHash("sha256").update(data).digest("hex") };
+}
+
+/** Extract a PDF into the cache, or use the cache when it has the file. */
+export async function extractPdf(file: string): Promise<PdfDocument> {
+	return extract(load(file));
+}
+
+async function extract({ source, data, sha256 }: ReturnType<typeof load>): Promise<PdfDocument> {
 	const base = join(cacheRoot(), "pdf");
 	const dir = join(base, sha256);
 	const result = (meta: PdfMeta, cached: boolean) => ({ dir, document: join(dir, "document.md"), meta, cached });
@@ -202,4 +220,43 @@ export function pdfPages(doc: PdfDocument, first = 1, last = doc.meta.pages): st
 	}
 	const lines = readFileSync(doc.document, "utf8").split("\n");
 	return [...lines.slice(0, at[0] - 1), ...lines.slice(at[first - 1] - 1, last < pages ? at[last] - 1 : lines.length)].join("\n");
+}
+
+let pdfium: Promise<PDFiumLibrary> | undefined;
+let renderQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Render page N of a PDF to page-N.png in its cache folder, if the folder does not have it, and give its path.
+ * The page renders from the same bytes as the hash of the folder. Pages render one at a time, because PDFium is not
+ * thread-safe.
+ */
+export async function renderPage(file: string, page: number): Promise<string> {
+	const pdf = load(file);
+	const { dir, meta } = await extract(pdf);
+	if (!Number.isInteger(page) || page < 1 || page > meta.pages) throw new Error(`page ${page}: the PDF has pages 1-${meta.pages}`);
+	const png = join(dir, `page-${page}.png`);
+	if (existsSync(png)) return png;
+	const render = renderQueue.then(async () => {
+		if (existsSync(png)) return png;
+		pdfium ??= PDFiumLibrary.init();
+		const doc = await (await pdfium).loadDocument(pdf.data);
+		try {
+			const pdfPage = doc.getPage(page - 1);
+			const { originalWidth, originalHeight } = pdfPage.getOriginalSize();
+			const scale = Math.min(RENDER_DPI / 72, RENDER_MAX_PX / Math.max(originalWidth, originalHeight));
+			const { width, height, data } = await pdfPage.render({ scale, renderFormFields: true });
+			const image = new PNG({ width, height });
+			image.data = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+			const tmp = `${png}.${process.pid}.tmp`;
+			writeFileSync(tmp, PNG.sync.write(image, { colorType: 2 }));
+			renameSync(tmp, png);
+			return png;
+		} catch (e) {
+			throw new Error(`${pdf.source}: cannot render page ${page} (${(e as Error).message})`);
+		} finally {
+			doc.destroy();
+		}
+	});
+	renderQueue = render.catch(() => {});
+	return render;
 }

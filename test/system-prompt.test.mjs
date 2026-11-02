@@ -3,8 +3,8 @@
 //
 // 1. The prompt starts with the chip-design preamble. It lists each tool once, keeps the rules of the tools (with the
 //    rule to run DRC and LVS through run_experiment, and the check_requirements rule only for a design with a
-//    requirements.json, and the rule to start long or independent runs detached and wait with wait_experiments), and
-//    has no pi documentation section.
+//    requirements.json, and the rule to start long or independent runs detached and wait with wait_experiments), adds
+//    the rule for PDFs, and has no pi documentation section.
 // 2. A prompt that the user gives (--system-prompt) stays as it is.
 
 import assert from "node:assert/strict";
@@ -14,7 +14,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { SIMRA_PREAMBLE } from "../packages/pi-extension/index.ts";
+import { PDF_RULE, SIMRA_PREAMBLE } from "../packages/pi-extension/index.ts";
 
 const root = new URL("..", import.meta.url).pathname;
 const piBin = join(root, "node_modules", ".bin", "pi");
@@ -78,6 +78,7 @@ test("pi sends the chip-design preamble, the tools and their rules, and no pi do
 	assert.match(prompt, /<tools>\n[^]*- design_record: show which checks are current for each file of record[^]*\n<\/tools>/);
 	assert.match(prompt, /<rules>\n[^]*- A verdict counts only for the file that it ran on\. Before you report a check, confirm with design_record[^]*- When a file of record changed under you[^]*<\/rules>/);
 	assert.match(prompt, /<rules>\n[^]*- Run DRC and LVS with run_experiment \(adapter klayout, operations drc and lvs\), not with a DRC or LVS shell script\.[^]*<\/rules>/);
+	assert.ok(prompt.match(/<rules>\n[^]*<\/rules>/)?.[0].includes(`\n- ${PDF_RULE}\n`), "the rules do not have the PDF rule");
 });
 
 test("a system prompt that the user gives stays as it is", { timeout: 60_000 }, async (t) => {

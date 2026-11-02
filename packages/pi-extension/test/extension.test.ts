@@ -1,11 +1,12 @@
 // The extension against a fake pi API: it registers run_experiment, wait_experiments, check_requirements and design_record, and the tools run and record.
 // Its tool_result hook adds the netlist check to the result of a call that names a netlist.
-// Its tool_call hook sends a read of a PDF to the page-marked text in the cache.
+// Its tool_call hook sends a read of a PDF to the page-marked text in the cache, and a read of <file>.pdf#page=N to an
+// image of page N that it renders first.
 
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { validateRequirements } from "@simra-tech/kernel";
 import { makePdf } from "../../kernel/test/pdf-fixture.ts";
@@ -169,11 +170,11 @@ test("the tool_result hook adds each netlist warning once", async (t) => {
 	assert.equal(await hook({ toolName: "bash", input: { command: "ls" }, content, isError: false }, ctx), undefined);
 });
 
-test("the tool_call hook sends a read of a PDF to document.md in the cache", async (t) => {
+/** The tool_call hook, and a folder with manual.pdf (page 2 without text), broken.pdf and the cache. */
+function pdfHook(t: { after: (fn: () => void) => void }) {
 	let hook: any;
 	extension({ registerTool: () => {}, registerCommand: () => {}, on: (event: string, fn: any) => event === "tool_call" && (hook = fn) } as any);
 	assert.ok(hook, "no tool_call hook");
-
 	const root = mkdtempSync(join(tmpdir(), "simra-ext-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const saved = process.env.SIMRA_CACHE_DIR;
@@ -181,13 +182,18 @@ test("the tool_call hook sends a read of a PDF to document.md in the cache", asy
 	t.after(() => (saved === undefined ? delete process.env.SIMRA_CACHE_DIR : (process.env.SIMRA_CACHE_DIR = saved)));
 	writeFileSync(join(root, "manual.pdf"), makePdf([{ lines: ["VDD = 1.2 V"] }, {}]));
 	writeFileSync(join(root, "broken.pdf"), "not a pdf");
+	return { hook, root };
+}
+
+test("the tool_call hook sends a read of a PDF to document.md in the cache", async (t) => {
+	const { hook, root } = pdfHook(t);
 	const ctx = { cwd: root };
 
 	const read = { toolName: "read", input: { path: "manual.pdf", offset: 5 } };
 	assert.equal(await hook(read, ctx), undefined);
 	assert.match(read.input.path, new RegExp(`^${join(root, "cache", "pdf")}/[0-9a-f]{64}/document\\.md$`));
 	assert.equal(read.input.offset, 5);
-	assert.match(readFileSync(read.input.path, "utf8"), /\[page 1\]\nVDD = 1\.2 V\n\n\[page 2\]\n\(no text layer\)\n/);
+	assert.match(readFileSync(read.input.path, "utf8"), /\[page 1\]\nVDD = 1\.2 V\n\n\[page 2\]\n\(no text layer\. To see this page, read the PDF path with #page=2 at the end\)\n/);
 	// A broken PDF blocks the call with the reason. Other calls do not change.
 	assert.deepEqual(await hook({ toolName: "read", input: { path: "broken.pdf" } }, ctx), {
 		block: true,
@@ -198,6 +204,26 @@ test("the tool_call hook sends a read of a PDF to document.md in the cache", asy
 		assert.equal(await hook(call, ctx), undefined);
 		assert.deepEqual(call, before);
 	}
+});
+
+test("the tool_call hook renders page N for a read of <file>.pdf#page=N, if the model has image input", async (t) => {
+	const { hook, root } = pdfHook(t);
+	const ctx = { cwd: root, model: { id: "vision", input: ["text", "image"] } };
+	const read = { toolName: "read", input: { path: "manual.pdf#page=2" } };
+	assert.equal(await hook(read, ctx), undefined);
+	assert.match(read.input.path, new RegExp(`^${join(root, "cache", "pdf")}/[0-9a-f]{64}/page-2\\.png$`));
+	assert.deepEqual([...readFileSync(read.input.path).subarray(0, 4)], [137, 80, 78, 71]);
+	assert.deepEqual(await hook({ toolName: "read", input: { path: "manual.pdf#page=3" } }, ctx), {
+		block: true,
+		reason: "Simra PDF reader: page 3: the PDF has pages 1-2",
+	});
+	// A model without image input: the call is blocked with the reason, and no page is rendered.
+	const textOnly = { cwd: root, model: { id: "text-only", input: ["text"] } };
+	assert.deepEqual(await hook({ toolName: "read", input: { path: "manual.pdf#page=1" } }, textOnly), {
+		block: true,
+		reason: "Simra PDF reader: the model text-only has no image input, so it cannot see page 1. Read the text after [page 1] in manual.pdf, or use a model with image input.",
+	});
+	assert.equal(existsSync(join(dirname(read.input.path), "page-1.png")), false);
 });
 
 test("readPath gives the path that pi's read opens", async (t) => {

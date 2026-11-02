@@ -176,7 +176,7 @@ earlier copy.
 In pi, the extension replaces the first paragraph of pi's system prompt. pi's paragraph describes a coding
 assistant. The extension's paragraph (`SIMRA_PREAMBLE` in `packages/pi-extension/index.ts`) describes a chip
 design assistant that reports only simulated numbers. The extension keeps pi's list of tools and the rules of the
-tools. It removes pi's section about the pi documentation.
+tools. It adds one rule for PDFs (see [PDF reader](#pdf-reader)). It removes pi's section about the pi documentation.
 
 A system prompt that you give to pi (`--system-prompt` or `.pi/SYSTEM.md`) stays as it is.
 
@@ -205,8 +205,21 @@ The cache is `$SIMRA_CACHE_DIR`, else `$XDG_CACHE_HOME/simra`, else `~/.cache/si
   page and the line of each entry) and the warnings. Page N starts with the line `[page N]`. N is the page number in
   the file, not the printed page label.
 - `meta.json`: the hash, the page count, the outline, the warnings and the line of each page marker.
+- `page-N.png`: an image of page N, at about 150 dpi (at most 2000 pixels on the long side). It exists after the
+  first read of the page as an image.
 
 The cache is per user, and you can delete it. The reader does not write into the design repository or the PDK tree.
+
+To see a figure, the agent reads the PDF path with `#page=N` at the end, for example `rules.pdf#page=12`. The
+extension renders the page to `page-N.png` with PDFium (WebAssembly), if the cache does not have it, and points the
+call at the image. Then `read` shows the image. If the model has no image input, the extension stops the read and
+tells the agent to use the text of the page.
+
+The extension finds the file of a `read` call as pi's `read` finds it, also with `@`, `~`, `file://` URLs and the
+macOS file-name fallbacks of pi.
+
+The system prompt has a rule for PDFs: look at the page before you copy a circuit, table or plot from a figure, and
+check a netlist copied from a figure with a simulation.
 
 A page without text, for example a scanned page, gets the warning "No text layer". The reader does no OCR. An
 encrypted or broken PDF gives an error, and the reader writes nothing to the cache.
@@ -215,6 +228,7 @@ From a plain command line:
 
 1. Run `npx simra pdf <file>` to print the header and all pages.
 2. Add `--pages 12-14` to print the header and only these pages.
+3. Add `--render 12` instead to render page 12 and print the path of its image.
 
 ## Session time
 

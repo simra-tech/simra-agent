@@ -5,11 +5,13 @@
 // After a read, write, edit or bash call that names a netlist, it adds the ngspice adapter's netlist check
 // (operation "lint") to the tool result: for example a warning about ".option rshunt".
 // Before a read call on a .pdf file, it extracts the PDF into the cache (kernel extractPdf) and points the call at the
-// page-marked text, document.md. pi's read then applies offset and limit as for any text file.
+// page-marked text, document.md. pi's read then applies offset and limit as for any text file. Before a read call on
+// <file>.pdf#page=N, it renders page N to a PNG in the cache if the cache does not have it (kernel renderPage) and
+// points the call at the image. If the model has no image input, it blocks that call and tells the agent why.
 // When SIMRA_SESSION_DEADLINE (an ISO 8601 time) is set, it adds a time note to the first tool result after 50 %
 // and after 80 % of the session time: the agent must write its output files before the session ends.
 // It replaces pi's coding-assistant preamble with a chip-design preamble (SIMRA_PREAMBLE) and leaves out pi's own
-// documentation section; the tool list and the rules stay (see chipDesignPrompt).
+// documentation section; the tool list and the rules stay, and a rule for PDFs is added (see chipDesignPrompt).
 // All logic lives in @simra-tech/kernel, which works without pi.
 
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
@@ -33,6 +35,7 @@ import {
 	formatStarted,
 	formatVerdict,
 	formatWait,
+	renderPage,
 	type ResultRecord,
 	runCheck,
 	queryAdapter,
@@ -163,11 +166,14 @@ export const SIMRA_PREAMBLE = [
 	"it did not run.",
 ].join(" ");
 
+export const PDF_RULE =
+	"For a PDF, read gives the text with a [page N] marker before each page, and read of <file>.pdf#page=N shows page N as an image. Look at the page before you copy a circuit, table or plot from a figure, and check a netlist copied from a figure with a simulation.";
+
 /**
  * Set the chip-design preamble in pi's prompt options. With a custom preamble, pi leaves out its tool list, its rules
  * and its documentation section. This function puts the tool list and the rules back, built as pi builds them from the
- * same options, so that only the preamble and the documentation section change. A prompt that the user set (SYSTEM.md
- * or --system-prompt) stays as it is.
+ * same options, so that only the preamble and the documentation section change, and adds PDF_RULE when read is
+ * available. A prompt that the user set (SYSTEM.md or --system-prompt) stays as it is.
  */
 export function chipDesignPrompt(options: BeforeAgentStartEvent["systemPromptOptions"]): void {
 	if (options.customPrompt) return;
@@ -178,6 +184,7 @@ export function chipDesignPrompt(options: BeforeAgentStartEvent["systemPromptOpt
 		...(selectedTools.includes("bash") && !fileTools ? ["Use bash for file operations like ls, rg, find"] : []),
 		...selectedTools.flatMap((name) => toolGuidelines[name] ?? []),
 		...promptGuidelines,
+		...(selectedTools.includes("read") ? [PDF_RULE] : []),
 		"Be concise in your responses",
 		"Show file paths clearly when working with files",
 	]
@@ -214,13 +221,21 @@ export default function (pi: ExtensionAPI) {
 		chipDesignPrompt(event.systemPromptOptions);
 	});
 
-	// A read of a PDF reads its page-marked text from the cache. An encrypted or broken PDF blocks the call with the reason.
+	// A read of a PDF reads its page-marked text from the cache. A read of <file>.pdf#page=N renders page N to a PNG in
+	// the cache, once, and reads the image. An encrypted or broken PDF, a page outside the PDF, or a model without image
+	// input for a page image blocks the call with the reason.
 	pi.on("tool_call", async (event, ctx) => {
-		if (event.toolName !== "read" || !/\.pdf$/i.test(String(event.input.path ?? ""))) return;
+		const match = event.toolName === "read" ? /^(.*\.pdf)(?:#page=([1-9]\d*))?$/i.exec(String(event.input.path ?? "")) : null;
+		if (!match) return;
+		const [, file, page] = match;
 		try {
-			const path = await readPath(String(event.input.path), ctx.cwd);
+			const path = await readPath(file, ctx.cwd);
 			if (!existsSync(path)) return;
-			event.input.path = (await extractPdf(path)).document;
+			if (page && ctx.model && !ctx.model.input.includes("image")) {
+				const reason = `the model ${ctx.model.id} has no image input, so it cannot see page ${page}. Read the text after [page ${page}] in ${file}, or use a model with image input.`;
+				return { block: true, reason: `Simra PDF reader: ${reason}` };
+			}
+			event.input.path = page ? await renderPage(path, Number(page)) : (await extractPdf(path)).document;
 		} catch (e) {
 			return { block: true, reason: `Simra PDF reader: ${(e as Error).message}` };
 		}
