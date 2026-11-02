@@ -3,8 +3,8 @@ simulation.
 
 Inputs: file (relative to the design root), subckt, pins (in order), elements (the allowed kinds: "mos", "r", "c"; the
 default is all three), devices (the allowed devices of the technology pack; the default is all), limits ({r_ohm, c_f},
-the maximum value of one R or C) and technology (optional, the name of a technology pack; the default is the pack whose
-"pdks" has $PDK). The technology pack gives the MOS devices, their terminals, their parameters, the minimum sizes and
+the maximum value of one R or C) and technology (optional, the name of a technology pack or a PDK name in its
+"pdks"; the default is the pack whose "pdks" has $PDK). The technology pack gives the MOS devices, their terminals, their parameters, the minimum sizes and
 the size unit (ngspice.devices, ngspice.size_unit_m), and for each PDK the area of the ideal R and C
 (ngspice.passives). The file holds only .subckt blocks. In a block, an X line instantiates a device of the pack or
 another block of the file, and R and C lines are ideal elements with a plain value. Each other line (sources, .model,

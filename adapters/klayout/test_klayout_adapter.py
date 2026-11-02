@@ -257,6 +257,22 @@ class TechnologyPacks(unittest.TestCase):
         for name, pack in self.packs().items():
             self.assertNotIn("/foss/tools", json.dumps(pack["klayout"]), name)
 
+    def test_find_facts_by_pack_name_or_pdk_name(self):
+        saved = os.environ.get("SIMRA_TECHNOLOGY_DIR")
+        os.environ["SIMRA_TECHNOLOGY_DIR"] = TECHNOLOGIES
+        self.addCleanup(lambda: os.environ.update({"SIMRA_TECHNOLOGY_DIR": saved}) if saved is not None
+                        else os.environ.pop("SIMRA_TECHNOLOGY_DIR", None))
+        for name, pdk in (("sky130", "sky130A"), ("sky130A", "sky130A"), ("ihp-sg13", "ihp-sg13g2"),
+                          ("ihp-sg13g2", "ihp-sg13g2"), ("ihp-sg13g2", None)):
+            path, facts, error = ka.find_facts(name, pdk)
+            self.assertIsNone(error, (name, pdk))
+            self.assertEqual(path, os.path.join(TECHNOLOGIES, "sky130" if "sky130" in name else "ihp-sg13", "technology.json"))
+            self.assertIn("drc", facts)
+        path, facts, error = ka.find_facts("sky130X", "sky130A")
+        self.assertIsNone(path)
+        self.assertTrue(error.startswith("no technology pack 'sky130X' in "), error)
+        self.assertIn("known packs: ihp-sg13 (ihp-sg13g2, ihp-sg13cmos5l), sky130 (sky130A, sky130B)", error)
+
 
 FAKE_KLAYOUT = """#!/usr/bin/env python3
 import json, os, shutil, sys
@@ -364,6 +380,12 @@ class EndToEnd(unittest.TestCase):
         with open(os.path.join(exp, "work", "drc.json")) as f:
             table = json.load(f)
         self.assertEqual(table["markers"], 33)
+        self.assertEqual(len(r["commands"]), 1)
+        command = r["commands"][0]
+        self.assertEqual(command["argv"], [sys.executable, os.path.join(self.tmp, "pdks", "fake", "deck.py"),
+                                           os.path.join(exp, "work", "drc", "idac.lyrdb"), "-"])
+        self.assertEqual(command["exit_code"], 0)
+        self.assertEqual(command["runtime_s"], r["measurements"]["runtime_s"]["value"])
         self.assertEqual(len(table["rules"][0]["boxes"]), 8)
 
     def test_drc_default_limit_and_clean(self):
@@ -393,6 +415,7 @@ class EndToEnd(unittest.TestCase):
             self.assertTrue(errors[0]["message"].startswith("not run: "), errors[0]["message"])
             self.assertIn(reason, errors[0]["message"])
             self.assertIn("Last lines of the deck log: ", errors[0]["message"])
+            self.assertEqual(r["commands"][0]["exit_code"], int(fake.get("FAKE_EXIT", "0")))
 
     def test_lvs_match_with_pin_warning(self):
         pins = list(SPEC_PINS)
@@ -409,6 +432,11 @@ class EndToEnd(unittest.TestCase):
         for name in ("lvs/block.lvsdb", "lvs/block_extracted.cir", "lvs.log", "lvs.json"):
             self.assertIn("simra/experiments/e1/work/" + name, paths)
         self.assertEqual([f["role"] for f in r["input_files"]["files"]], ["layout", "netlist", "deck", "technology"])
+        work = os.path.join(exp, "work", "lvs")
+        self.assertEqual(r["commands"], [{"argv": [sys.executable, os.path.join(self.tmp, "pdks", "fake", "deck.py"),
+                                                   os.path.join(work, "block.lvsdb"), os.path.join(work, "block_extracted.cir"),
+                                                   os.path.join(self.root, "block.spice")],
+                                          "exit_code": 0, "runtime_s": r["measurements"]["runtime_s"]["value"]}])
 
     def test_lvs_mismatch(self):
         r, exp = self.run_op("lvs", {"gds": "block.gds", "cell": "idac", "netlist": "block.spice"},
@@ -423,6 +451,7 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(sum(e.startswith("device ") for e in errors), 10)
         self.assertEqual(sum(e.startswith("net ") for e in errors), 10)
         self.assertEqual(errors[-1], "40 more unmatched items are in work/lvs.json")
+        self.assertEqual(r["commands"][0]["exit_code"], 1)
         with open(os.path.join(exp, "work", "lvs.json")) as f:
             self.assertEqual(len(json.load(f)["devices"]), 30)
 
@@ -465,6 +494,13 @@ class EndToEnd(unittest.TestCase):
             r, _ = self.run_op("drc", inputs)
             self.assertEqual(r["status"], "failed")
             self.assertIn(text_, r["diagnostics"][0]["message"])
+            self.assertNotIn("commands", r)
+
+    def test_technology_by_pdk_name(self):
+        for name in ("fake", "fakepdk"):
+            r, _ = self.run_op("drc", {"gds": "block.gds", "cell": "idac", "technology": name},
+                               FAKE_REPORT=fixture("drc-sky130-clean.lyrdb"))
+            self.assertEqual((r["status"], r["measurements"]["markers"]["value"]), ("completed", 0), name)
 
 
 if __name__ == "__main__":

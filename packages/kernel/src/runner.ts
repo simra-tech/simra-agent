@@ -12,6 +12,7 @@ import { join, relative, resolve } from "node:path";
 import { loadConfig } from "./config.ts";
 import { buildInvocation } from "./environments.ts";
 import {
+	type CommandRun,
 	createExperimentDir,
 	EXPERIMENT_SCHEMA,
 	experimentDir,
@@ -254,7 +255,7 @@ export async function queryAdapter(opts: Omit<RunOptions, "environment" | "purpo
 	}
 }
 
-type ResponseFields = Pick<ResultRecord, "status" | "errors" | "tool" | "input_files" | "outputs" | "measurements" | "diagnostics">;
+type ResponseFields = Pick<ResultRecord, "status" | "errors" | "tool" | "commands" | "input_files" | "outputs" | "measurements" | "diagnostics">;
 
 /** Copy a valid adapter response into the result. An invalid response makes the status "error". */
 function applyResponse(result: ResponseFields, responsePath: string, exitCode: number | null): void {
@@ -279,6 +280,7 @@ function applyResponse(result: ResponseFields, responsePath: string, exitCode: n
 	}
 	result.status = response.status as ExecutionStatus;
 	result.tool = (response.tool as Record<string, unknown>) ?? null;
+	if (Array.isArray(response.commands)) result.commands = response.commands as CommandRun[];
 	result.input_files = (response.input_files as ResultRecord["input_files"]) ?? null;
 	result.outputs = (response.outputs as FileHash[]) ?? [];
 	result.measurements = (response.measurements as ResultRecord["measurements"]) ?? {};

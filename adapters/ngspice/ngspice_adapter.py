@@ -30,7 +30,7 @@ and every file that it writes. It never decides whether a result is good: it rep
 It gives a warning for each simulator option that changes the circuit (see OPTION_RULES), with its file and line.
 
 Operation "operating_point". Inputs: deck and libs, as for simulate, and technology (optional, the name of a
-technology pack; the default is the pack whose "pdks" has $PDK). The adapter writes op.cir in the work directory:
+technology pack or a PDK name in its "pdks"; the default is the pack whose "pdks" has $PDK). The adapter writes op.cir in the work directory:
 the circuit lines of the deck without its .control blocks, analyses and .meas lines, then "op" and "show" for the
 MOS devices. The technology pack gives the device letter and the parameter names of the MOS model (see
 technologies/README.md). The operating point uses the DC values of the netlist sources. The response has, for
@@ -531,8 +531,8 @@ def technology_dir():
 
 
 def find_technology(name, pdk, section="operating_point"):
-    """(path, pack, None) for the pack with this name, or else the pack for this PDK; or (None, None, message).
-    The pack must have ngspice.<section>."""
+    """(path, pack, None) for the pack with this name, or else the pack whose "pdks" has this name; without name, the
+    pack for this PDK. Or (None, None, message). The pack must have ngspice.<section>."""
     base = technology_dir()
     packs = []
     for entry in sorted(os.listdir(base)) if os.path.isdir(base) else []:
@@ -540,11 +540,14 @@ def find_technology(name, pdk, section="operating_point"):
         if os.path.isfile(path):
             with open(path) as f:
                 packs.append((path, json.load(f)))
-    for path, pack in packs:
-        if (name and pack.get("name") == name) or (not name and pdk in (pack.get("pdks") or [])):
-            if section not in (pack.get("ngspice") or {}):
-                return None, None, "technology pack {} has no ngspice.{}".format(pack.get("name"), section)
-            return path, pack, None
+    if name:
+        chosen = [p for p in packs if p[1].get("name") == name] or [p for p in packs if name in (p[1].get("pdks") or [])]
+    else:
+        chosen = [p for p in packs if pdk in (p[1].get("pdks") or [])]
+    for path, pack in chosen[:1]:
+        if section not in (pack.get("ngspice") or {}):
+            return None, None, "technology pack {} has no ngspice.{}".format(pack.get("name"), section)
+        return path, pack, None
     known = ", ".join("{} ({})".format(p.get("name"), ", ".join(p.get("pdks") or [])) for _, p in packs) or "none"
     wanted = "technology pack '{}'".format(name) if name else "technology pack for PDK '{}'".format(pdk)
     return None, None, "no {} in {}; known packs: {}. Give input 'technology', or add a pack (see technologies/README.md)".format(

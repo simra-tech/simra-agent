@@ -34,7 +34,7 @@ the input `technology`), and the facts of `klayout.<$PDK>`.
 | `gds` | the layout, relative to the design root |
 | `cell` | the top cell |
 | `rule_set` | optional: a rule set of the pack (IHP SG13G2: `full`, `main`; SKY130: `main`, `feol`, `beol`). The default is the set with `default: true` (IHP SG13G2: `full`; SKY130: `main`) |
-| `technology` | optional: the name of the pack. The default is the pack of `$PDK` |
+| `technology` | optional: the pack name (for example `sky130`) or one of its PDK names (for example `sky130A`). The default is the pack of `$PDK` |
 | `max_examples` | optional: the number of marker boxes in each diagnostic (default 8) |
 
 The adapter runs the deck in `work/drc/`. It reads the marker database (`.lyrdb`) and reconciles the result with
@@ -78,7 +78,7 @@ each with its cell. The outputs have the marker database, the deck log and `work
 | `cell` | the top cell |
 | `netlist` | the reference netlist, relative to the design root, in the form of `klayout.<pdk>.lvs.netlist_format` |
 | `pins` | optional: the pins of the top cell, in order |
-| `technology` | optional: the name of the pack |
+| `technology` | optional: the pack name or one of its PDK names, as for `drc` |
 
 The adapter runs the deck in `work/lvs/`. Then it reads the LVS database with `lvsdb_probe.py`, in the KLayout
 that it found. The result is a match only when all of these conditions are true:
@@ -111,6 +111,20 @@ On a mismatch, error diagnostics give the circuits, the devices and the nets tha
 
 The outputs have the extracted netlist, the LVS database, the deck log and `work/lvs.json`.
 
+## The command in the response
+
+The response of `drc` and of `lvs` has the field `commands` (see the adapter contract in
+[CONTRIBUTING.md](../../CONTRIBUTING.md)). It has one entry: the deck command as the adapter ran it, with the
+placeholders filled, its exit code and its runtime. For example:
+
+```json
+"commands": [{ "argv": ["klayout", "-b", "-r", "...", "-rd", "input=..."], "exit_code": 1, "runtime_s": 12.4 }]
+```
+
+The exit code is `null` when the deck did not start. The summary of the experiment gives each entry on one
+`command:` line, after the `tool:` line. The `klayout -v` check and the read of the LVS database with
+`lvsdb_probe.py` are not in `commands`. Their logs are in `work/`.
+
 ## Size of the summary
 
 The tool result of `run_experiment` (and the output of `simra run`) is the summary of the experiment. On the
@@ -118,13 +132,15 @@ seeded block of `evals/layout-block-fix/` (DRC, default rule set, default `max_e
 
 | PDK | Summary of `klayout drc` | Output of `drc.sh` |
 | --- | --- | --- |
-| IHP SG13G2 | 4312 bytes (38 markers, 11 rules) | 222 bytes |
-| SKY130 | 3024 bytes (33 markers, 10 rules) | 194 bytes |
+| IHP SG13G2 | 4677 bytes (38 markers, 11 rules) | 222 bytes |
+| SKY130 | 3486 bytes (33 markers, 10 rules) | 194 bytes |
 
-The output of `drc.sh` gives only the count of each rule. The summary also gives the description of each rule, all
-the marker boxes (no rule of this block has more than 8 markers), the outputs with their sizes, the paths of the full
-table and the marker database, and the record of the run. The earlier summary (3 boxes for each rule, no outputs)
-had 3427 bytes (IHP SG13G2) and 2654 bytes (SKY130).
+The output of `drc.sh` gives only the count of each rule. The summary also gives the deck command, the description
+of each rule, all the marker boxes (no rule of this block has more than 8 markers), the outputs with their sizes, the
+paths of the full table and the marker database, and the record of the run. The deck command has absolute paths, so
+its length changes with the path of the design root (here a temporary directory of the test). The summary without the
+deck command had 4312 bytes (IHP SG13G2) and 3024 bytes (SKY130). The earlier summary (3 boxes for each rule, no
+outputs) had 3427 bytes and 2654 bytes.
 
 ## Tests
 

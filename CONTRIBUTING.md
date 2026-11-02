@@ -107,6 +107,12 @@ Rules:
 - A measurement can have the optional field `at`: the sweep point where a reduced value (for example a minimum
   over a sweep) occurs, such as `{"vcm": 0.4}`.
 - `tool` records the exact tool and version, so that a result can be traced.
+- `commands` is optional. It lists the external commands of the tool that the adapter ran, in order. Each entry
+  has `argv` (the command line as it was run, one word per item), `exit_code` (an integer, or `null` when the
+  command did not start) and `runtime_s` (a number, or `null`). The adapter can leave out helper commands, for
+  example a version check. The summary of the experiment gives one `command:` line for each entry. The klayout
+  adapter fills it; the ngspice adapter does not. Example:
+  `"commands": [{ "argv": ["klayout", "-b", "-r", "drc.lydrc"], "exit_code": 0, "runtime_s": 12.4 }]`.
 - The adapter writes logs to files in `work_dir` or to stderr. It does not write results to stdout.
 - The adapter does not contain PDK facts (for example the parameter names of a MOS model). It reads them from
   a technology pack in the directory that `SIMRA_TECHNOLOGY_DIR` gives (see

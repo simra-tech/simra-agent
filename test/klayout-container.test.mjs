@@ -5,9 +5,10 @@
 // 3. the files that the broken lvs.sh of layout-false-pass leaves (a printed match, a truncated LVS database,
 //    exit code 139) give "not run".
 // 4. `simra run` (the CLI) runs the adapter with the eda environment of a design (examples/ota-sg13g2 for IHP, the
-//    task configuration for SKY130). The summary of a DRC of the seeded block lists the outputs, gives every marker
-//    box and the paths of the full table, and is under 6 kB for IHP. The test prints its size, and the size of the
-//    output of drc.sh on the same block.
+//    task configuration for SKY130). The request names the technology by its PDK name. The summary of a DRC of the
+//    seeded block gives the deck command after the tool line, lists the outputs, gives every marker box and the
+//    paths of the full table, and is under 6 kB for IHP. The test prints its size, its command line, and the size of
+//    the output of drc.sh on the same block.
 // It runs only with SIMRA_TEST_IMAGE, an image with KLayout and both PDKs (optional: SIMRA_TEST_ENGINE podman or
 // docker, default podman). A skipped case is reported by the test runner as skipped: that check did not run.
 
@@ -111,11 +112,17 @@ for (const pdk of PDKS) {
 	test(`klayout ${pdk}: simra run (CLI) runs the adapter in the eda environment (container)`, { skip, timeout: 600_000 }, async (t) => {
 		const { spec } = loadTask(join(repo, "evals/layout-block-fix", pdk));
 		const root = await designRoot(t, pdk);
-		writeFileSync(join(root, "drc.json"), JSON.stringify({ adapter: "klayout", operation: "drc", environment: "eda", purpose: "DRC of the seeded block", inputs: { gds: "block-seeded.gds", cell: spec.cell } }));
+		const technology = { sg13g2: "ihp-sg13g2", sky130: "sky130A" }[pdk];
+		writeFileSync(join(root, "drc.json"), JSON.stringify({ adapter: "klayout", operation: "drc", environment: "eda", purpose: "DRC of the seeded block", inputs: { gds: "block-seeded.gds", cell: spec.cell, technology } }));
 		const cli = spawnSync(process.execPath, [join(repo, "packages/kernel/src/cli.ts"), "run", "drc.json", "--root", root], { cwd: root, encoding: "utf8" });
 		assert.equal(cli.status, 0, cli.stderr);
 		assert.match(cli.stdout, /^\s+markers = \d+$/m);
 		assert.match(cli.stdout, /^tool: klayout /m);
+		// The line after the tool line is the deck command, with its exit code and runtime.
+		const lines = cli.stdout.split("\n");
+		const command = lines[lines.findIndex((l) => l.startsWith("tool: klayout ")) + 1];
+		assert.match(command, /^command: \S+ .*block-seeded\.gds.* \(exit \d+, [\d.]+ s\)$/);
+		t.diagnostic(`${pdk}: ${command}`);
 		// The summary lists the outputs, gives every box of each rule (at most 8 markers per rule on this block) and
 		// ends the DRC diagnostics with the paths of the full table and the marker database.
 		assert.match(cli.stdout, /^outputs:\n(  simra\/experiments\/\S+ \(\d+ bytes\)\n)+/m);

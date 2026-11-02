@@ -50,6 +50,13 @@ export interface ExperimentRecord {
 	simra: { kernel_version: string };
 }
 
+/** One external command that an adapter ran: the command line as it was run, its exit code and its runtime. */
+export interface CommandRun {
+	argv: string[];
+	exit_code: number | null;
+	runtime_s: number | null;
+}
+
 export interface ResultRecord {
 	schema: typeof RESULT_SCHEMA;
 	experiment: string;
@@ -62,6 +69,8 @@ export interface ResultRecord {
 	/** Problems seen by the runner (for example an invalid adapter response). */
 	errors: string[];
 	tool: Record<string, unknown> | null;
+	/** Optional: the external commands that the adapter ran, in order (contract field "commands"). */
+	commands?: CommandRun[];
 	input_files: { files: FileHash[]; complete: boolean } | null;
 	outputs: FileHash[];
 	measurements: Record<string, Measurement>;

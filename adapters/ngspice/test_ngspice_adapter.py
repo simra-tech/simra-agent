@@ -325,6 +325,11 @@ class OperatingPointTest(unittest.TestCase):
         _, _, error = adapter.find_technology(None, "gf180mcuD")
         self.assertIn("no technology pack for PDK 'gf180mcuD'", error)
         self.assertIn("sky130 (sky130A, sky130B)", error)
+        # The input technology is the pack name or one of its PDK names.
+        self.assertEqual(adapter.find_technology("sky130A", "ihp-sg13g2")[1]["name"], "sky130")
+        self.assertEqual(adapter.find_technology("ihp-sg13cmos5l", None)[1]["name"], "ihp-sg13")
+        _, _, error = adapter.find_technology("sky130X", "sky130A")
+        self.assertIn("no technology pack 'sky130X'", error)
         for pdk in ("ihp-sg13g2", "sky130A"):
             self.assertEqual(sorted(self.pack(pdk)["params"]), sorted(adapter.OP_QUANTITIES))
 

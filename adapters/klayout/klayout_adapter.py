@@ -13,7 +13,8 @@ Operation "drc". Inputs:
   gds           the layout, relative to the design root
   cell          the top cell
   rule_set      optional; a rule set of klayout.<pdk>.drc.rule_sets (default: the set with "default": true)
-  technology    optional; the name of a technology pack (default: the pack whose "pdks" has $PDK)
+  technology    optional; the name of a technology pack, or a PDK name in the "pdks" of a pack (default: the pack
+                whose "pdks" has $PDK)
   max_examples  optional; the number of marker boxes in each diagnostic (default 8)
 Measurements: markers, rules_violated, runtime_s. The counts are measured only when the deck wrote a complete
 marker database and its exit code agrees with the marker count. Else they are failed and the response is failed,
@@ -27,6 +28,8 @@ Measurements: match (1 or 0), unmatched_devices, unmatched_nets, unmatched_pins,
 match only when the deck log has the match text of the pack, the exit code is a code of a completed run, the LVS
 database exists and loads, and its compare status is a match (lvsdb_probe.py reads the database with the KLayout
 binary). Else the result is not run. work/lvs.json has all unmatched items and the pin check.
+
+The response of drc and lvs has "commands": the deck command as it was run, with its exit code and runtime.
 """
 
 import hashlib
@@ -80,7 +83,8 @@ def technology_dir():
 
 
 def find_facts(name, pdk):
-    """(pack path, the klayout facts of one PDK, None), or (None, None, message)."""
+    """(pack path, the klayout facts of one PDK, None), or (None, None, message). name is the name of a pack, or else
+    a PDK name in the "pdks" of a pack; without name, the pack is the pack whose "pdks" has pdk."""
     base = technology_dir()
     packs = []
     for entry in sorted(os.listdir(base)) if os.path.isdir(base) else []:
@@ -88,14 +92,17 @@ def find_facts(name, pdk):
         if os.path.isfile(path):
             with open(path) as f:
                 packs.append((path, json.load(f)))
-    for path, pack in packs:
-        if (name and pack.get("name") == name) or (not name and pdk in (pack.get("pdks") or [])):
-            section = pack.get("klayout") or {}
-            key = pdk if pdk in section else (next(iter(section)) if len(section) == 1 and not pdk else None)
-            if key is None:
-                return None, None, "technology pack {} has no klayout facts for PDK '{}' (it has: {})".format(
-                    pack.get("name"), pdk, ", ".join(section) or "none")
-            return path, section[key], None
+    if name:
+        chosen = [p for p in packs if p[1].get("name") == name] or [p for p in packs if name in (p[1].get("pdks") or [])]
+    else:
+        chosen = [p for p in packs if pdk in (p[1].get("pdks") or [])]
+    for path, pack in chosen[:1]:
+        section = pack.get("klayout") or {}
+        key = pdk if pdk in section else (next(iter(section)) if len(section) == 1 and not pdk else None)
+        if key is None:
+            return None, None, "technology pack {} has no klayout facts for PDK '{}' (it has: {})".format(
+                pack.get("name"), pdk, ", ".join(section) or "none")
+        return path, section[key], None
     known = ", ".join("{} ({})".format(p.get("name"), ", ".join(p.get("pdks") or [])) for _, p in packs) or "none"
     wanted = "technology pack '{}'".format(name) if name else "technology pack for PDK '{}'".format(pdk)
     return None, None, "no {} in {}; known packs: {}. Give input 'technology', or add a pack (see technologies/README.md)".format(
@@ -212,6 +219,11 @@ def command_argv(command, values, operation):
         return [expand(word, values, COMMAND_PLACEHOLDERS[operation]) for word in command], None
     except ValueError as e:
         return None, str(e)
+
+
+def command_record(argv, code, runtime):
+    """One entry of the response field "commands": an external command as it was run."""
+    return {"argv": list(argv), "exit_code": code, "runtime_s": runtime}
 
 
 def run_deck(ctx, operation, argv, run_dir):
@@ -407,8 +419,8 @@ def drc(request):
         log_text = f.read()
     table, reason = drc_verdict(code, values["report"], log_text, rule_set) if not error else (None, error)
     report_src = rel(ctx, values["report"])
-    response = {"contract": CONTRACT, "tool": ctx["tool"], "input_files": deck_inputs(ctx, rule_set["command"], values, "drc"),
-                "diagnostics": []}
+    response = {"contract": CONTRACT, "tool": ctx["tool"], "commands": [command_record(argv, code, runtime)],
+                "input_files": deck_inputs(ctx, rule_set["command"], values, "drc"), "diagnostics": []}
     response["diagnostics"].append({"severity": "info", "source": "adapter", "message": "rule set {}: {}".format(
         name, rule_set.get("description", ""))})
     if table is None:
@@ -550,8 +562,8 @@ def lvs(request):
     exists = os.path.isfile(values["report"])
     probe = run_probe(ctx, values["report"], inputs["cell"]) if exists and code is not None else None
     verdict, reason = lvs_verdict(code, log_text, exists, probe, facts) if not error else ("not run", error)
-    response = {"contract": CONTRACT, "tool": ctx["tool"], "input_files": deck_inputs(ctx, facts["command"], values, "lvs"),
-                "diagnostics": []}
+    response = {"contract": CONTRACT, "tool": ctx["tool"], "commands": [command_record(argv, code, runtime)],
+                "input_files": deck_inputs(ctx, facts["command"], values, "lvs"), "diagnostics": []}
     response.update(lvs_result(ctx, verdict, reason, probe, pins, runtime, values, log_path, code))
     response["outputs"] = outputs_of(ctx["work_dir"], ctx["root"])
     return response

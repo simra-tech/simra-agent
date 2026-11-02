@@ -234,7 +234,8 @@ The inputs:
   rows are `not_run`.
 - `limits` gives maximum values for each element: `r_ohm` for each resistor and `c_f` for each capacitor. An
   element above its limit is an error at its line.
-- `technology` is the name of a technology pack. The default is the pack for `$PDK`.
+- `technology` is the name of a technology pack, or one of the PDK names of a pack (for example `sky130A`). The
+  default is the pack for `$PDK`.
 
 The measurements:
 

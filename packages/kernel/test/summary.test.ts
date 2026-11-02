@@ -59,3 +59,21 @@ test("the summary lists the outputs after the input files, in the order of the r
 test("a summary without outputs has no outputs line", () => {
 	assert.doesNotMatch(formatOutcome(root, experiment, result([])), /^outputs:/m);
 });
+
+test("the summary gives one command line for each entry of commands, after the tool line", () => {
+	const r = result([]);
+	r.commands = [
+		{ argv: ["klayout", "-b", "-r", "/pdk/deck dir/drc.lydrc", "-rd", "cell=idac"], exit_code: 1, runtime_s: 12.4 },
+		{ argv: ["probe"], exit_code: null, runtime_s: null },
+	];
+	const lines = formatOutcome(root, experiment, r).split("\n");
+	const at = lines.indexOf("tool: fake 1");
+	assert.deepEqual(lines.slice(at + 1, at + 3), [
+		'command: klayout -b -r "/pdk/deck dir/drc.lydrc" -rd cell=idac (exit 1, 12.4 s)',
+		"command: probe (no exit code)",
+	]);
+});
+
+test("a summary without commands has no command line", () => {
+	assert.doesNotMatch(formatOutcome(root, experiment, result([])), /^command:/m);
+});

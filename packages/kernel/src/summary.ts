@@ -2,7 +2,7 @@
 // It always names the records, so every number can be traced to its run.
 
 import { join, relative } from "node:path";
-import { experimentDir, type ExperimentRecord, type ResultRecord } from "./records.ts";
+import { type CommandRun, experimentDir, type ExperimentRecord, type ResultRecord } from "./records.ts";
 import { checksDir, type Limit, NOT_SELECTED, type VerdictRecord, type VerdictRow } from "./requirements.ts";
 
 export function formatOutcome(root: string, experiment: ExperimentRecord, result: ResultRecord): string {
@@ -13,6 +13,7 @@ export function formatOutcome(root: string, experiment: ExperimentRecord, result
 	const env = experiment.environment as { name?: string; image_id?: string };
 	lines.push(`environment: ${env.name}${env.image_id ? ` (${env.image_id.slice(0, 19)})` : ""}`);
 	if (result.tool) lines.push(`tool: ${result.tool.name} ${result.tool.version}`);
+	for (const c of result.commands ?? []) lines.push(formatCommand(c));
 	const design = experiment.design;
 	lines.push(`design: git ${design.git_commit?.slice(0, 12) ?? "none"}${design.git_dirty ? " (uncommitted changes)" : ""}`);
 	if (result.input_files) {
@@ -40,6 +41,13 @@ export function formatOutcome(root: string, experiment: ExperimentRecord, result
 	for (const d of result.diagnostics.filter((d) => d.severity !== "info")) lines.push(formatDiagnostic(d));
 	for (const e of result.errors) lines.push(`error: ${e}`);
 	return lines.join("\n");
+}
+
+/** One command line of the summary: `command: <argv> (exit <code>, <runtime> s)`. An argument with a space is quoted. */
+export function formatCommand(c: CommandRun): string {
+	const argv = c.argv.map((a) => (a === "" || /\s/.test(a) ? JSON.stringify(a) : a)).join(" ");
+	const exit = c.exit_code === null ? "no exit code" : `exit ${c.exit_code}`;
+	return `command: ${argv} (${exit}${c.runtime_s === null ? "" : `, ${c.runtime_s} s`})`;
 }
 
 const num = (x: number) => Number(x.toPrecision(4)).toString();
