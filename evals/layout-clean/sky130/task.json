@@ -1,0 +1,16 @@
+{
+  "name": "layout-clean-sky130",
+  "prompt": "task.md",
+  "score": "score.mjs",
+  "environment": "eda",
+  "files": {
+    "cell.gds": "../../layout-drc-fix/sky130/cell-clean.gds",
+    "cell.spice": "../../layout-drc-fix/sky130/cell.spice",
+    "spec.md": "../../layout-drc-fix/sky130/spec.md",
+    "task.md": "task.md",
+    "drc.sh": "../../layout-drc-fix/sky130/drc.sh",
+    "lvs.sh": "../../layout-drc-fix/sky130/lvs.sh",
+    "simra.config.json": "../../layout-drc-fix/sky130/simra.config.json",
+    "simra.local.json": "../../../examples/ota-sg13g2/simra.local.json"
+  }
+}

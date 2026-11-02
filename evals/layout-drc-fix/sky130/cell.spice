@@ -1,0 +1,10 @@
+* diffpair: NMOS differential pair with a tail current mirror and two dummy devices.
+* Pins: inp inn outp outn ibias vss
+.subckt diffpair inp inn outp outn ibias vss
+M1 outn inp tail vss sky130_fd_pr__nfet_01v8 L=0.5u W=1u
+M2 outp inn tail vss sky130_fd_pr__nfet_01v8 L=0.5u W=1u
+M3 tail ibias vss vss sky130_fd_pr__nfet_01v8 L=0.5u W=1u
+M4 ibias ibias vss vss sky130_fd_pr__nfet_01v8 L=0.5u W=1u
+MD1 vss vss vss vss sky130_fd_pr__nfet_01v8 L=0.5u W=1u
+MD2 vss vss vss vss sky130_fd_pr__nfet_01v8 L=0.5u W=1u
+.ends diffpair

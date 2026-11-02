@@ -1,0 +1,109 @@
+{
+  "task": "layout-clean",
+  "input": "clean",
+  "pdk": "sky130",
+  "cell": "diffpair",
+  "pins": [
+    "inp",
+    "inn",
+    "outp",
+    "outn",
+    "ibias",
+    "vss"
+  ],
+  "seeds": {
+    "width": "m1.1",
+    "spacing": "m2.2",
+    "enclosure": "via.4a",
+    "offgrid": "m1_OFFGRID"
+  },
+  "variants": {
+    "clean": {
+      "sha256": "545b55db919e5d2d9d3a2f16b1ed0240926cef2ffd1f2f98db603bb08b141f45",
+      "drc": {
+        "status": "clean",
+        "markers": 0,
+        "rules": {},
+        "exit": 0,
+        "runtime_s": 1.207
+      },
+      "lvs": {
+        "status": "match",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "outn",
+          "outp",
+          "vss"
+        ],
+        "runtime_s": 0.844,
+        "status_text": "MATCH"
+      }
+    },
+    "seeded": {
+      "sha256": "721d6250a61b20167d8b1e4b49a4b897b99ad4363f171c88aeca539d9ed458d3",
+      "drc": {
+        "status": "violations",
+        "markers": 5,
+        "rules": {
+          "m1.1": 1,
+          "via.4a": 1,
+          "m2.2": 1,
+          "m1_OFFGRID": 2
+        },
+        "exit": 0,
+        "runtime_s": 1.165
+      },
+      "lvs": {
+        "status": "match",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "outn",
+          "outp",
+          "vss"
+        ],
+        "runtime_s": 0.841,
+        "status_text": "MATCH"
+      }
+    },
+    "cheat": {
+      "sha256": "70e7c3d4702c0b39d138af73be61dd973db209448acf2159154a66c10ef4610a",
+      "drc": {
+        "status": "clean",
+        "markers": 0,
+        "rules": {},
+        "exit": 0,
+        "runtime_s": 1.151
+      },
+      "lvs": {
+        "status": "mismatch",
+        "exit": 1,
+        "pins": [
+          "ibias",
+          "inn",
+          "outn",
+          "vss"
+        ],
+        "runtime_s": 0.83,
+        "status_text": "MISMATCH"
+      }
+    }
+  },
+  "decks": {
+    "drc": "klayout -b -r \"$deck\" -rd input=\"$gds\" -rd top_cell=\"$top\" -rd report=\"$report\" -rd feol=true -rd beol=true -rd offgrid=true -rd thr=4 > drc/drc.log 2>&1",
+    "lvs": "klayout -b -r \"$deck\" -rd input=\"$gds\" -rd top_cell=\"$top\" -rd report=\"$report\" -rd schematic=cell.spice -rd target_netlist=\"lvs/${top}_extracted.cir\" -rd thr=4 -rd run_mode=deep -rd spice_net_names=true -rd spice_comments=false -rd scale=false -rd verbose=false -rd schematic_simplify=true -rd net_only=false -rd top_lvl_pins=false -rd combine=false -rd purge=false -rd purge_nets=false > lvs/lvs.log 2>&1"
+  },
+  "provenance": {
+    "engine": "docker",
+    "image": "simra-agent-env:914b4a8",
+    "image_id": "sha256:189219a0feba70bd54420999a8151b68b66bf980da3cc69fafc697294dae2d16",
+    "klayout": "KLayout 0.30.12",
+    "pdk": "sky130A open_pdks 1689ac3f2dc763876eaf967227c7dfe831b031ae",
+    "made_at": "2026-11-02T12:22:22.749Z"
+  }
+}

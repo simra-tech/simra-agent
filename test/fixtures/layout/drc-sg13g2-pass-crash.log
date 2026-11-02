@@ -1,0 +1,16 @@
+2026-11-02 13:16:07 +0100: Memory Usage (437236K) : Executing rule forbidden.pemwind
+2026-11-02 13:16:07 +0100: Memory Usage (437236K) : Executing rule forbidden.baspoly
+2026-11-02 13:16:07 +0100: Memory Usage (437236K) : Executing rule forbidden.deepco
+2026-11-02 13:16:07 +0100: Memory Usage (437236K) : Executing rule forbidden.pempoly
+2026-11-02 13:16:07 +0100: Memory Usage (437236K) : Executing rule forbidden.empoly
+2026-11-02 13:16:07 +0100: Memory Usage (437236K) : Executing rule forbidden.ldmos
+2026-11-02 13:16:07 +0100: Memory Usage (437236K) : Executing rule forbidden.pbiwind
+2026-11-02 13:16:07 +0100: Memory Usage (437236K) : Executing rule forbidden.nodrc
+2026-11-02 13:16:07 +0100: Memory Usage (437236K) : Executing rule forbidden.flash
+2026-11-02 13:16:07 +0100: Memory Usage (437236K) : Executing rule forbidden.colwind
+2026-11-02 13:16:07 +0100: Memory Usage (437236K) : KLayout DRC run for tables 'main' completed in 1.16 seconds
+02-Nov-2026 13:16:07 | INFO    | =====================================================================================
+02-Nov-2026 13:16:07 | INFO    | ✅ --- KLayout DRC Check Passed: No DRC violations detected in the layout. --- ✅
+02-Nov-2026 13:16:07 | INFO    | =====================================================================================
+02-Nov-2026 13:16:07 | INFO    | Total DRC Run time: 1.87 seconds (including execution, analysis, and reporting)
+Segmentation fault (core dumped)

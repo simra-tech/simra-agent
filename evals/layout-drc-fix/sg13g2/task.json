@@ -1,0 +1,16 @@
+{
+  "name": "layout-drc-fix-sg13g2",
+  "prompt": "task.md",
+  "score": "score.mjs",
+  "environment": "eda",
+  "files": {
+    "cell.gds": "cell-seeded.gds",
+    "cell.spice": "cell.spice",
+    "spec.md": "spec.md",
+    "task.md": "task.md",
+    "drc.sh": "drc.sh",
+    "lvs.sh": "lvs.sh",
+    "simra.config.json": "simra.config.json",
+    "simra.local.json": "../../../examples/ota-sg13g2/simra.local.json"
+  }
+}

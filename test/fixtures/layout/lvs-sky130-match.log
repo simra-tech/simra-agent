@@ -1,0 +1,12 @@
+2026-11-02 13:16:17 +0100: Extracting sky130_fd_pr__cap_vpp_55p8x11p7_pol1m1m2m3m4m5_noshield
+2026-11-02 13:16:17 +0100: Extracting sky130_fd_pr__cap_vpp_55p8x11p7_pol1m1m2m3m4m5_noshield_m5pullin
+2026-11-02 13:16:17 +0100: Extracting sky130_fd_pr__cap_vpp_55p8x23p1_pol1m1m2m3m4m5_noshield
+2026-11-02 13:16:17 +0100: Extracting sky130_fd_pr__cap_vpp_55p8x23p1_pol1m1m2m3m4m5_noshield_m5pullin
+2026-11-02 13:16:17 +0100: Extracting sky130_fd_pr__cap_vpp_55p8x23p1_pol1m1m2m3m4m5_noshield_test
+2026-11-02 13:16:17 +0100: Starting SONOS EXTRACTION
+2026-11-02 13:16:17 +0100: Extracting Build space flash special SONOSFET star
+2026-11-02 13:16:17 +0100: Starting SKY130 LVS comparison section
+2026-11-02 13:16:17 +0100: LVS Total Run time 0.222374 seconds
+2026-11-02 13:16:17 +0100: ==========================================
+2026-11-02 13:16:17 +0100: INFO : Congratulations! Netlists match.
+2026-11-02 13:16:17 +0100: ==========================================

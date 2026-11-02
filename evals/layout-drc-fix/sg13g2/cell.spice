@@ -1,0 +1,10 @@
+* diffpair: NMOS differential pair with a tail current mirror and two dummy devices.
+* Pins: inp inn outp outn ibias vss
+.subckt diffpair inp inn outp outn ibias vss
+M1 outn inp tail vss sg13_lv_nmos w=1u l=0.5u ng=1 m=1
+M2 outp inn tail vss sg13_lv_nmos w=1u l=0.5u ng=1 m=1
+M3 tail ibias vss vss sg13_lv_nmos w=1u l=0.5u ng=1 m=1
+M4 ibias ibias vss vss sg13_lv_nmos w=1u l=0.5u ng=1 m=1
+MD1 vss vss vss vss sg13_lv_nmos w=1u l=0.5u ng=1 m=1
+MD2 vss vss vss vss sg13_lv_nmos w=1u l=0.5u ng=1 m=1
+.ends diffpair

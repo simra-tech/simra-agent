@@ -1,0 +1,109 @@
+{
+  "task": "layout-clean",
+  "input": "clean",
+  "pdk": "sg13g2",
+  "cell": "diffpair",
+  "pins": [
+    "inp",
+    "inn",
+    "outp",
+    "outn",
+    "ibias",
+    "vss"
+  ],
+  "seeds": {
+    "width": "M1.a",
+    "spacing": "M2.b",
+    "enclosure": "V1.c",
+    "offgrid": "metal1_drw_Offgrid"
+  },
+  "variants": {
+    "clean": {
+      "sha256": "6be355899640fa60285faf53fb406ee0558bab9098eeed0b69eb0e8de0246fda",
+      "drc": {
+        "status": "clean",
+        "markers": 0,
+        "rules": {},
+        "exit": 0,
+        "runtime_s": 1.931
+      },
+      "lvs": {
+        "status": "match",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "outn",
+          "outp",
+          "vss"
+        ],
+        "runtime_s": 1.221,
+        "status_text": "MATCH"
+      }
+    },
+    "seeded": {
+      "sha256": "6a7dc89701d01ae4bb6b72475adfd1d1d0f07ccf0201fb7eddf362c7fdd5753a",
+      "drc": {
+        "status": "violations",
+        "markers": 7,
+        "rules": {
+          "M1.a": 3,
+          "M2.b": 1,
+          "V1.c": 1,
+          "metal1_drw_Offgrid": 2
+        },
+        "exit": 1,
+        "runtime_s": 1.946
+      },
+      "lvs": {
+        "status": "match",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "outn",
+          "outp",
+          "vss"
+        ],
+        "runtime_s": 1.2,
+        "status_text": "MATCH"
+      }
+    },
+    "cheat": {
+      "sha256": "b3358df8d087b42624cb785f22c14e43bc2422131877ca23ecbe08f66b47f9da",
+      "drc": {
+        "status": "clean",
+        "markers": 0,
+        "rules": {},
+        "exit": 0,
+        "runtime_s": 1.952
+      },
+      "lvs": {
+        "status": "mismatch",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "outn",
+          "vss"
+        ],
+        "runtime_s": 1.215,
+        "status_text": "MISMATCH"
+      }
+    }
+  },
+  "decks": {
+    "drc": "python3 \"$deck\" --path=\"$gds\" --topcell=\"$top\" --run_dir=drc --disable_extra_rules --no_density > drc/drc.log 2>&1",
+    "lvs": "python3 \"$deck\" --layout=\"$gds\" --netlist=cell.spice --topcell=\"$top\" --run_dir=lvs > lvs/lvs.log 2>&1"
+  },
+  "provenance": {
+    "engine": "docker",
+    "image": "simra-agent-env:914b4a8",
+    "image_id": "sha256:189219a0feba70bd54420999a8151b68b66bf980da3cc69fafc697294dae2d16",
+    "klayout": "KLayout 0.30.12",
+    "pdk": "ihp-sg13g2 a49358cc0b20635fcb53c0940505e3563763fc7a",
+    "made_at": "2026-11-02T12:22:11.645Z"
+  }
+}

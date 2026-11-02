@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<report-database>
+ <description>SKY130 DRC runset</description>
+ <original-file/>
+ <generator>drc: script='/foss/pdks/sky130A/libs.tech/klayout/drc/sky130A_mr.drc'</generator>
+ <top-cell>diffpair</top-cell>
+ <tags>
+ </tags>
+ <categories>
+  <category>
+   <name>m1.1</name>
+   <description>m1.1 : min. m1 width : 0.14um</description>
+   <categories>
+   </categories>
+  </category>
+  <category>
+   <name>via.4a</name>
+   <description>via.4a : min. m1 enclosure of 0.15um via : 0.055um</description>
+   <categories>
+   </categories>
+  </category>
+  <category>
+   <name>m2.2</name>
+   <description>m2.2 : min. m2 spacing : 0.14um</description>
+   <categories>
+   </categories>
+  </category>
+  <category>
+   <name>m1_OFFGRID</name>
+   <description>x.1b : OFFGRID vertex on m1</description>
+   <categories>
+   </categories>
+  </category>
+ </categories>
+ <cells>
+  <cell>
+   <name>diffpair</name>
+   <variant/>
+   <layout-name/>
+   <references>
+   </references>
+  </cell>
+ </cells>
+ <items>
+  <item>
+   <tags/>
+   <category>'m1.1'</category>
+   <cell>diffpair</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (6.89,-3.4;6.89,-2.9)|(7.01,-2.9;7.01,-3.4)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'via.4a'</category>
+   <cell>diffpair</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (15.755,-1.326;15.755,-1.074)/(15.775,-1.275;15.775,-1.125)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m2.2'</category>
+   <cell>diffpair</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (12.755,-2.425;15.222,-2.425)/(15.15,-2.305;12.683,-2.305)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>m1_OFFGRID</category>
+   <cell>diffpair</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (3.666,3;3.666,3)/(3.666,3;3.666,3)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>m1_OFFGRID</category>
+   <cell>diffpair</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (3.666,1.48;3.666,1.48)/(3.666,1.48;3.666,1.48)</value>
+   </values>
+  </item>
+ </items>
+</report-database>

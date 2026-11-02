@@ -1,0 +1,30 @@
+2026-11-02 13:16:15 +0100: Memory Usage (434964K) : [layout_netlist] purge_nets: SKIPPED
+2026-11-02 13:16:15 +0100: Memory Usage (434964K) : [layout_netlist] purge_devices: SKIPPED
+2026-11-02 13:16:15 +0100: Memory Usage (434964K) : [schematic_netlist] simplify: ENABLED
+2026-11-02 13:16:15 +0100: Memory Usage (434964K) : [schematic_netlist] make_top_level_pins: SKIPPED
+2026-11-02 13:16:15 +0100: Memory Usage (434964K) : [schematic_netlist] combine_devices: SKIPPED
+2026-11-02 13:16:15 +0100: Memory Usage (434964K) : [schematic_netlist] purge: SKIPPED
+2026-11-02 13:16:15 +0100: Memory Usage (434964K) : [schematic_netlist] purge_nets: SKIPPED
+2026-11-02 13:16:15 +0100: Memory Usage (434964K) : [schematic_netlist] purge_devices: SKIPPED
+2026-11-02 13:16:15 +0100: Memory Usage (434964K) : Starting SG13G2 LVS Comparison in strict port mode.
+2026-11-02 13:16:15 +0100: Memory Usage (434964K) : flag_missing_ports enabled: missing/mislabeled top-level ports are treated as errors.
+2026-11-02 13:16:15 +0100: Memory Usage (435092K) : xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+2026-11-02 13:16:15 +0100: Memory Usage (435092K) : ERROR : Netlists don't match
+2026-11-02 13:16:15 +0100: Memory Usage (435092K) : xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+2026-11-02 13:16:15 +0100: Memory Usage (435092K) : LVS Total Run time 0.452615 seconds
+02-Nov-2026 13:16:15 | INFO    | ==============================================================================
+02-Nov-2026 13:16:15 | INFO    | Important Summary
+02-Nov-2026 13:16:15 | INFO    | +------------------+--------------------------------------------------------------+
+02-Nov-2026 13:16:15 | INFO    | | Status           | FAIL                                                         |
+02-Nov-2026 13:16:15 | INFO    | | Mode             | COMPARE                                                      |
+02-Nov-2026 13:16:15 | INFO    | | Outcome          | Comparison mode: FAIL (netlists do not match).               |
+02-Nov-2026 13:16:15 | INFO    | | Layout           | cell.gds                                                     |
+02-Nov-2026 13:16:15 | INFO    | | Top Cell         | diffpair                                                     |
+02-Nov-2026 13:16:15 | INFO    | | Results Dir      | /work/lvs                                                    |
+02-Nov-2026 13:16:15 | INFO    | | Warnings         | 0                                                            |
+02-Nov-2026 13:16:15 | INFO    | | Errors           | 1                                                            |
+02-Nov-2026 13:16:15 | INFO    | | Run Time (s)     | 1.16                                                         |
+02-Nov-2026 13:16:15 | INFO    | +------------------+--------------------------------------------------------------+
+02-Nov-2026 13:16:15 | ERROR   | Key errors:
+02-Nov-2026 13:16:15 | ERROR   |   - 2026-11-02 13:16:15 +0100: Memory Usage (435092K) : ERROR : Netlists don't match
+02-Nov-2026 13:16:15 | INFO    | ==============================================================================
