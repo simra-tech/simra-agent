@@ -40,7 +40,7 @@ test("run_experiment adds the PNG outputs of role image as image parts after the
 	const tools = new Map<string, any>();
 	extension({ registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand: () => {}, on: () => {} } as any);
 	const run = tools.get("run_experiment");
-	assert.ok(run.promptGuidelines.some((g: string) => /operation render/.test(g) && /Look at the picture/.test(g)));
+	assert.ok(run.promptGuidelines.some((g: string) => /operation render/.test(g) && /not for every marker/.test(g)));
 	const root = mkdtempSync(join(tmpdir(), "simra-ext-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	writeFileSync(join(root, "simra.config.json"), JSON.stringify({ adapter_dirs: [fakeAdapters] }));

@@ -224,7 +224,7 @@ export default function (pi: ExtensionAPI) {
 			"Run simulations with run_experiment, not with a direct shell command, so that each run is recorded.",
 			"Run DRC and LVS with run_experiment (adapter klayout, operations drc and lvs), not with a DRC or LVS shell script. Report a DRC or LVS that did not run as not run, not as a pass.",
 			"To read a layout, use run_experiment with adapter klayout, operation query, and put several questions in one call. To see what an edit or a commit changed, use operation diff (against a file or git:<ref>). Write Python only to change a layout.",
-			"To see a region of a layout or a DRC marker, use run_experiment with adapter klayout, operation render (a box, or a drc experiment id and a rule): the picture comes with the result. Look at the picture before you choose the edit.",
+			"To see a region of a layout or a DRC marker, use run_experiment with adapter klayout, operation render (a box, or a drc experiment id and a rule): the picture comes with the result. Use it when the marker boxes and the shapes do not tell which edge to move, not for every marker.",
 			"When you report a simulated number, give the experiment id that produced it.",
 			"For a run that takes minutes, or for independent runs, start them with run_experiment detached and wait_experiments; do not poll with sleep, tail or log reads.",
 			"When a task asks for output files (a changed design, an answer file), write them as soon as you have a first result, and update them each time you find a better one. A session can end before you finish.",
