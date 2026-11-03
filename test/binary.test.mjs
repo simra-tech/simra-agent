@@ -107,9 +107,9 @@ test("--version and --help say simra, also through a link", { skip }, (t) => {
 		assert.equal(help.status, 0, help.stderr);
 		assert.match(help.stdout, /^simra - a chip-design agent built on pi\n/);
 		assert.match(help.stdout, /Usage:\n {2}simra \[options\]/);
-		assert.match(help.stdout, /Commands:\n {2}simra run <spec\.json> +Run one experiment[^]* {2}simra update +Update simra/);
+		assert.match(help.stdout, /Commands:\n {2}simra run <spec\.json> +Run one experiment[^]* {2}simra update +Update simra[^]* {2}simra uninstall +Remove simra/);
 		assert.match(help.stdout, /SIMRA_CODING_AGENT_DIR +- Config directory \(default: ~\/\.config\/simra\)\n[^]* {2}SIMRA_NO_UPDATE_CHECK +- /);
-		assert.doesNotMatch(help.stdout, /AI coding assistant|Update pi|simra list +List installed|PI_SELF_UPDATE_COMMAND|~\/\.simra\/agent/);
+		assert.doesNotMatch(help.stdout, /AI coding assistant|Update pi|simra list +List installed|Alias for remove|PI_SELF_UPDATE_COMMAND|~\/\.simra\/agent/);
 	}
 	// pi's parser finds the help option after other options too.
 	assert.match(simra(t, tmpdir(), ["--offline", "--help"]).stdout, /^simra - a chip-design agent built on pi\n/);
@@ -135,6 +135,15 @@ test("the kernel commands go to the kernel, the other arguments to pi", { skip }
 	const models = simra(t, dir, ["update", "--models"]);
 	assert.equal(models.status, 0, models.stderr);
 	assert.match(models.stdout, /Model catalogs refreshed/);
+	// uninstall is simra's: pi's uninstall <source> is simra remove <source>. A binary without install.sh's receipt
+	// stays (test/install.test.mjs tests the removal).
+	const extra = simra(t, dir, ["uninstall", "npm:foo"]);
+	assert.equal(extra.status, 2);
+	assert.match(extra.stderr, /simra remove <source>/);
+	const uninstall = simra(t, dir, ["uninstall"]);
+	assert.equal(uninstall.status, 1);
+	assert.match(uninstall.stderr, /has no receipt\.json/);
+	assert.ok(existsSync(binary));
 });
 
 /** A Chat Completions API. It answers a request that offers codemode with one codemode call, and else with "done". */

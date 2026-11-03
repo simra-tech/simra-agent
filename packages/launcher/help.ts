@@ -12,6 +12,7 @@ const COMMANDS = [
 	["check", "Check the design against requirements.json"],
 	["pdf <file>", "Print the text of a PDF, or render a page (--render <N>)"],
 	["update", "Update simra; --extensions or --models: pi packages or model catalogs"],
+	["uninstall", "Remove simra; settings and logins stay"],
 ]
 	.map(([command, text]) => `  ${`simra ${command}`.padEnd(32)}${text}\n`)
 	.join("");
@@ -30,8 +31,8 @@ export function printHelp(): void {
 		log(
 			text
 				.replace(" - AI coding assistant with read, bash, edit, write tools", " - a chip-design agent built on pi")
-				.replace(/^ {2}simra (update|list) .*\n/gm, "")
-				.replace("/update/list/", "/")
+				.replace(/^ {2}simra (update|list|uninstall) .*\n/gm, "")
+				.replace("/uninstall/update/list/", "/")
 				.replace(/(Commands:\S*\n)/, `$1${COMMANDS}`)
 				.replaceAll("~/.simra/agent", "~/.config/simra")
 				.replace(/^ {2}PI_(PACKAGE_DIR|TELEMETRY|SELF_UPDATE_COMMAND) .*\n/gm, "")
