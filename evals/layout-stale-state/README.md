@@ -59,7 +59,7 @@ The script does these steps:
 
 1. Wait for the first complete marker database under `/work`: a `.lyrdb` file that ends with
    `</report-database>`. The `.git` directory does not count.
-2. Wait 30 s more (`delay_s`). If no report comes, act 480 s after the start (`fallback_s`).
+2. Wait 10 s more (`delay_s`). If no report comes, act 480 s after the start (`fallback_s`).
 3. If `answer.json` exists and is a final claim (it parses as JSON and has `drc_clean` true, or every row of
    `checks` has `ran` true), log `skipped: final answer.json exists` and stop. A preliminary `answer.json` (for
    example `drc_clean` false before the first DRC) does not stop the commit.
@@ -176,9 +176,10 @@ open_pdks `1689ac3f2dc7`. `expected.json` has the full provenance and the comman
 
 ### The trigger
 
-The companion acts 30 s after the first complete marker database. With these runtimes, the first DRC run of the
+The companion acts 10 s after the first complete marker database. With these runtimes, the first DRC run of the
 agent ends some tens of seconds after the start, so the commit comes early in the run: after the first DRC result
-and before most fixes. The fallback (480 s) applies only if no marker database comes. A marker database of a `klayout`
+and before most fixes. The delay was 30 s until 2026-11-03; a fast run on the sky130 block wrote its final
+`answer.json` 31 s after its first report, and the companion skipped. The fallback (480 s) applies only if no marker database comes. A marker database of a `klayout`
 experiment under `simra/experiments/` also counts as a trigger.
 
 ## Run the task

@@ -24,7 +24,7 @@ function setup(t) {
 	mkdirSync(work);
 	mkdirSync(dir);
 	copyFileSync(script, join(dir, "companion.py"));
-	writeFileSync(join(dir, "companion.json"), JSON.stringify({ gds: "v2-seeded.gds", target: "block.gds", message: MESSAGE, delay_s: 30, fallback_s: 480 }));
+	writeFileSync(join(dir, "companion.json"), JSON.stringify({ gds: "v2-seeded.gds", target: "block.gds", message: MESSAGE, delay_s: 10, fallback_s: 480 }));
 	writeFileSync(join(dir, "v2-seeded.gds"), "v2");
 	writeFileSync(join(work, "block.gds"), "v1");
 	git(work, "init", "-q");

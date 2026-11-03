@@ -133,7 +133,7 @@ def main(argv):
     a = ap.parse_args(argv)
     with open(os.path.join(a.dir, "companion.json")) as f:
         cfg = json.load(f)
-    delay = cfg.get("delay_s", 30) if a.delay is None else a.delay
+    delay = cfg.get("delay_s", 10) if a.delay is None else a.delay
     fallback = cfg.get("fallback_s", 480) if a.fallback is None else a.fallback
     started = time.time() if a.started is None else a.started
     if not a.once:

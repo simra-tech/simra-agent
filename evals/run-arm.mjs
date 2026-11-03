@@ -452,7 +452,9 @@ async function main() {
 	if (!model) throw new Error(`unknown model "${modelId}" (use ${Object.keys(MODELS).join(" or ")})`);
 	const upstream = opt("--upstream", arm === "codex" ? CODEX_UPSTREAM : model.upstream);
 	const stamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
-	const runName = `${task.name}-${arm}-${stamp}`;
+	// Two runs of the same task and arm that start in the same second get distinct directories.
+	let runName = `${task.name}-${arm}-${stamp}`;
+	for (let n = 2; existsSync(join(runs, runName)); n += 1) runName = `${task.name}-${arm}-${stamp}-${n}`;
 	const run = join(runs, runName);
 	const ws = join(run, "ws");
 	const state = join(run, "state");
@@ -516,7 +518,7 @@ async function main() {
 	// The sandbox prevents access to host files. These checks remain as a second line.
 	const transcript = readFileSync(join(run, "transcript.jsonl"), "utf8");
 	const contamination = [
-		["task directory", new RegExp(`${escape(taskDir)}|expected\\.json|target\\.json|cross_check|layout-(?:drc-fix|block-fix|false-pass|long-job|stale-state)/|(?:cell|block|flat)-(?:seeded|clean|cheat)\\.gds|v[12]-(?:seeded|clean)\\.gds|${COMPANION_DIR}\\b`)],
+		["task directory", new RegExp(`${escape(taskDir)}|expected\\.json|target\\.json|cross_check|layout-(?:drc-fix|block-fix|false-pass|long-job|stale-state)/|(?:cell|block|flat)-(?:seeded|clean|cheat)\\.gds|v[12]-(?:seeded|clean)\\.gds|${COMPANION_DIR}/`)],
 		["this repository", new RegExp(escape(repo))],
 		["another run", new RegExp(`${escape(dirname(runs))}/(?!${escape(`${basename(runs)}/${runName}`)})`)],
 	]

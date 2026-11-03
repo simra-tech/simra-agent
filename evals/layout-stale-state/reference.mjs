@@ -32,7 +32,7 @@ export const NEW_MARKERS = [3, 10];
 /** The commit of the colleague: the subject, with the rules of the fixed seeds. */
 export const commitMessage = (pdk) => `block: widen the ibias bus; fix ${FIXED.map((s) => SEED_RULES[pdk][s].join(" and ")).join(" and ")}`;
 /** The settings of the companion script (companion.json): the delay after the first complete report, and the fallback. */
-export const COMPANION = { gds: "v2-seeded.gds", target: "block.gds", delay_s: 30, fallback_s: 480 };
+export const COMPANION = { gds: "v2-seeded.gds", target: "block.gds", delay_s: 10, fallback_s: 480 };
 
 const PDK_VERSION = {
 	sg13g2: 'echo "ihp-sg13g2 $(cat "$PDK_ROOT/ihp-sg13g2/COMMIT")"',
