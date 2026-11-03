@@ -364,8 +364,8 @@ against `git:<ref>`. The answer gives, per layer, the area added and removed and
 path, then the changed cells. With the ids of two `drc` runs, it also gives the new, fixed and unchanged markers of
 each rule. To see a region or a DRC marker, the agent calls the operation `render`: a box, or the id of a `drc` run
 and a rule. The picture (PNG, in the colours of the PDK, the marker outlined in red) comes with the result of
-`run_experiment` as an image, after the summary. The prompt rules tell the agent to look at the picture before it
-chooses the edit, and to write Python only to change a layout. See
+`run_experiment` as an image, after the summary. The prompt rules tell the agent to ask for a picture when the marker
+boxes and the shapes do not tell which edge to move, and to write Python only to change a layout. See
 [adapters/klayout/README.md](adapters/klayout/README.md).
 
 ## Layout

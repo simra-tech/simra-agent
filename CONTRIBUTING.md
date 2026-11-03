@@ -110,6 +110,10 @@ Rules:
   specification.
 - `input_files` lists every file that the tool read, with its hash. If the adapter cannot find a file, it sets
   `complete` to `false` and adds a diagnostic.
+- `outputs` lists the files that the tool wrote, with their hashes. An entry may have a `role`. The summary
+  prints the role before the path. A PNG with the role `image` is a picture for the agent: the pi extension
+  adds it to the tool result as an image (at most 4 pictures and 1 MB per result). The klayout operation
+  `render` writes such outputs.
 - A measurement that the tool did not give has status `failed` or `missing` and the value `null`. It is never
   omitted.
 - A measurement can have the optional field `at`: the sweep point where a reduced value (for example a minimum
@@ -125,7 +129,7 @@ Rules:
   query. The runner copies it into `result.json`. The summary of the experiment prints the lines as they are,
   after the measurements, under the line `report:`. Keep the lines short and fixed in form (numbers, boxes, names;
   no prose). Keep the list short: put a full answer in a file in `work_dir`, add the file to `outputs`, and end a
-  shortened list with a line that names the file. The klayout operations `query` and `diff` fill it. Example:
+  shortened list with a line that names the file. The klayout operations `query`, `diff` and `render` fill it. Example:
   `"report": ["[1] bbox top all layers: (0.000,0.000;21.000,21.000)  w=21.000 h=21.000 (top cell)"]`.
 - The adapter writes logs to files in `work_dir` or to stderr. It does not write results to stdout.
 - The adapter does not contain PDK facts (for example the parameter names of a MOS model). It reads them from
