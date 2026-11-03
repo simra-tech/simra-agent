@@ -3,15 +3,16 @@
 //   node packages/launcher/build.ts [--out <dir>]
 //
 // The folder (default dist/simra-<os>-<cpu>) has the layout of pi's binary release: the binary simra, a package.json
-// (name, version, piConfig), pi's theme, assets, export-html, docs, Photon WebAssembly and clipboard helpers, and
-// Simra's adapters/ and technologies/. The version is the version of the root package.json.
+// (name, version, piConfig), pi's theme, assets, export templates, docs, examples, Photon WebAssembly and clipboard
+// helper, and Simra's adapters/ and technologies/. The version is the version of the root package.json.
 // It needs Bun: $BUN, else bun on the PATH.
 
 import { execFileSync } from "node:child_process";
 import { copyFileSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = new URL("../..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("../..", import.meta.url));
 const pi = join(root, "node_modules/@earendil-works/pi-coding-agent");
 const platform = `${process.platform}-${process.arch}`;
 if (!["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"].includes(platform)) throw new Error(`simra has no build for ${platform}`);
@@ -49,8 +50,10 @@ writeFileSync(join(out, "package.json"), `${JSON.stringify({ name: "simra", vers
 const copy = (from: string, to: string, filter?: (src: string) => boolean) => cpSync(from, join(out, to), { recursive: true, filter });
 copy(join(pi, "dist/modes/interactive/theme"), "theme", (src) => !/\.(js|ts|map)$/.test(src));
 copy(join(pi, "dist/modes/interactive/assets"), "assets");
-copy(join(pi, "dist/core/export-html"), "export-html");
+for (const file of ["template.html", "template.css", "template.js", "vendor"]) copy(join(pi, "dist/core/export-html", file), join("export-html", file));
+// pi's docs link to its examples. pi's CHANGELOG.md stays out: pi would show its entries as news of a simra release.
 copy(join(pi, "docs"), "docs");
+copy(join(pi, "examples"), "examples");
 copyFileSync(join(root, "node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm"), join(out, "photon_rs_bg.wasm"));
 const os = process.platform;
 copy(join(root, "node_modules/@earendil-works/pi-tui/native", os, "prebuilds", platform), join("native", os, "prebuilds", platform));

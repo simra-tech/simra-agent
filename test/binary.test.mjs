@@ -10,10 +10,11 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { makePdf } from "../packages/kernel/test/pdf-fixture.ts";
 import { SIMRA_PREAMBLE } from "../packages/pi-extension/index.ts";
 
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 const launcher = join(root, "packages", "launcher");
 const fixtures = join(root, "packages", "kernel", "test", "fixtures");
 const binary = process.env.SIMRA_BINARY && resolve(process.env.SIMRA_BINARY);

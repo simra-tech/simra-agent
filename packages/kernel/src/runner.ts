@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { closeSync, createWriteStream, existsSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import kernelPackage from "../package.json" with { type: "json" };
 import { loadConfig } from "./config.ts";
 import { buildInvocation } from "./environments.ts";
@@ -38,7 +39,7 @@ export const KERNEL_VERSION: string = kernelPackage.version;
 /** true in the simra binary: Bun embeds its modules in the virtual folder /$bunfs. */
 const IN_BINARY = import.meta.url.includes("$bunfs");
 /** The folder with adapters/ and technologies/: the release folder of the binary (the real path), or the repository. */
-const INSTALL_DIR = IN_BINARY ? dirname(realpathSync(process.execPath)) : new URL("../../..", import.meta.url).pathname;
+const INSTALL_DIR = IN_BINARY ? dirname(realpathSync(process.execPath)) : fileURLToPath(new URL("../../..", import.meta.url));
 export const BUILTIN_ADAPTER_DIR = join(INSTALL_DIR, "adapters");
 /** The technology packs (PDK data for adapters, see technologies/README.md). */
 export const BUILTIN_TECHNOLOGY_DIR = join(INSTALL_DIR, "technologies");
@@ -137,7 +138,7 @@ interface Job {
 
 const JOB_FILE = "job.json";
 /** The arguments before a CLI command: none for the simra binary, the path of cli.ts for Node. */
-const CLI_ARGS = IN_BINARY ? [] : [new URL("./cli.ts", import.meta.url).pathname];
+const CLI_ARGS = IN_BINARY ? [] : [fileURLToPath(new URL("./cli.ts", import.meta.url))];
 
 /**
  * The directories of the technology packs that the adapter searches, in order: the configured ones (technology_dirs),
