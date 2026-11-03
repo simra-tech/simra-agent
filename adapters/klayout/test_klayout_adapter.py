@@ -443,10 +443,16 @@ class EndToEnd(unittest.TestCase):
             self.assertIn("simra/experiments/e1/work/" + name, paths)
         self.assertEqual([f["role"] for f in r["input_files"]["files"]], ["layout", "netlist", "deck", "technology"])
         work = os.path.join(exp, "work", "lvs")
-        self.assertEqual(r["commands"], [{"argv": [sys.executable, os.path.join(self.tmp, "pdks", "fake", "deck.py"),
-                                                   os.path.join(work, "block.lvsdb"), os.path.join(work, "block_extracted.cir"),
-                                                   os.path.join(self.root, "block.spice")],
-                                          "exit_code": 0, "runtime_s": r["measurements"]["runtime_s"]["value"]}])
+        # The deck command, then the read of the LVS database with lvsdb_probe.py.
+        self.assertEqual(r["commands"][0], {"argv": [sys.executable, os.path.join(self.tmp, "pdks", "fake", "deck.py"),
+                                                     os.path.join(work, "block.lvsdb"), os.path.join(work, "block_extracted.cir"),
+                                                     os.path.join(self.root, "block.spice")],
+                                            "exit_code": 0, "runtime_s": r["measurements"]["runtime_s"]["value"]})
+        self.assertEqual(len(r["commands"]), 2)
+        probe = r["commands"][1]
+        self.assertIn("lvsdb_probe.py", probe["argv"][3])
+        self.assertEqual(probe["exit_code"], 0)
+        self.assertIsInstance(probe["runtime_s"], float)
 
     def test_lvs_mismatch(self):
         r, exp = self.run_op("lvs", {"gds": "block.gds", "cell": "idac", "netlist": "block.spice"},

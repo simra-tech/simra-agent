@@ -411,16 +411,16 @@ summary names every picture.
 ## The command in the response
 
 The response of `drc` and of `lvs` has the field `commands` (see the adapter contract in
-[CONTRIBUTING.md](../../CONTRIBUTING.md)). It has one entry: the deck command as the adapter ran it, with the
-placeholders filled, its exit code and its runtime. For example:
+[CONTRIBUTING.md](../../CONTRIBUTING.md)). The first entry is the deck command as the adapter ran it, with the
+placeholders filled, its exit code and its runtime. For `lvs`, a second entry is the read of the LVS database with
+`lvsdb_probe.py`. For example:
 
 ```json
 "commands": [{ "argv": ["klayout", "-b", "-r", "...", "-rd", "input=..."], "exit_code": 1, "runtime_s": 12.4 }]
 ```
 
 The exit code is `null` when the deck did not start. The summary of the experiment gives each entry on one
-`command:` line, after the `tool:` line. The `klayout -v` check and the read of the LVS database with
-`lvsdb_probe.py` are not in `commands`. Their logs are in `work/`.
+`command:` line, after the `tool:` line. The `klayout -v` check is not in `commands`. The logs are in `work/`.
 
 The response of `query` has no `commands`. The response of `diff` has `commands` only for `against` `git:<ref>`:
 the `git show` command.

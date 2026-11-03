@@ -29,7 +29,8 @@ match only when the deck log has the match text of the pack, the exit code is a 
 database exists and loads, and its compare status is a match (lvsdb_probe.py reads the database with the KLayout
 binary). Else the result is not run. work/lvs.json has all unmatched items and the pin check.
 
-The response of drc and lvs has "commands": the deck command as it was run, with its exit code and runtime.
+The response of drc and lvs has "commands": the deck command as it was run, with its exit code and runtime; for lvs
+also the read of the LVS database (lvsdb_probe.py).
 
 Operation "query" (see layout_read.py). Inputs:
   gds, cell, technology   as for drc
@@ -130,7 +131,8 @@ def find_facts(name, pdk):
         return path, section[key], None
     known = ", ".join("{} ({})".format(p.get("name"), ", ".join(p.get("pdks") or [])) for _, p in packs) or "none"
     wanted = "technology pack '{}'".format(name) if name else "technology pack for PDK '{}'".format(pdk)
-    return None, None, "no {} in {}; known packs: {}. Give input 'technology', or add a pack (see technologies/README.md)".format(
+    return None, None, ("no {} in {}; known packs: {}. Give input 'technology' (a pack name or a PDK name), add a pack "
+                        "there, or set SIMRA_TECHNOLOGY_DIR to the directory of a project pack (see technologies/README.md)").format(
         wanted, base, known)
 
 
@@ -481,11 +483,14 @@ def run_probe(ctx, lvsdb, cell):
     out = os.path.join(ctx["work_dir"], "lvsdb_probe.json")
     argv = [ctx["klayout"], "-b", "-r", os.path.join(HERE, "lvsdb_probe.py"), "-rd", "lvsdb=" + lvsdb,
             "-rd", "result=" + out, "-rd", "top_cell=" + cell]
+    start = time.monotonic()
     with open(os.path.join(ctx["work_dir"], "lvsdb_probe.log"), "w") as log:
         try:
             code = subprocess.call(argv, cwd=ctx["work_dir"], stdout=log, stderr=subprocess.STDOUT)
         except OSError as e:
+            ctx.setdefault("commands", []).append(command_record(argv, None, None))
             return {"loaded": False, "error": "could not start KLayout to read the database: {}".format(e)}
+    ctx.setdefault("commands", []).append(command_record(argv, code, round(time.monotonic() - start, 3)))
     try:
         with open(out) as f:
             probe = json.load(f)
@@ -588,7 +593,8 @@ def lvs(request):
     exists = os.path.isfile(values["report"])
     probe = run_probe(ctx, values["report"], inputs["cell"]) if exists and code is not None else None
     verdict, reason = lvs_verdict(code, log_text, exists, probe, facts) if not error else ("not run", error)
-    response = {"contract": CONTRACT, "tool": ctx["tool"], "commands": [command_record(argv, code, runtime)],
+    response = {"contract": CONTRACT, "tool": ctx["tool"],
+                "commands": [command_record(argv, code, runtime)] + ctx.get("commands", []),
                 "input_files": deck_inputs(ctx, facts["command"], values, "lvs"), "diagnostics": []}
     response.update(lvs_result(ctx, verdict, reason, probe, pins, runtime, values, log_path, code))
     response["outputs"] = outputs_of(ctx["work_dir"], ctx["root"])
