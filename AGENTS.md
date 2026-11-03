@@ -47,3 +47,5 @@ Documentation uses short sentences, active voice and numbered steps for procedur
 ## Commits
 
 A commit message states what changed and what evidence supports it (for example, which test passed).
+Commit as yourself, the human contributor. Do not add AI co-author trailers or "Generated with" lines.
+Agents do not push. A maintainer reviews each change before it is pushed.
