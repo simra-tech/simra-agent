@@ -1,21 +1,13 @@
 name: release
 
-# On a tag v<version> (the version of the root package.json):
-# 1. npm test on Node 22 (ci.yml).
-# 2. On each platform: build the simra binary with the pinned Bun, run the binary and install.sh tests, pack a tarball.
-# 3. Write install.sh with the version and the hashes of the tarballs, SHA256SUMS and a build attestation, and
-#    publish the release. gh uploads the files to a draft first and publishes it when all are there. With release
-#    immutability on in the repository settings, the published files cannot change.
+# On a tag v<version>: test, build and test the binary on each platform, then publish the tarballs, install.sh
+# (version and hashes baked in), SHA256SUMS and an attestation.
 
 on:
   push:
     tags: ["v*"]
 
 permissions: {}
-
-concurrency:
-  group: release-${{ github.ref_name }}
-  cancel-in-progress: false
 
 jobs:
   test:

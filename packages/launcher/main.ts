@@ -1,10 +1,5 @@
-// The simra binary: the kernel CLI and pi with the Simra extension, in one file compiled with Bun (see build.ts).
-// It does what pi's own Bun entry (dist/bun/cli.js) does. pi does not export those modules, so the launcher imports
-// them by path from the pinned pi; test/binary.test.mjs checks that they exist.
-//
-// run, check, list, show, wait, record and pdf go to the kernel CLI. update is simra update (pi's own update would
-// install pi); only "update --extensions" and "update --models" go to pi. uninstall removes simra (pi's uninstall is
-// an alias of remove). All other arguments go to pi.
+// The simra binary. It does what pi's Bun entry (dist/bun/cli.js) does; pi does not export those modules, so they are
+// imported by path (test/binary.test.mjs checks them). pi's own update would install pi, so update is simra's.
 
 import "../../node_modules/@earendil-works/pi-coding-agent/dist/bun/sandbox-env-setup.js";
 import "./env.ts";
@@ -52,5 +47,5 @@ if (KERNEL_COMMANDS.includes(args[0])) {
 		const { firstRun, isFirstRun } = await import("./first-run.ts");
 		if (isFirstRun(getAgentDir())) await firstRun(getAgentDir());
 	}
-	await main(args, { extensionFactories: [simra, updateNotice(VERSION, join(getAgentDir(), "update-check.json"))] });
+	await main(args, { extensionFactories: [simra, updateNotice(VERSION, join(getAgentDir(), "update-check"))] });
 }

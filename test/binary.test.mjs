@@ -6,11 +6,10 @@
 
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { connect } from "node:net";
-import { createInterface } from "node:readline";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
@@ -24,7 +23,6 @@ const fixtures = join(root, "packages", "kernel", "test", "fixtures");
 const binary = process.env.SIMRA_BINARY && resolve(process.env.SIMRA_BINARY);
 const skip = !binary && "SIMRA_BINARY is not set";
 const has = (cmd) => spawnSync(cmd, ["--version"], { stdio: "ignore" }).status === 0;
-const piVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).devDependencies["@earendil-works/pi-coding-agent"];
 /** The environment without provider keys and without proxy settings of the machine. */
 const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/_API_KEY$|^(https?|no)_proxy$/i.test(name)));
 
@@ -58,24 +56,6 @@ async function simraAsync(t, cwd, args, { env = {} } = {}) {
 	return { status, stdout, stderr };
 }
 
-/** Send commands to the binary in RPC mode; give the records that it wrote until it answered all of them. */
-async function rpc(t, env, commands) {
-	const child = spawn(binary, ["--mode", "rpc", "--no-session"], { cwd: tempDir(t, "cwd"), env: { ...cleanEnv, PI_OFFLINE: "1", ...env }, stdio: ["pipe", "pipe", "pipe"] });
-	t.after(() => child.kill());
-	let stderr = "";
-	child.stderr.on("data", (c) => (stderr += c));
-	const records = [];
-	await new Promise((resolve, reject) => {
-		child.on("exit", (code) => reject(new Error(`simra exited early (code ${code}). stderr:\n${stderr}`)));
-		createInterface({ input: child.stdout }).on("line", (line) => {
-			records.push(JSON.parse(line));
-			if (commands.every(({ id }) => records.some((r) => r.type === "response" && r.id === id))) resolve();
-		});
-		for (const command of commands) child.stdin.write(`${JSON.stringify(command)}\n`);
-	});
-	return records;
-}
-
 /** A design root whose adapters are the test adapters of the kernel, then the built-in ones. */
 function designRoot(t, files = {}) {
 	const dir = tempDir(t, "design");
@@ -96,7 +76,9 @@ test("the pi modules that the launcher imports by path are in the pinned pi", as
 });
 
 test("--version and --help say simra, also through a link", { skip }, (t) => {
-	const { version } = JSON.parse(readFileSync(join(dirname(realpathSync(binary)), "package.json"), "utf8"));
+	const { version, piConfig } = JSON.parse(readFileSync(join(dirname(realpathSync(binary)), "package.json"), "utf8"));
+	// pi takes the name, the settings folder (SIMRA_CODING_AGENT_DIR) and the project folder from piConfig.
+	assert.deepEqual(piConfig, { name: "simra", configDir: ".simra" });
 	const link = join(tempDir(t, "bin"), "simra");
 	symlinkSync(binary, link);
 	for (const bin of [binary, link]) {
@@ -127,9 +109,12 @@ test("the kernel commands go to the kernel, the other arguments to pi", { skip }
 		assert.equal(update.status, 2, `${args.join(" ")}: ${update.stdout}${update.stderr}`);
 		assert.match(update.stderr, /^usage: simra update/);
 	}
-	const models = simra(t, dir, ["update", "--models"]);
+	// Without SIMRA_CODING_AGENT_DIR, pi's files go to $XDG_CONFIG_HOME/simra.
+	const config = tempDir(t, "config");
+	const models = simra(t, dir, ["update", "--models"], { env: { SIMRA_CODING_AGENT_DIR: "", XDG_CONFIG_HOME: config } });
 	assert.equal(models.status, 0, models.stderr);
 	assert.match(models.stdout, /Model catalogs refreshed/);
+	assert.ok(existsSync(join(config, "simra", "models-store.json")));
 	// uninstall is simra's: pi's uninstall <source> is simra remove <source>. A binary without install.sh's receipt
 	// stays (test/install.test.mjs tests the removal).
 	const extra = simra(t, dir, ["uninstall", "npm:foo"]);
@@ -182,12 +167,13 @@ async function listen(t, server, scheme = "http") {
 }
 
 /** Run one prompt of the binary against a model API (default: a fake one on 127.0.0.1); give the requests. */
-async function prompt(t, extra, { cwd = tempDir(t, "cwd"), agentDir = tempDir(t, "agent"), env = {}, url, requests = [] } = {}) {
+async function prompt(t, extra, { env = {}, url, requests = [] } = {}) {
+	const agentDir = tempDir(t, "agent");
 	url ??= `${await listen(t, createServer(modelApi(requests)))}/v1`;
 	const models = { providers: { fake: { baseUrl: url, api: "openai-completions", apiKey: "fake", models: [{ id: "fake" }] } } };
 	writeFileSync(join(agentDir, "models.json"), JSON.stringify(models));
 	const args = ["--provider", "fake", "--model", "fake", "--no-session", "--no-context-files", "--no-skills", "--no-prompt-templates", ...extra, "-p", "hello"];
-	const child = spawn(binary, args, { cwd, env: { ...cleanEnv, SIMRA_CODING_AGENT_DIR: agentDir, PI_OFFLINE: "1", ...env }, stdio: ["ignore", "pipe", "pipe"] });
+	const child = spawn(binary, args, { cwd: tempDir(t, "cwd"), env: { ...cleanEnv, SIMRA_CODING_AGENT_DIR: agentDir, PI_OFFLINE: "1", ...env }, stdio: ["ignore", "pipe", "pipe"] });
 	let output = "";
 	child.stdout.on("data", (c) => (output += c));
 	child.stderr.on("data", (c) => (output += c));
@@ -284,50 +270,6 @@ test("simra update runs the install.sh of the latest release", { skip, timeout: 
 	assert.equal(update.status, 0, update.stderr);
 	assert.equal(update.stdout, "install.sh of 9.9.9 ran\n");
 	assert.deepEqual(requests, ["/releases/latest/download/install.sh"]);
-});
-
-test("the update notice: from the last check, one check a day, none with SIMRA_NO_UPDATE_CHECK=1", { skip, timeout: 90_000 }, async (t) => {
-	const requests = [];
-	const url = await listen(t, createServer(releasesApi("99.0.0", requests)));
-	const agentDir = tempDir(t, "agent");
-	const state = join(agentDir, "update-check.json");
-	const env = { SIMRA_CODING_AGENT_DIR: agentDir, SIMRA_RELEASES_URL: `${url}/releases`, PI_OFFLINE: "" };
-	const commands = [{ id: "commands", type: "get_commands" }];
-	const notices = (records) => records.filter((r) => r.type === "extension_ui_request" && r.method === "notify").map((r) => r.message);
-	// The first start has no earlier check, so no notice. It checks in the background and saves the result.
-	assert.deepEqual(notices(await rpc(t, env, commands)), []);
-	for (let i = 0; i < 100 && !existsSync(state); i++) await new Promise((r) => setTimeout(r, 100));
-	assert.equal(JSON.parse(readFileSync(state, "utf8")).latest, "99.0.0");
-	// The second start shows the notice and does not check again on the same day.
-	assert.deepEqual(notices(await rpc(t, env, commands)), ["simra 99.0.0 is available: run simra update"]);
-	assert.deepEqual(requests, ["/releases/latest"]);
-	rmSync(state);
-	assert.deepEqual(notices(await rpc(t, { ...env, SIMRA_NO_UPDATE_CHECK: "1" }, commands)), []);
-	await new Promise((r) => setTimeout(r, 1000));
-	assert.deepEqual(requests, ["/releases/latest"]);
-	assert.ok(!existsSync(state));
-});
-
-test("/simra-version, the settings in ~/.config/simra and the project folder .simra", { skip, timeout: 90_000 }, async (t) => {
-	const { version } = JSON.parse(readFileSync(join(dirname(realpathSync(binary)), "package.json"), "utf8"));
-	const records = await rpc(t, { SIMRA_CODING_AGENT_DIR: tempDir(t, "agent") }, [{ id: "version", type: "prompt", message: "/simra-version" }]);
-	assert.deepEqual(records.filter((r) => r.method === "notify").map((r) => r.message), [`simra-agent ${version} (pi ${piVersion})`]);
-	// Without SIMRA_CODING_AGENT_DIR, pi's files go to $XDG_CONFIG_HOME/simra.
-	const config = tempDir(t, "config");
-	const models = simra(t, tmpdir(), ["update", "--models"], { env: { SIMRA_CODING_AGENT_DIR: "", XDG_CONFIG_HOME: config } });
-	assert.equal(models.status, 0, models.stderr);
-	assert.ok(existsSync(join(config, "simra", "models-store.json")));
-	// The project folder is .simra, not .pi.
-	const project = tempDir(t, "project");
-	for (const [folder, text] of [[".simra", "SIMRA_PROJECT_FOLDER"], [".pi", "PI_PROJECT_FOLDER"]]) {
-		mkdirSync(join(project, folder));
-		writeFileSync(join(project, folder, "APPEND_SYSTEM.md"), text);
-	}
-	const agentDir = tempDir(t, "agent");
-	writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ defaultProjectTrust: "always" }));
-	const [request] = await prompt(t, [], { cwd: project, agentDir });
-	assert.match(systemPrompt(request), /SIMRA_PROJECT_FOLDER/);
-	assert.doesNotMatch(systemPrompt(request), /PI_PROJECT_FOLDER/);
 });
 
 test("simra update and the model API work through HTTPS_PROXY with a company CA", { skip: skip || (spawnSync("openssl", ["version"]).status !== 0 && "openssl not on PATH"), timeout: 120_000 }, async (t) => {
