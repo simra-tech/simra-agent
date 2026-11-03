@@ -37,12 +37,33 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
   draws a region or a DRC marker as a picture that the agent sees in the result.
 - One example design exists: a two-stage OTA for the open IHP SG13G2 PDK.
 
-## Requirements
+## Install
 
-- Node.js 22.19 or later
-- npm
+On Linux with glibc (x64 or arm64) or on macOS 13 or later, run as your user (not as root):
 
-## Install and test
+```sh
+curl -fsSL https://github.com/simra-tech/simra-agent/releases/latest/download/install.sh | sh
+```
+
+The installer needs curl or wget, tar, and sha256sum, shasum or openssl. It needs no Node.js and no npm.
+
+1. It downloads the `simra` release for the machine and checks its SHA-256 hash against the hash in the installer.
+2. It unpacks the release to `~/.local/share/simra/releases/<version>` and links `~/.local/bin/simra` to it.
+3. If `~/.local/bin` is not on the `PATH`, it asks before it adds a marked block to your shell profile (zsh, bash or
+   fish). Without a terminal, or with `CI` or `SIMRA_NO_MODIFY_PATH=1`, it prints the line instead.
+
+It changes nothing else. Then run `simra` in a design folder.
+
+- `simra update` installs the latest release. It keeps the previous release.
+- `SIMRA_VERSION=<version>` installs that release. `SIMRA_HOME=<dir>` installs to `<dir>`, for example a scratch disk.
+- `simra uninstall` removes the releases, the link and the profile block. Settings and logins stay in
+  `~/.config/simra`.
+
+The machine also needs the EDA tools that the adapters run (for example ngspice, KLayout and Python 3).
+
+## Development
+
+Requirements: Node.js 22.19 or later, and npm.
 
 1. Clone the repository.
 2. Run `npm ci`.
@@ -61,7 +82,7 @@ The `simra` binary has the kernel CLI and pi with the Simra extension in one fil
 
 - `simra run`, `check`, `list`, `show`, `wait`, `record` and `pdf` are the commands of the kernel CLI.
 - `simra update` installs the latest release. `simra update --extensions` and `simra update --models` update pi
-  packages and model catalogs.
+  packages and model catalogs. `simra uninstall` removes simra.
 - All other arguments go to pi. `simra` without arguments starts the agent in the terminal.
 
 Settings, logins and sessions are in `~/.config/simra` (`$XDG_CONFIG_HOME/simra`; set `SIMRA_CODING_AGENT_DIR` for

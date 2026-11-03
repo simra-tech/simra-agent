@@ -3,7 +3,8 @@
 // them by path from the pinned pi; test/binary.test.mjs checks that they exist.
 //
 // run, check, list, show, wait, record and pdf go to the kernel CLI. update is simra update (pi's own update would
-// install pi); only "update --extensions" and "update --models" go to pi. All other arguments go to pi.
+// install pi); only "update --extensions" and "update --models" go to pi. uninstall removes simra (pi's uninstall is
+// an alias of remove). All other arguments go to pi.
 
 import "../../node_modules/@earendil-works/pi-coding-agent/dist/bun/sandbox-env-setup.js";
 import "./env.ts";
@@ -22,6 +23,9 @@ if (KERNEL_COMMANDS.includes(args[0])) {
 } else if (args[0] === "update" && !(args.length === 2 && ["--extensions", "--models"].includes(args[1]))) {
 	const { selfUpdate } = await import("./update.ts");
 	process.exit(await selfUpdate(args.slice(1)).catch((e: Error) => (console.error(`simra update: ${e.message}`), 1)));
+} else if (args[0] === "uninstall") {
+	const { uninstall } = await import("./uninstall.ts");
+	process.exit(uninstall(args.slice(1)));
 } else {
 	await import("../../node_modules/@earendil-works/pi-coding-agent/dist/bun/runtime-setup.js");
 	const { setupCli } = await import("../../node_modules/@earendil-works/pi-coding-agent/dist/cli/setup.js");

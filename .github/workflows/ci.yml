@@ -26,7 +26,7 @@ jobs:
       - run: python3 -m pip install --user --break-system-packages klayout==0.30.12
       - run: npm ci
       # The simra binary for test/binary.test.mjs, built with the pinned Bun.
-      - run: shellcheck packages/launcher/get-bun.sh
+      - run: shellcheck packages/launcher/get-bun.sh packages/launcher/install.sh
       - run: sh packages/launcher/get-bun.sh "$RUNNER_TEMP/bun"
       - run: node packages/launcher/build.ts
         env:
@@ -34,3 +34,5 @@ jobs:
       - run: npm test
         env:
           SIMRA_BINARY: dist/simra-linux-x64/simra
+          # test/install.test.mjs runs install.sh in these clean containers.
+          SIMRA_TEST_INSTALL_IMAGES: ubuntu:24.04,debian:12,rockylinux/rockylinux:8,rockylinux/rockylinux:9
