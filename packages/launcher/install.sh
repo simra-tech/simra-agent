@@ -149,7 +149,7 @@ add_to_path() {
 	zsh) profile=${ZDOTDIR:-$HOME}/.zshrc ;;
 	bash) if [ "$os" = darwin ]; then profile=$HOME/.bash_profile; else profile=$HOME/.bashrc; fi ;;
 	fish) profile=${XDG_CONFIG_HOME:-$HOME/.config}/fish/config.fish line="set -gx PATH \"$bin\" \$PATH" ;;
-	tcsh | csh) profile= line="setenv PATH \"$bin:\$PATH\"" ;;
+	tcsh | csh) profile='' line="setenv PATH \"$bin:\$PATH\"" ;;
 	*) profile= ;;
 	esac
 	if [ -n "$profile" ] && grep -q '^# >>> simra >>>$' "$profile" 2>/dev/null; then
