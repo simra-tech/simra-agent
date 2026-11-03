@@ -19,7 +19,7 @@ jobs:
           cache: npm
       # ngspice for the RC known-answer integration test (local environment).
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ngspice
-      # The KLayout Python module for the tests of the klayout operation query (they are skipped without it).
+      # The KLayout Python module for the tests of the klayout operations query and diff (they are skipped without it).
       - run: python3 -m pip install --user --break-system-packages klayout==0.30.12
       - run: npm ci
       - run: npm test

@@ -50,6 +50,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 
+import layout_diff
 import layout_read
 
 CONTRACT = "simra.adapter/0"
@@ -729,6 +730,145 @@ def query(request):
     return read_response(ctx, "completed" if answered else "failed", measurements, report, "query.json", [gds])
 
 
+DIFF_UNITS = (("layers_changed", None), ("area_added_um2", "um2"), ("area_removed_um2", "um2"), ("cells_changed", None),
+              ("markers_new", None), ("markers_fixed", None), ("markers_unchanged", None), ("runtime_s", "s"))
+EXPERIMENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def materialise_git(ctx, spec, gds_input):
+    """Write the file of a git ref (against 'git:<ref>' or 'git:<ref>:<path>') to work/against.gds with git show.
+    Returns (path, command record, None) or (None, command record or None, message)."""
+    ref, _, path = spec[len("git:"):].partition(":")
+    path = path or gds_input
+    if not ref or ref.startswith("-") or any(c.isspace() for c in ref):
+        return None, None, "input 'against': '{}' is not git:<ref> or git:<ref>:<path>".format(spec)
+    out = os.path.join(ctx["work_dir"], "against.gds")
+    argv = ["git", "-c", "safe.directory=*", "-C", ctx["root"], "show", "{}:./{}".format(ref, path)]
+    start = time.monotonic()
+    try:
+        with open(out, "wb") as f, open(os.path.join(ctx["work_dir"], "git-show.log"), "wb") as log:
+            code = subprocess.call(argv, stdout=f, stderr=log)
+    except OSError as e:
+        return None, command_record(argv, None, None), "input 'against': git did not start: {}".format(e)
+    record = command_record(argv, code, round(time.monotonic() - start, 3))
+    if code != 0:
+        with open(os.path.join(ctx["work_dir"], "git-show.log"), errors="replace") as log:
+            reason = " ".join(log.read().split())[:300]
+        os.remove(out)
+        return None, record, "input 'against': git show {}:./{} failed (exit {}): {}".format(ref, path, code, reason)
+    return out, record, None
+
+
+def drc_table(ctx, key, layout_path):
+    """(table, None) or (None, message): work/drc.json of a completed klayout drc experiment. Adds the table to the
+    input files, and a warning when the experiment ran on another file than layout_path."""
+    exp_id = ctx["inputs"].get(key)
+    if not isinstance(exp_id, str) or not EXPERIMENT_ID.match(exp_id):
+        return None, "input '{}' must be an experiment id".format(key)
+    exp = os.path.join(ctx["root"], "simra", "experiments", exp_id)
+    try:
+        with open(os.path.join(exp, "result.json")) as f:
+            result = json.load(f)
+    except (OSError, ValueError):
+        return None, "input '{}': experiment {} has no readable result.json".format(key, exp_id)
+    table_path = os.path.join(exp, "work", "drc.json")
+    if result.get("status") != "completed" or not os.path.isfile(table_path):
+        return None, "input '{}': experiment {} is not a completed klayout drc with work/drc.json (status {})".format(
+            key, exp_id, result.get("status"))
+    try:
+        with open(table_path) as f:
+            table = json.load(f)
+    except (OSError, ValueError) as e:
+        return None, "input '{}': {} does not parse: {}".format(key, display_path(table_path, ctx["root"]), e)
+    ctx["files"].append(file_entry(table_path, ctx["root"], "drc"))
+    layouts = [f for f in (result.get("input_files") or {}).get("files", []) if f.get("role") == "layout"]
+    digest = sha256(layout_path)
+    if layouts and all(f.get("sha256") != digest for f in layouts):
+        ctx["diagnostics"].append({"severity": "warning", "source": "adapter", "message": (
+            "input '{}': experiment {} ran on {} (sha256 {}), not on this file (sha256 {}): the marker delta may not be "
+            "of these layouts").format(key, exp_id, layouts[0].get("path"), str(layouts[0].get("sha256"))[:12], digest[:12])})
+    return table, None
+
+
+def diff(request):
+    ctx, error = read_setup(request, ("gds", "against"))
+    if error:
+        error["measurements"] = none_measured(DIFF_UNITS)
+        return error
+    inputs, tool = ctx["inputs"], ctx["tool"]
+    commands = []
+
+    def fail(message):
+        response = failure(tool, message, none_measured(DIFF_UNITS))
+        if commands:
+            response["commands"] = commands
+        return response
+
+    gds = os.path.join(ctx["root"], inputs["gds"])
+    if not os.path.isfile(gds):
+        return fail("input 'gds': file not found: {}".format(inputs["gds"]))
+    spec = inputs["against"]
+    if spec.startswith("git:"):
+        against, record, message = materialise_git(ctx, spec, inputs["gds"])
+        if record:
+            commands.append(record)
+        if message:
+            return fail(message)
+    else:
+        against = os.path.join(ctx["root"], spec)
+        if not os.path.isfile(against):
+            return fail("input 'against': file not found: {}".format(spec))
+    unknown = sorted(set(inputs) - {"gds", "against", "cell", "technology", "layers", "box", "max", "drc", "drc_against"})
+    if unknown:
+        return fail("unknown input{} {} (the inputs of diff: gds, against, cell, technology, layers, box, max, drc, "
+                    "drc_against)".format("s" if len(unknown) > 1 else "", ", ".join(unknown)))
+    drc_pair = None
+    given = [k for k in ("drc", "drc_against") if inputs.get(k) is not None]
+    if len(given) == 1:
+        ctx["diagnostics"].append({"severity": "error", "source": "adapter", "message": (
+            "input '{}' needs input '{}': the marker delta is not run").format(
+                given[0], "drc_against" if given[0] == "drc" else "drc")})
+    elif given:
+        table, message = drc_table(ctx, "drc", gds)
+        table_against, message_against = drc_table(ctx, "drc_against", against) if not message else (None, None)
+        if message or message_against:
+            ctx["diagnostics"].append({"severity": "error", "source": "adapter",
+                                       "message": "{}: the marker delta is not run".format(message or message_against)})
+        else:
+            drc_pair = (table, table_against, inputs["drc"], inputs["drc_against"])
+    start = time.monotonic()
+    try:
+        report, full, values, warnings = layout_diff.run_diff(ctx["db"], gds, against, inputs["cell"], ctx["names"], {
+            "layers": inputs.get("layers"), "box": inputs.get("box"), "max": inputs.get("max", 10),
+            "a_name": inputs["gds"], "b_name": spec, "drc": drc_pair})
+    except layout_read.QueryError as e:
+        return fail(str(e))
+    except RuntimeError as e:
+        return fail("klayout.db: {}".format(str(e).splitlines()[0] if str(e) else type(e).__name__))
+    runtime = round(time.monotonic() - start, 3)
+    for w in warnings:
+        ctx["diagnostics"].append({"severity": "warning", "source": "adapter", "message": w})
+    full.update({"gds": inputs["gds"], "against": spec, "against_file": display_path(against, ctx["root"]),
+                 "runtime_s": runtime})
+    table_path = os.path.join(ctx["work_dir"], "diff.json")
+    write_json(table_path, full)
+    src = rel(ctx, table_path)
+    measurements = {}
+    for key, unit in DIFF_UNITS:
+        if key == "runtime_s":
+            measurements[key] = measured(runtime, "s", "adapter")
+        elif key in values:
+            measurements[key] = measured(values[key], unit, src)
+        elif given:
+            measurements[key] = failed(unit, "adapter")
+        else:
+            measurements[key] = {"value": None, "unit": unit, "status": "missing", "source": "adapter"}
+    response = read_response(ctx, "completed", measurements, report, "diff.json", [gds, against])
+    if commands:
+        response["commands"] = commands
+    return response
+
+
 # ---------------------------------------------------------------- main
 
 def main(argv):
@@ -740,7 +880,7 @@ def main(argv):
     if request.get("contract") != CONTRACT:
         sys.stderr.write("unsupported contract: {}\n".format(request.get("contract")))
         return 2
-    operation = {"drc": drc, "lvs": lvs, "query": query}.get(request.get("operation"))
+    operation = {"drc": drc, "lvs": lvs, "query": query, "diff": diff}.get(request.get("operation"))
     if operation is None:
         response = failure(None, "unknown operation: {}".format(request.get("operation")))
     else:

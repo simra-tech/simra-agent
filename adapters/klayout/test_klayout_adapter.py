@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -592,9 +593,8 @@ class LayerNamesTest(unittest.TestCase):
                 self.assertTrue(entry["source"])
 
 
-@unittest.skipIf(DB is None, NO_DB)
-class QueryTest(unittest.TestCase):
-    """query through main(), on the fixture layout, with the layer names of fixtures/query.lyp."""
+class ReadFixture(unittest.TestCase):
+    """A design root with the fixture layout (block.gds) and a fake pack whose layer names come from fixtures/query.lyp."""
 
     def setUp(self):
         self.tmp = os.path.realpath(tempfile.mkdtemp())
@@ -631,6 +631,11 @@ class QueryTest(unittest.TestCase):
             os.environ.update(saved)
         with open(request["response_path"]) as f:
             return json.load(f), exp
+
+
+@unittest.skipIf(DB is None, NO_DB)
+class QueryTest(ReadFixture):
+    """query through main(), on the fixture layout, with the layer names of fixtures/query.lyp."""
 
     def query(self, *questions, gds="block.gds"):
         r, exp = self.run_op("query", {"gds": gds, "cell": "top", "queries": list(questions)})
@@ -783,6 +788,223 @@ class QueryTest(unittest.TestCase):
         self.assertIn("PDK_ROOT is not set", r["diagnostics"][0]["message"])
         self.assertEqual(r["report"][1], "  8/0  shapes=7  area=8.000")
         self.assertIn("the layer names are not known", r["report"][-1])
+
+
+DRC_RULES = {"rules": [
+    {"rule": "M1.a", "description": "width", "count": 2, "cells": ["top"],
+     "boxes": [{"cell": "top", "box": [5.0, 0.0, 6.0, 1.0]}, {"cell": "top", "box": [9.0, 0.0, 10.0, 1.0]}]},
+    {"rule": "V1.b", "description": "space", "count": 1, "cells": ["unit"],
+     "boxes": [{"cell": "unit", "box": [0.4, 0.4, 0.6, 0.6]}]}]}
+DRC_RULES_AGAINST = {"rules": [
+    {"rule": "M1.a", "description": "width", "count": 3, "cells": ["top", "branch"],
+     "boxes": [{"cell": "top", "box": [5.0005, 0.0, 6.0, 1.0]}, {"cell": "top", "box": [9.002, 0.0, 10.0, 1.0]},
+               {"cell": "branch", "box": [0.0, 1.5, 3.0, 2.0]}]},
+    {"rule": "M1.b", "description": "area", "count": 1, "cells": ["top"],
+     "boxes": [{"cell": "top", "box": [20.0, 20.0, 21.0, 21.0]}]}]}
+
+
+@unittest.skipIf(DB is None, NO_DB)
+class DiffTest(ReadFixture):
+    """diff through main(): the fixture layout against its variants (see build_layout)."""
+
+    def variant(self, name):
+        build_layout(os.path.join(self.root, name + ".gds"), name)
+        return name + ".gds"
+
+    def diff(self, **inputs):
+        r, exp = self.run_op("diff", dict({"cell": "top"}, **inputs))
+        return r, exp
+
+    def done(self, **inputs):
+        r, exp = self.diff(**inputs)
+        self.assertEqual(r["status"], "completed", r["diagnostics"])
+        return r, {k: m["value"] for k, m in r["measurements"].items()}, exp
+
+    def test_added_shape(self):
+        r, m, exp = self.done(gds=self.variant("added"), against="block.gds")
+        self.assertEqual(r["report"], [
+            "layers: 1 changed, 3 unchanged (deep XOR, whole layout; + in added.gds, - in block.gds; "
+            "the first 10 polygons of each, largest first)",
+            "  Metal1 8/0  added=2.000 (1 polygons)  removed=0.000 (0 polygons)",
+            "    + box (30.000,0.000;32.000,1.000)  area=2.000  cell=top",
+            "  unchanged: 3 layers",
+            "cells: 3 in added.gds, 3 in block.gds; 1 changed; hierarchy the same (own shapes compared per cell)",
+            "  own shapes top: Metal1 8/0 +2.000 -0.000"])
+        self.assertEqual({k: v for k, v in m.items() if k != "runtime_s"}, {
+            "layers_changed": 1, "area_added_um2": 2.0, "area_removed_um2": 0.0, "cells_changed": 1,
+            "markers_new": None, "markers_fixed": None, "markers_unchanged": None})
+        self.assertIsInstance(m["runtime_s"], float)
+        # Without DRC ids the marker counts are missing (not run), not omitted.
+        self.assertEqual({r["measurements"][k]["status"] for k in ("markers_new", "markers_fixed", "markers_unchanged")},
+                         {"missing"})
+        self.assertNotIn("commands", r)
+        self.assertEqual([(f["role"], f["path"]) for f in r["input_files"]["files"]][:2],
+                         [("layout", "added.gds"), ("layout", "block.gds")])
+        self.assertEqual([f["role"] for f in r["input_files"]["files"]][2:], ["layer_properties", "technology"])
+        self.assertEqual([o["path"] for o in r["outputs"]], ["simra/experiments/e1/work/diff.json"])
+        with open(os.path.join(exp, "work", "diff.json")) as f:
+            full = json.load(f)
+        self.assertEqual(full["layers"][0]["added"], [{"bbox_um": [30.0, 0.0, 32.0, 1.0], "area_um2": 2.0, "cell_path": "top"}])
+        self.assertEqual(sorted(full["layers_unchanged"]), ["19/0", "8/25", "99/0"])
+
+    def test_removed_shape(self):
+        _, m, _ = self.done(gds=self.variant("removed"), against="block.gds")
+        r, _ = self.diff(gds="removed.gds", against="block.gds")
+        self.assertIn("    - box (5.000,0.000;6.000,1.000)  area=1.000  cell=top", r["report"])
+        self.assertEqual((m["area_added_um2"], m["area_removed_um2"]), (0.0, 1.0))
+
+    def test_moved_instance(self):
+        r, m, _ = self.done(gds=self.variant("moved"), against="block.gds")
+        report = r["report"]
+        self.assertIn("  Metal1 8/0  added=2.500 (3 polygons)  removed=2.500 (3 polygons)", report)
+        # The cell path of a difference inside one instance; [0,1] is the second member of the 2 x 1 array of unit
+        # (the GDS reader stores it as 1 x 2).
+        self.assertIn("    + box (9.000,3.000;10.000,4.000)  area=1.000  cell=branch/unit[0,1]", report)
+        self.assertIn("    - box (8.000,0.000;8.500,1.000)  area=0.500  cell=branch", report)
+        self.assertIn("  Via1 19/0  added=0.080 (2 polygons)  removed=0.080 (2 polygons)", report)
+        self.assertEqual(report[report.index("  instances in top: +1 -1"):], [
+            "  instances in top: +1 -1", "    + branch at (10.000,1.000) r90", "    - branch at (10.000,0.000) r90"])
+        self.assertIn("hierarchy differs", next(l for l in report if l.startswith("cells:")))
+        self.assertEqual((m["layers_changed"], m["cells_changed"]), (2, 1))
+
+    def test_cell_only_in_one_file(self):
+        r, m, _ = self.done(gds=self.variant("extra_cell"), against="block.gds")
+        self.assertIn("    + box (40.000,0.000;41.000,1.000)  area=1.000  cell=spare", r["report"])
+        self.assertIn("  only in extra_cell.gds: spare  flat=1", r["report"])
+        self.assertIn("    + spare at (40.000,0.000)", r["report"])
+        self.assertEqual(m["cells_changed"], 2)
+        # The other direction: the cell is only in against.
+        r, _ = self.diff(gds="block.gds", against="extra_cell.gds")
+        self.assertIn("  only in extra_cell.gds: spare  flat=1", r["report"])
+        self.assertIn("    - box (40.000,0.000;41.000,1.000)  area=1.000  cell=spare", r["report"])
+
+    def test_own_shapes_of_a_cell(self):
+        r, m, _ = self.done(gds=self.variant("unit_changed"), against="block.gds")
+        self.assertEqual(r["report"][-1], "  own shapes unit: Metal1 8/0 +0.200 -0.000")
+        self.assertIn("  Metal1 8/0  added=0.800 (4 polygons)  removed=0.000 (0 polygons)", r["report"])
+        self.assertEqual(m["cells_changed"], 1)
+
+    def test_same_layout(self):
+        r, m, _ = self.done(gds="block.gds", against="block.gds")
+        self.assertEqual(r["report"][1:], ["  unchanged: 4 layers",
+                                           "cells: 3 in block.gds, 3 in block.gds; 0 changed; hierarchy the same (own shapes compared per cell)"])
+        self.assertEqual((m["layers_changed"], m["cells_changed"]), (0, 0))
+
+    def test_box_layers_and_max(self):
+        self.variant("added")
+        self.variant("moved")
+        r, m, _ = self.done(gds="added.gds", against="block.gds", box=[0, 0, 20, 5])
+        self.assertTrue(r["report"][0].startswith("layers: 0 changed, 4 unchanged (flat XOR, in the box (0.000,0.000;20.000,5.000);"),
+                        r["report"][0])
+        self.assertEqual(m["layers_changed"], 0)
+        r, m, _ = self.done(gds="moved.gds", against="block.gds", layers=["Via1"], max=1)
+        self.assertEqual(r["report"][:4], [
+            "layers: 1 changed, 0 unchanged (deep XOR, whole layout; + in moved.gds, - in block.gds; "
+            "the first 1 polygons of each, largest first)",
+            "  Via1 19/0  added=0.080 (2 polygons)  removed=0.080 (2 polygons)",
+            "    + box (9.400,1.400;9.600,1.600)  area=0.040  cell=branch/unit[0,0]",
+            "    + ... 1 more added"])
+
+    def test_git_ref(self):
+        def git(*args):
+            subprocess.run(["git", "-C", self.root, "-c", "user.name=t", "-c", "user.email=t@t", *args], check=True,
+                           capture_output=True)
+        git("init", "-q")
+        git("add", "block.gds")
+        git("commit", "-q", "-m", "v1")
+        build_layout(os.path.join(self.root, "block.gds"), "added")
+        r, m, exp = self.done(gds="block.gds", against="git:HEAD")
+        self.assertIn("    + box (30.000,0.000;32.000,1.000)  area=2.000  cell=top", r["report"])
+        self.assertIn("- in git:HEAD;", r["report"][0])
+        self.assertEqual(m["area_added_um2"], 2.0)
+        self.assertEqual(len(r["commands"]), 1)
+        self.assertEqual(r["commands"][0]["argv"][-2:], ["show", "HEAD:./block.gds"])
+        self.assertEqual(r["commands"][0]["exit_code"], 0)
+        self.assertTrue(os.path.isfile(os.path.join(exp, "work", "against.gds")))
+        self.assertEqual(r["input_files"]["files"][1]["path"], "simra/experiments/e1/work/against.gds")
+        # A path in the ref, and a ref that does not exist.
+        r, _, _ = self.done(gds="block.gds", against="git:HEAD:block.gds")
+        self.assertEqual(r["measurements"]["area_added_um2"]["value"], 2.0)
+        r, _ = self.diff(gds="block.gds", against="git:nosuchref")
+        self.assertEqual(r["status"], "failed")
+        self.assertIn("git show nosuchref:./block.gds failed (exit 128)", r["diagnostics"][0]["message"])
+        self.assertEqual(r["commands"][0]["exit_code"], 128)
+        self.assertEqual({m["status"] for m in r["measurements"].values()}, {"failed"})
+        r, _ = self.diff(gds="block.gds", against="git:-x")
+        self.assertIn("is not git:<ref>", r["diagnostics"][0]["message"])
+
+    def drc_experiment(self, exp_id, table, layout):
+        exp = os.path.join(self.root, "simra", "experiments", exp_id)
+        os.makedirs(os.path.join(exp, "work"))
+        ka.write_json(os.path.join(exp, "work", "drc.json"), table)
+        ka.write_json(os.path.join(exp, "result.json"), {"status": "completed", "input_files": {"files": [
+            {"role": "layout", "path": layout, "sha256": ka.sha256(os.path.join(self.root, layout))}]}})
+
+    def test_marker_delta(self):
+        self.variant("removed")
+        self.drc_experiment("d-new", DRC_RULES, "removed.gds")
+        self.drc_experiment("d-old", DRC_RULES_AGAINST, "removed.gds")
+        r, m, _ = self.done(gds="removed.gds", against="block.gds", drc="d-new", drc_against="d-old", max=1)
+        report = r["report"]
+        drc = report[next(i for i, l in enumerate(report) if l.startswith("drc:")):]
+        # The same box within one grid unit (0.001 µm) is unchanged; 0.002 µm off is a new and a fixed marker.
+        self.assertEqual(drc, [
+            "drc: d-new against d-old: new=2 fixed=3 unchanged=1 (same cell and box within 0.001 µm)",
+            "  M1.a  new=1 fixed=2 unchanged=1",
+            "    new (9.000,0.000;10.000,1.000)  cell=top",
+            "    fixed (9.002,0.000;10.000,1.000)  cell=top",
+            "    fixed ... 1 more",
+            "  M1.b  new=0 fixed=1 unchanged=0",
+            "    fixed (20.000,20.000;21.000,21.000)  cell=top",
+            "  V1.b  new=1 fixed=0 unchanged=0",
+            "    new (0.400,0.400;0.600,0.600)  cell=unit"])
+        self.assertEqual((m["markers_new"], m["markers_fixed"], m["markers_unchanged"]), (2, 3, 1))
+        roles = [(f["role"], f["path"]) for f in r["input_files"]["files"]]
+        self.assertEqual(roles[-2:], [("drc", "simra/experiments/d-new/work/drc.json"),
+                                      ("drc", "simra/experiments/d-old/work/drc.json")])
+        # d-old ran on removed.gds, not on block.gds: a warning.
+        self.assertEqual([d["severity"] for d in r["diagnostics"]], ["warning"])
+        self.assertIn("input 'drc_against': experiment d-old ran on removed.gds", r["diagnostics"][0]["message"])
+
+    def test_marker_inputs_not_complete(self):
+        self.drc_experiment("d-new", DRC_RULES, "block.gds")
+        # One id alone: an error, the layout diff runs, the marker counts failed.
+        r, m, _ = self.done(gds="block.gds", against="block.gds", drc="d-new")
+        self.assertEqual(r["diagnostics"][0]["severity"], "error")
+        self.assertIn("input 'drc' needs input 'drc_against'", r["diagnostics"][0]["message"])
+        self.assertEqual(r["measurements"]["markers_new"]["status"], "failed")
+        self.assertEqual(m["layers_changed"], 0)
+        # An experiment that does not exist.
+        r, _, _ = self.done(gds="block.gds", against="block.gds", drc="d-new", drc_against="d-none")
+        self.assertIn("experiment d-none has no readable result.json", r["diagnostics"][0]["message"])
+        self.assertEqual(r["measurements"]["markers_fixed"]["status"], "failed")
+        r, _ = self.diff(gds="block.gds", against="block.gds", drc="../x", drc_against="d-new")
+        self.assertIn("input 'drc' must be an experiment id", r["diagnostics"][0]["message"])
+
+    def test_bad_inputs(self):
+        for inputs, message in (
+                ({"gds": "block.gds", "against": "nofile.gds"}, "input 'against': file not found: nofile.gds"),
+                ({"gds": "block.gds"}, "input 'against' is required"),
+                ({"gds": "block.gds", "against": "block.gds", "cell": "nocell"}, "nocell"),
+                ({"gds": "block.gds", "against": "block.gds", "layers": ["Metl1"]}, "unknown layer 'Metl1'"),
+                ({"gds": "block.gds", "against": "block.gds", "colour": 1}, "unknown input colour")):
+            r, _ = self.diff(**inputs)
+            self.assertEqual(r["status"], "failed", inputs)
+            self.assertIn(message, r["diagnostics"][0]["message"])
+            self.assertEqual(set(r["measurements"]), {k for k, _ in ka.DIFF_UNITS})
+            self.assertEqual({m["status"] for m in r["measurements"].values()}, {"failed"})
+
+    def test_truncation(self):
+        build_array(os.path.join(self.root, "array.gds"), 30, 10)
+        ly = DB.Layout()
+        ly.read(os.path.join(self.root, "array.gds"))
+        ly.top_cell().clear_insts()
+        ly.write(os.path.join(self.root, "empty.gds"))
+        r, m, exp = self.done(gds="array.gds", against="empty.gds", cell="top", max=300)
+        self.assertEqual(len(r["report"]), 200)
+        self.assertTrue(r["report"][-1].startswith("... ") and r["report"][-1].endswith(" more rows in work/diff.json"))
+        with open(os.path.join(exp, "work", "diff.json")) as f:
+            self.assertEqual(len(json.load(f)["layers"][0]["added"]), 300)
 
 
 if __name__ == "__main__":

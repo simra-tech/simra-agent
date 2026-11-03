@@ -125,7 +125,7 @@ Rules:
   query. The runner copies it into `result.json`. The summary of the experiment prints the lines as they are,
   after the measurements, under the line `report:`. Keep the lines short and fixed in form (numbers, boxes, names;
   no prose). Keep the list short: put a full answer in a file in `work_dir`, add the file to `outputs`, and end a
-  shortened list with a line that names the file. The klayout operation `query` fills it. Example:
+  shortened list with a line that names the file. The klayout operations `query` and `diff` fill it. Example:
   `"report": ["[1] bbox top all layers: (0.000,0.000;21.000,21.000)  w=21.000 h=21.000 (top cell)"]`.
 - The adapter writes logs to files in `work_dir` or to stderr. It does not write results to stdout.
 - The adapter does not contain PDK facts (for example the parameter names of a MOS model). It reads them from

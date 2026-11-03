@@ -1,18 +1,20 @@
 # klayout adapter
 
 The klayout adapter runs the stock KLayout DRC and LVS decks of a PDK and gives typed verdicts. It also answers
-questions about a layout (operation `query`) with the KLayout Python module `klayout.db`. It follows the
+questions about a layout (operation `query`) and compares two layouts (operation `diff`) with the KLayout Python
+module `klayout.db`. It follows the
 JSON-in / JSON-out contract `simra.adapter/0` (see [CONTRIBUTING.md](../../CONTRIBUTING.md)). It is written in
 Python and has no PDK facts. The deck commands, the report paths, the log texts and the exit codes come from the
 `klayout` section of the technology pack (see [technologies/README.md](../../technologies/README.md)).
 
 | File | Contents |
 | --- | --- |
-| `adapter.json` | the manifest: the command and the operations `drc`, `lvs` and `query` |
+| `adapter.json` | the manifest: the command and the operations `drc`, `lvs`, `query` and `diff` |
 | `klayout_adapter.py` | the adapter |
 | `layout_read.py` | the questions of `query`: it reads a layout with `klayout.db` and the layer names from the layer properties file of the PDK |
+| `layout_diff.py` | the comparison of `diff`: layers, cell tree and DRC markers |
 | `lvsdb_probe.py` | reads an LVS database with `klayout.db.LayoutVsSchematic` and writes its compare result as JSON |
-| `test_klayout_adapter.py` | host tests on the fixtures; the tests of `query` need `klayout.db` and are skipped without it |
+| `test_klayout_adapter.py` | host tests on the fixtures; the tests of `query` and `diff` need `klayout.db` and are skipped without it |
 | `fixtures/` | marker databases, LVS logs and probe outputs from runs in the container image, and a small layer properties file |
 
 ## KLayout
@@ -224,6 +226,139 @@ The runtimes are from `test/klayout-read-container.test.mjs` in the container im
 jobs on the machine. The run of the experiment (container start included) took 1.4 s to 1.9 s more. The questions
 `at`, `shapes`, `instances`, `texts` and `distance` on a small box take less than 0.1 s on the hierarchical block.
 
+## Operation `diff`
+
+`diff` compares two layouts in one run, and optionally the DRC markers of two `drc` runs. It does not run a deck.
+It reads both layouts with `klayout.db`. Use it to see what an edit or a commit changed, instead of a Python
+script.
+
+Inputs:
+
+| Input | Contents |
+| --- | --- |
+| `gds` | the new layout, relative to the design root |
+| `against` | the old layout: a path relative to the design root, or `git:<ref>`, or `git:<ref>:<path>` |
+| `cell` | the top cell (the same name in both files) |
+| `technology` | optional; the pack (as for `drc`) |
+| `layers` | optional; a list of layer names or `layer/datatype`. The default is all layers of both files |
+| `box` | optional; `[x1, y1, x2, y2]` in µm. The comparison is only in this box |
+| `max` | optional, default 10: the polygons shown per layer and direction, and the markers shown per rule and direction |
+| `drc`, `drc_against` | optional, together: the ids of two completed `klayout drc` experiments, of `gds` and of `against` |
+
+For `git:<ref>`, the adapter runs `git show <ref>:./<path>` in the design root (the path is the path of `gds`,
+or the path after the second colon). It writes the file to `work/against.gds` and its log to `work/git-show.log`.
+The command is in `commands` of the response.
+
+The answer has three parts, as rows in `report`:
+
+1. **Layers.** The adapter makes an XOR of the merged shapes of each layer, for the whole tree of the top cell.
+   Without `box`, it uses the deep (hierarchical) mode of `klayout.db`. With `box`, it uses the flat mode, in the
+   box. Each changed
+   layer has one row: the area added and removed in µm² and the polygon counts. Then come the largest polygons
+   first, each with its bbox, its area and the cell path of the instance that holds it. The path is the top cell when
+   the difference is not inside one instance. `+` is in `gds` and not in `against`. `-` is in `against` and not in
+   `gds`. One row counts the layers with no difference. A text that is in only one file also changes a layer.
+2. **Cells.** The cells only in one file, the cells whose flat instance count differs, and the cells whose child
+   instances differ (an added, removed or moved placement, in µm). When the hierarchy is the same in both files,
+   the adapter also compares the own shapes of each cell (in the coordinates of the cell). When the hierarchy
+   differs, use the flat XOR of the layers.
+3. **DRC markers.** Only with `drc` and `drc_against`. The adapter reads `work/drc.json` of each experiment. Per
+   rule, it gives the new, fixed and unchanged markers. A marker is unchanged when the other run has a marker of the
+   same cell with the same box within one database unit. When an experiment ran on another file than the layout of
+   this run (another SHA-256), the response has a warning.
+
+The report has at most 200 lines. A longer report ends with the line `... <n> more rows in work/diff.json`.
+`work/diff.json` has the full answer.
+
+Measurements: `layers_changed`, `area_added_um2`, `area_removed_um2`, `cells_changed`, `markers_new`,
+`markers_fixed`, `markers_unchanged` and `runtime_s`. Without `drc` and `drc_against`, the marker counts are
+`missing`. When only one of them is given, or an experiment cannot be read, the marker counts are `failed` and the
+response has an error diagnostic; the layout comparison still runs. The response is failed when a layout, the top
+cell or a layer is not there, or when `git show` fails. Then all measurements are `failed`.
+
+The input files are both layouts (role `layout`), the layer properties file, the pack and the two marker tables
+(role `drc`).
+
+### Example
+
+The commit of the colleague in `evals/layout-stale-state/` (`v2-seeded.gds`) against its input (the seeded block of
+`evals/layout-block-fix/`), on SKY130, with one `drc` run on each file:
+
+```json
+{"gds": "block.gds", "against": "v1.gds", "cell": "idac", "drc": "20261103-062721-ec43e4",
+ "drc_against": "20261103-062722-4f8e52", "max": 3}
+```
+
+The report:
+
+```text
+layers: 3 changed, 15 unchanged (deep XOR, whole layout; + in block.gds, - in v1.gds; the first 3 polygons of each, largest first)
+  met2 69/20  added=11.000 (1 polygons)  removed=2.400 (6 polygons)
+    + box (-12.000,171.180;-1.000,172.180)  area=11.000  cell=idac
+    - box (80.750,-5.400;81.150,-4.400)  area=0.400  cell=idac
+    - box (81.250,-5.400;81.650,-4.400)  area=0.400  cell=idac
+    - box (81.750,-5.400;82.150,-4.400)  area=0.400  cell=idac
+    - ... 3 more removed
+  via2 69/44  added=0.320 (8 polygons)  removed=0.000 (0 polygons)
+    + box (78.940,-6.500;79.140,-6.300)  area=0.040  cell=idac
+    + box (79.260,-6.500;79.460,-6.300)  area=0.040  cell=idac
+    + box (80.940,-6.500;81.140,-6.300)  area=0.040  cell=idac
+    + ... 5 more added
+  met3 70/20  added=1.640 (4 polygons)  removed=2.000 (5 polygons)
+    + box (78.790,-6.650;79.610,-6.150)  area=0.410  cell=idac
+    + box (80.790,-6.650;81.610,-6.150)  area=0.410  cell=idac
+    + box (82.790,-6.650;83.610,-6.150)  area=0.410  cell=idac
+    + ... 1 more added
+    - box (940.500,176.180;941.500,176.580)  area=0.400  cell=idac
+    - box (940.500,176.780;941.500,177.180)  area=0.400  cell=idac
+    - box (940.500,177.380;941.500,177.780)  area=0.400  cell=idac
+    - ... 2 more removed
+  unchanged: 15 layers
+cells: 16 in block.gds, 16 in v1.gds; 1 changed; hierarchy the same (own shapes compared per cell)
+  own shapes idac: met2 69/20 +11.000 -2.400; via2 69/44 +0.320 -0.000; met3 70/20 +1.640 -2.000
+drc: 20261103-062721-ec43e4 against 20261103-062722-4f8e52: new=4 fixed=9 unchanged=24 (same cell and box within 0.001 µm)
+  m2.2  new=0 fixed=5 unchanged=0
+    fixed (82.650,-5.400;82.750,-4.400)  cell=idac
+    fixed (82.150,-5.400;82.250,-4.400)  cell=idac
+    fixed (81.650,-5.400;81.750,-4.400)  cell=idac
+    fixed ... 2 more
+  m3.2  new=0 fixed=4 unchanged=0
+    fixed (940.500,178.380;941.500,178.580)  cell=idac
+    fixed (940.500,177.780;941.500,177.980)  cell=idac
+    fixed (940.500,177.180;941.500,177.380)  cell=idac
+    fixed ... 1 more
+  via2.2  new=4 fixed=0 unchanged=0
+    new (79.140,-6.500;79.260,-6.300)  cell=idac
+    new (81.140,-6.500;81.260,-6.300)  cell=idac
+    new (83.140,-6.500;83.260,-6.300)  cell=idac
+    new ... 1 more
+  m1.1  new=0 fixed=0 unchanged=4
+  m1.2  new=0 fixed=0 unchanged=1
+  m2.1  new=0 fixed=0 unchanged=1
+  m2_OFFGRID  new=0 fixed=0 unchanged=4
+  m3.1  new=0 fixed=0 unchanged=2
+  m3.4  new=0 fixed=0 unchanged=2
+  m3.6  new=0 fixed=0 unchanged=8
+  via.4a  new=0 fixed=0 unchanged=2
+```
+
+The kept box is the first `+` row of `met2`: the wider `ibias` stub. The rules `m2.2` and `m3.2` are fixed. The rule
+`via2.2` is new.
+
+### Runtime
+
+Runtimes of the adapter (`runtime_s`) without DRC markers:
+
+| Comparison | IHP SG13G2 | SKY130 |
+| --- | --- | --- |
+| `v2-seeded.gds` of `evals/layout-stale-state/` against the seeded block of `evals/layout-block-fix/` (hierarchical, 30 or 16 cells), with the marker delta | 0.9 s | 0.3 s |
+| `flat-seeded.gds` of `evals/layout-long-job/` (flat, 21487 devices) against a copy with one Metal2 box added and five Metal2 shapes removed | 5.1 s | 3.6 s |
+
+The runtimes are from `test/klayout-read-container.test.mjs` in the container image (KLayout 0.30.12), with other
+jobs on the machine. The run of the experiment (container start included) took about 2 s more. Each layer gets one
+XOR in one deep shape store; only a layer with a difference gets the two differences. The deep mode is also faster
+than the flat mode on the flat block. A diff with `box` uses the flat mode in the box only.
+
 ## The command in the response
 
 The response of `drc` and of `lvs` has the field `commands` (see the adapter contract in
@@ -237,6 +372,9 @@ placeholders filled, its exit code and its runtime. For example:
 The exit code is `null` when the deck did not start. The summary of the experiment gives each entry on one
 `command:` line, after the `tool:` line. The `klayout -v` check and the read of the LVS database with
 `lvsdb_probe.py` are not in `commands`. Their logs are in `work/`.
+
+The response of `query` has no `commands`. The response of `diff` has `commands` only for `against` `git:<ref>`:
+the `git show` command.
 
 ## Size of the summary
 
@@ -260,5 +398,5 @@ outputs) had 3427 bytes and 2654 bytes.
 1. Run `python3 -m unittest discover -s adapters/klayout -p "test_*.py"` (part of `npm test`).
 2. To test in the image, set `SIMRA_TEST_IMAGE` (and `SIMRA_TEST_ENGINE`), then run
    `node --test test/klayout-container.test.mjs test/klayout-read-container.test.mjs`.
-3. The tests of `query` need the KLayout Python module on the host. Install it with `pip install klayout`. Without
+3. The tests of `query` and `diff` need the KLayout Python module on the host. Install it with `pip install klayout`. Without
    it, they are reported as skipped.

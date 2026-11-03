@@ -55,7 +55,7 @@ test("run_experiment detached starts the run, and wait_experiments gives the sum
 		"For a run that takes minutes, or for independent runs, start them with run_experiment detached and wait_experiments; do not poll with sleep, tail or log reads.",
 	));
 	assert.ok(run.promptGuidelines.includes(
-		"To read a layout, use run_experiment with adapter klayout, operation query, and put several questions in one call. Write Python only to change a layout.",
+		"To read a layout, use run_experiment with adapter klayout, operation query, and put several questions in one call. To see what an edit or a commit changed, use operation diff (against a file or git:<ref>). Write Python only to change a layout.",
 	));
 
 	const root = mkdtempSync(join(tmpdir(), "simra-ext-"));
