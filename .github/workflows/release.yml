@@ -3,8 +3,9 @@ name: release
 # On a tag v<version> (the version of the root package.json):
 # 1. npm test on Node 22 (ci.yml).
 # 2. On each platform: build the simra binary with the pinned Bun, run the binary tests, pack a tarball.
-# 3. Write SHA256SUMS and a build attestation, and publish the release: first as a draft with all files, then
-#    published. With release immutability on in the repository settings, the published files cannot change.
+# 3. Write SHA256SUMS and a build attestation, and publish the release. gh uploads the files to a draft first and
+#    publishes it when all are there. With release immutability on in the repository settings, the published files
+#    cannot change.
 
 on:
   push:
@@ -23,6 +24,7 @@ jobs:
       contents: read
 
   build:
+    needs: test
     strategy:
       matrix:
         include:
@@ -65,7 +67,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: [test, build]
+    needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -88,5 +90,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "simra $GITHUB_REF_NAME" --generate-notes assets/*
-          gh release edit "$GITHUB_REF_NAME" --draft=false
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "simra $GITHUB_REF_NAME" --generate-notes assets/*
