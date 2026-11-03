@@ -5,6 +5,9 @@
 //     "files": { "<name in the workspace>": "<path relative to the task directory>" } }
 // A file that does not exist is not copied (for example simra.local.json). A task file that is too large to commit
 // is in "generated": { "<path>": { "sha256", "command" } }; the run stops if it is missing or has another hash.
+// A task can have a companion: "companion": { "script": "<path>", "files": { "<name>": "<path>" } }. The run copies
+// the script and the files to companion/ in the run directory, mounts it read-only at /companion, and starts the
+// script in the sandbox before the agent, in the background. Its output goes to state/companion.log.
 // score.mjs exports score(ws), which returns (or resolves to) the points of each part and "max": { part: maximum
 // points }.
 //
@@ -59,6 +62,7 @@ const FORWARD_PORT = 8080;
 const BASE_URL = `http://127.0.0.1:${FORWARD_PORT}`;
 const EXTENSION = "/opt/simra-agent/packages/pi-extension";
 const CODEX_DIR = "/opt/codex";
+const COMPANION_DIR = "/companion";
 /** The Codex backend of a ChatGPT subscription. */
 export const CODEX_UPSTREAM = "https://chatgpt.com/backend-api/codex";
 
@@ -149,6 +153,26 @@ export function checkGenerated(taskDir, task) {
 }
 
 /** Fill ws with the task files. Returns the task environment as the host sees it (engine, image). */
+/**
+ * Copy the companion of a task (task.json "companion": { script, files }, paths relative to the task directory) to
+ * dir: the script (executable) and the files. Returns { dir, script } (script: the file name of the script in dir).
+ */
+export function companionDir(taskDir, companion, dir) {
+	mkdirSync(dir, { recursive: true });
+	const script = basename(companion.script);
+	const copies = { [script]: companion.script, ...(companion.files ?? {}) };
+	for (const [name, from] of Object.entries(copies)) {
+		const src = resolve(taskDir, from);
+		if (!existsSync(src)) throw new Error(`the companion file ${from} does not exist`);
+		copyFileSync(src, join(dir, name));
+	}
+	chmodSync(join(dir, script), 0o755);
+	return { dir: realpathSync(dir), script };
+}
+
+/** The sandbox command with the companion: start /companion/<script> in the background (log: companion.log in the state mount), then the command. */
+export const companionCommand = (script, command) => ["/bin/sh", "-c", `${COMPANION_DIR}/${script} > ${STATE}/companion.log 2>&1 & exec "$0" "$@"`, ...command];
+
 export function makeWorkspace(taskDir, task, ws) {
 	checkGenerated(taskDir, task);
 	mkdirSync(ws, { recursive: true });
@@ -456,6 +480,11 @@ async function main() {
 		// stream goes to a file in the state mount instead, and the run copies it to transcript.jsonl.
 		cmd.command = ["/bin/sh", "-c", `exec "$0" "$@" > ${STATE}/transcript.jsonl`, ...cmd.command];
 	}
+	const companion = task.companion ? companionDir(taskDir, task.companion, join(run, "companion")) : null;
+	if (companion) {
+		readOnly[companion.dir] = COMPANION_DIR;
+		cmd.command = companionCommand(companion.script, cmd.command);
+	}
 
 	const access = cmd.codex ? codexAccess(timeoutMin) : { key: process.env[model.keyVar] ?? loadDotEnv()[model.keyVar] };
 	if (!access.key) throw new Error(`${model.keyVar} is not set`);
@@ -487,7 +516,7 @@ async function main() {
 	// The sandbox prevents access to host files. These checks remain as a second line.
 	const transcript = readFileSync(join(run, "transcript.jsonl"), "utf8");
 	const contamination = [
-		["task directory", new RegExp(`${escape(taskDir)}|expected\\.json|target\\.json|cross_check|layout-(?:drc-fix|block-fix|false-pass|long-job)/|(?:cell|block|flat)-(?:seeded|clean|cheat)\\.gds`)],
+		["task directory", new RegExp(`${escape(taskDir)}|expected\\.json|target\\.json|cross_check|layout-(?:drc-fix|block-fix|false-pass|long-job|stale-state)/|(?:cell|block|flat)-(?:seeded|clean|cheat)\\.gds|v[12]-(?:seeded|clean)\\.gds|${COMPANION_DIR}\\b`)],
 		["this repository", new RegExp(escape(repo))],
 		["another run", new RegExp(`${escape(dirname(runs))}/(?!${escape(`${basename(runs)}/${runName}`)})`)],
 	]
@@ -506,7 +535,7 @@ async function main() {
 		started_at: started.toISOString(),
 		duration_s: Math.round((Date.now() - started.getTime()) / 1000),
 		exit,
-		sandbox: { engine, image: env.image, image_id: imageId, network: "none", read_only_root: true, mounts: { [WORK]: "ws", [STATE]: "state", [PROXY_DIR]: "proxy", ...(cmd.codex ? { [CODEX_DIR]: "codex package (read-only)" } : {}) } },
+		sandbox: { engine, image: env.image, image_id: imageId, network: "none", read_only_root: true, mounts: { [WORK]: "ws", [STATE]: "state", [PROXY_DIR]: "proxy", ...(cmd.codex ? { [CODEX_DIR]: "codex package (read-only)" } : {}), ...(companion ? { [COMPANION_DIR]: "companion (read-only)" } : {}) } },
 		contamination,
 		score: await score(ws, undefined, WORK),
 	};

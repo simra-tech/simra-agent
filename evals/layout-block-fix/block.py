@@ -297,15 +297,15 @@ class Block:
         ncomb = SEEDS["top_vss_comb"][2]
         cw = p.COMB_W
         cx = (e0 + s1) // 2 - (ncomb * cw + (ncomb - 1) * p.BAD_M2_S) // 2
-        self.seed(lambda: None, lambda: self.comb(top, "m2", cx, Y["vss"] + H, cw, p.BAD_M2_S, ncomb, p.COMB_L))
+        self.seed(lambda: None, lambda: self.comb(top, "m2", cx, Y["vss"] + H, cw, p.BAD_M2_S, ncomb, p.COMB_L), "top_vss_comb")
         # Seed top_nbias_neck: the nbias link between bias and csarray is narrow.
         self.seed(lambda: self.b(top, "m2", e0, Y["nbias"] - H, s1, Y["nbias"] + H),
-                  lambda: self.b(top, "m2", e0, Y["nbias"] - p.BAD_M2_W // 2, s1, Y["nbias"] + p.BAD_M2_W // 2))
+                  lambda: self.b(top, "m2", e0, Y["nbias"] - p.BAD_M2_W // 2, s1, Y["nbias"] + p.BAD_M2_W // 2), "top_nbias_neck")
         # Seed top_nbias_offgrid: the nbias link between csarray and diffpair is off the grid (it still overlaps the
         # buses).
         og = p.OFFGRID
         self.seed(lambda: self.b(top, "m2", e1, Y["nbias"] - H, s2, Y["nbias"] + H),
-                  lambda: self.b(top, "m2", e1 - og, Y["nbias"] - H + og, s2 + og, Y["nbias"] + H - og))
+                  lambda: self.b(top, "m2", e1 - og, Y["nbias"] - H + og, s2 + og, Y["nbias"] + H - og), "top_nbias_offgrid")
         # The vss link between csarray and diffpair is a Metal3 jumper with a Via2 at each end.
         # Seed top_jumper_via: each Via2 sits at the end of the jumper (no Metal3 endcap enclosure).
         jx1, jx2 = e1 - p.JUMPER_IN, s2 + p.JUMPER_IN
@@ -316,7 +316,7 @@ class Block:
             self.pad(top, "m2", xv, Y["vss"], p.M2_PAD)
             xbad = xv + sgn * (p.M3_PAD // 2 - v)
             self.seed(lambda xv=xv: self.pad(top, "via2", xv, Y["vss"], p.VIA2),
-                      lambda xb=xbad: self.pad(top, "via2", xb, Y["vss"], p.VIA2))
+                      lambda xb=xbad: self.pad(top, "via2", xb, Y["vss"], p.VIA2), "top_jumper_via")
         # The stubs to the left boundary and the pins vss and ibias (Metal2).
         for net, name in (("vss", "vss"), ("nbias", "ibias")):
             self.b(top, "m2", bnd.left, Y[net] - H, 0, Y[net] + H)
@@ -327,7 +327,7 @@ class Block:
             xp = -p.LEFT + p.PIN_H + p.PAD_PITCH * (i + 1)
             self.seed(lambda: None,
                       lambda xp=xp: (self.pad(top, "via2", xp, Y["vss"], p.VIA2),
-                                     self.pad(top, "m3", xp, Y["vss"], p.SMALL_M3_PAD)))
+                                     self.pad(top, "m3", xp, Y["vss"], p.SMALL_M3_PAD)), "top_dangling_pads")
         # The Metal3 lines from the pin straps to the top boundary, and the pins (Metal3).
         w = p.STRAP_W // 2
         neck = {n for n in p.NECK_PINS}
@@ -336,7 +336,7 @@ class Block:
                 # Seed top_pin_neck: the line is narrow from the core edge to the pin.
                 self.seed(lambda xs=xs: self.b(top, "m3", xs - w, Y["edge"], xs + w, bnd.top - p.PIN_H),
                           lambda xs=xs: self.b(top, "m3", xs - p.BAD_M3_W // 2, Y["edge"], xs + p.BAD_M3_W // 2,
-                                               bnd.top - p.PIN_H))
+                                               bnd.top - p.PIN_H), "top_pin_neck")
             else:
                 self.b(top, "m3", xs - w, Y["edge"], xs + w, bnd.top - p.PIN_H)
             if name == p.COMB_PIN:
@@ -345,7 +345,7 @@ class Block:
                 y0 = Y["edge"] + p.BUS_GAP
                 self.seed(lambda: None,
                           lambda xs=xs, y0=y0: [self.b(top, "m3", xs + w, y0 + i * (p.COMB_W + p.BAD_M3_S), xs + w + p.COMB_L,
-                                                       y0 + i * (p.COMB_W + p.BAD_M3_S) + p.COMB_W) for i in range(n)])
+                                                       y0 + i * (p.COMB_W + p.BAD_M3_S) + p.COMB_W) for i in range(n)], "top_pin_comb")
             self.pin(top, name, "m3", xs - w, bnd.top - p.PIN_H, xs + w, bnd.top)
         self.top, self.boundary = top, bnd
         self.devices = sum(r * c for r, c in branches) + p.BIAS[0] * p.BIAS[1] + 2 * p.PAIR[0] * p.PAIR[1] + p.TAIL[0] * p.TAIL[1]

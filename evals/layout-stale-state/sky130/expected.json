@@ -1,0 +1,273 @@
+{
+  "task": "layout-stale-state",
+  "input": "v1-seeded",
+  "pdk": "sky130",
+  "cell": "idac",
+  "pins": [
+    "o0",
+    "o1",
+    "o2",
+    "o3",
+    "o4",
+    "o5",
+    "o6",
+    "o7",
+    "inp",
+    "inn",
+    "outp",
+    "outn",
+    "ibias",
+    "vss"
+  ],
+  "change": {
+    "what": "the ibias stub (Metal2) from the left boundary to the core is wider, below its old bottom edge",
+    "layer": [
+      69,
+      20
+    ],
+    "box_um": [
+      -12,
+      171.18,
+      -1,
+      172.18
+    ],
+    "check_box_um": [
+      -12.5,
+      170.68,
+      -0.5,
+      172.68
+    ],
+    "widen_um": 1,
+    "bus_width_um": [
+      2,
+      3
+    ]
+  },
+  "colleague": {
+    "message": "block: widen the ibias bus; fix m2.2 and m3.2",
+    "fixed_seeds": [
+      {
+        "seed": "top_vss_comb",
+        "rules": [
+          "m2.2"
+        ]
+      },
+      {
+        "seed": "top_pin_comb",
+        "rules": [
+          "m3.2"
+        ]
+      }
+    ],
+    "new_seed": [
+      {
+        "seed": "top_via2_pairs",
+        "cell": "idac",
+        "kind": "pairs of Via2 too near each other on the vss link (spacing)",
+        "sites": 4,
+        "x_um": [
+          77.2,
+          87.2
+        ],
+        "rules": {
+          "via2.2": 4
+        }
+      }
+    ]
+  },
+  "variants": {
+    "v1-seeded": {
+      "sha256": "8357d7a1e103f83ee6324a0819184391a731a9f07f0d9445426f071622d8fa47",
+      "bytes": 402668,
+      "drc": {
+        "status": "violations",
+        "markers": 33,
+        "rules": {
+          "m1.1": 4,
+          "m1.2": 1,
+          "via.4a": 2,
+          "m2.1": 1,
+          "m2.2": 5,
+          "m3.1": 2,
+          "m3.2": 4,
+          "m3.4": 2,
+          "m3.6": 8,
+          "m2_OFFGRID": 4
+        },
+        "exit": 0,
+        "runtime_s": 15.046
+      },
+      "lvs": {
+        "status": "match",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "o0",
+          "o1",
+          "o2",
+          "o3",
+          "o4",
+          "o5",
+          "o6",
+          "o7",
+          "outn",
+          "outp",
+          "vss"
+        ],
+        "runtime_s": 11.354,
+        "status_text": "MATCH"
+      },
+      "kept": {
+        "kept": false,
+        "xor_area_um2": 11,
+        "area_um2": 5.75,
+        "ref_area_um2": 16.75,
+        "xor_polygons": 1
+      }
+    },
+    "v2-seeded": {
+      "sha256": "843fb2f52e6dd41457e0c3156eed179731e223c3b513dd6ead2c48cd93a3f3be",
+      "bytes": 402796,
+      "drc": {
+        "status": "violations",
+        "markers": 28,
+        "rules": {
+          "m1.1": 4,
+          "m1.2": 1,
+          "via.4a": 2,
+          "m2.1": 1,
+          "via2.2": 4,
+          "m3.1": 2,
+          "m3.4": 2,
+          "m3.6": 8,
+          "m2_OFFGRID": 4
+        },
+        "exit": 0,
+        "runtime_s": 13.119
+      },
+      "lvs": {
+        "status": "match",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "o0",
+          "o1",
+          "o2",
+          "o3",
+          "o4",
+          "o5",
+          "o6",
+          "o7",
+          "outn",
+          "outp",
+          "vss"
+        ],
+        "runtime_s": 10.34,
+        "status_text": "MATCH"
+      },
+      "kept": {
+        "kept": true,
+        "xor_area_um2": 0,
+        "area_um2": 16.75,
+        "ref_area_um2": 16.75,
+        "xor_polygons": 0
+      }
+    },
+    "v2-clean": {
+      "sha256": "17ca3cb5871f621933aa399cd8219b66234512a819ecf40d0c4813fee5573e7f",
+      "bytes": 401708,
+      "drc": {
+        "status": "clean",
+        "markers": 0,
+        "rules": {},
+        "exit": 0,
+        "runtime_s": 14.496
+      },
+      "lvs": {
+        "status": "match",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "o0",
+          "o1",
+          "o2",
+          "o3",
+          "o4",
+          "o5",
+          "o6",
+          "o7",
+          "outn",
+          "outp",
+          "vss"
+        ],
+        "runtime_s": 11.326,
+        "status_text": "MATCH"
+      },
+      "kept": {
+        "kept": true,
+        "xor_area_um2": 0,
+        "area_um2": 16.75,
+        "ref_area_um2": 16.75,
+        "xor_polygons": 0
+      }
+    },
+    "v1-clean": {
+      "sha256": "7195292a86d4b7129db6e7c3da960f91a9193e481d96ee816df8f5a3f543cd3d",
+      "bytes": 400876,
+      "drc": {
+        "status": "clean",
+        "markers": 0,
+        "rules": {},
+        "exit": 0,
+        "runtime_s": 13.484
+      },
+      "lvs": {
+        "status": "match",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "o0",
+          "o1",
+          "o2",
+          "o3",
+          "o4",
+          "o5",
+          "o6",
+          "o7",
+          "outn",
+          "outp",
+          "vss"
+        ],
+        "runtime_s": 9.897,
+        "status_text": "MATCH"
+      },
+      "kept": {
+        "kept": false,
+        "xor_area_um2": 11,
+        "area_um2": 5.75,
+        "ref_area_um2": 16.75,
+        "xor_polygons": 1
+      }
+    }
+  },
+  "decks": {
+    "drc": "klayout -b -r \"$deck\" -rd input=\"$gds\" -rd top_cell=\"$top\" -rd report=\"$report\" -rd feol=true -rd beol=true -rd offgrid=true -rd thr=4 > drc/drc.log 2>&1",
+    "lvs": "klayout -b -r \"$deck\" -rd input=\"$gds\" -rd top_cell=\"$top\" -rd report=\"$report\" -rd schematic=block.spice -rd target_netlist=\"lvs/${top}_extracted.cir\" -rd thr=4 -rd run_mode=deep -rd spice_net_names=true -rd spice_comments=false -rd scale=false -rd verbose=false -rd schematic_simplify=true -rd net_only=false -rd top_lvl_pins=false -rd combine=false -rd purge=false -rd purge_nets=false > lvs/lvs.log 2>&1"
+  },
+  "provenance": {
+    "engine": "docker",
+    "image": "simra-agent-env:2d0be30",
+    "image_id": "sha256:ff57a865fdc3150f40ef8f4101c05ad995cdedcb0a1026e74862e41bf45f3b59",
+    "klayout": "KLayout 0.30.12",
+    "pdk": "sky130A open_pdks 1689ac3f2dc763876eaf967227c7dfe831b031ae",
+    "made_at": "2026-11-03T04:01:54.238Z"
+  }
+}

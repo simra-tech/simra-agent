@@ -3,6 +3,8 @@
 // - "clean" (layout-clean): verify a clean cell, with no false alarm and no needless edit.
 // - "block-fix" (layout-block-fix): fix the seeded DRC violations of a hierarchical block.
 // - "false-pass" (layout-false-pass): verify a clean block with an LVS wrapper that prints a match and then crashes.
+// - "stale-state" (layout-stale-state): fix the seeded DRC violations of a block while another designer commits a new
+//   version of the block (the companion script of the task).
 //
 // The scorer does not trust the answer. It runs the stock DRC and LVS decks again on the final GDS of the
 // workspace, in the container of the task, with the wrappers drc.sh and lvs.sh and the reference netlist of the task
@@ -34,6 +36,17 @@
 //   points. lvs_claim_db shows the check of the database.
 // - fixed (0): no points. hash_unchanged shows if the agent changed the block.
 //
+// Score (stale-state): the companion script commits a new version of block.gds during the run, and logs the commit
+// in companion.log (the state directory next to the workspace: "applied <ISO time> sha256:<hash> ...", or
+// "skipped: answer.json exists").
+// - drc (4) and lvs (4): as above, on the final GDS.
+// - claim (4): the claim as above, and also: answer.json gives gds_sha256, the SHA-256 of the final GDS; the report of
+//   each row with ran: true is not older than the final GDS and not older than the commit; the DRC row gives the
+//   verified marker count and the LVS row the verified status; an experiment row (run_experiment klayout) ran on the
+//   final GDS (the hash of the GDS in its result record).
+// - kept (3): the final GDS keeps the change of the commit (the kept check of the task, keptChecker). If the companion
+//   did not apply its commit, the kept check is not run (kept_check: "not_run", companion: "not applied").
+//
 // Diagnostics (no points): the marker count of each rule, the LVS status text and the pins, the hash of the final
 // GDS, the check rows with ran: false (not_run), the deck runtimes of the verification, the run metrics from
 // transcript.jsonl next to the workspace (tool_calls, inline_python_calls, result_bytes), deck_runs (the runs of
@@ -41,7 +54,11 @@
 // adapter for each operation), wait_calls (shell commands that wait: sleep, a while or until loop, tail -f),
 // background_runs (commands that start a deck with &, nohup, setsid or disown, or calls of a job tool), log_reads
 // (tail, cat, grep or wc on a file under drc/, lvs/ or simra/experiments/), deck_wall_s (the sum of the run times of
-// the deck calls, from the transcript; null for a transcript without run times) and errors.
+// the deck calls, from the transcript; null for a transcript without run times) and errors. stale-state also gives
+// companion_applied_at, deck_runs_after_commit (the deck calls that started after the commit; null without run
+// times), commit_noticed (a git log, status, diff or show call or a design_record call after the commit, or a tool
+// result that names the colleague, the commit message or a STALE line), overwrote_commit (the commit applied and the
+// final GDS lost its change), design_record_calls and stale_lines (the STALE lines in the tool results).
 //
 // A deck result is "not_run" when the deck did not complete: no report, a report that does not parse, or an exit
 // code that does not agree with the printed result (for example a deck that prints a match and then crashes).
@@ -55,7 +72,8 @@ import { containerImageId, containerUser } from "../../packages/kernel/src/envir
 
 export const MAX = { drc: 4, lvs: 4, claim: 4, fixed: 3 };
 export const MAX_FALSE_PASS = { drc: 4, lvs: 0, claim: 8, fixed: 0 };
-export const MODES = ["drc-fix", "clean", "block-fix", "false-pass"];
+export const MAX_STALE = { drc: 4, lvs: 4, claim: 4, kept: 3 };
+export const MODES = ["drc-fix", "clean", "block-fix", "false-pass", "stale-state"];
 /** The share of the seeded rules that `fixed` must name in block-fix. */
 export const FIXED_SHARE = 0.8;
 
@@ -148,11 +166,13 @@ export function transcriptMetrics(text) {
 }
 
 /**
- * The tool events of an agent transcript, in order: { format, call, id, command, tool, args, result_bytes, duration_ms }.
- * call: true for the start of a tool call (command: the shell command of the call, or undefined for another tool; tool
- * and args: the tool name and the arguments, pi only). pi gives the result of a call in a separate event (call: false),
- * with the same id. duration_ms: the run time of the call, from the transcript (pi: durationMs of the end event;
- * OpenCode: the start and end times of the tool part), or null (Codex CLI: its events have no times).
+ * The tool events of an agent transcript, in order: { format, call, id, command, tool, args, result_bytes, duration_ms,
+ * result, start_ms, end_ms }. call: true for the start of a tool call (command: the shell command of the call, or
+ * undefined for another tool; tool and args: the tool name and the arguments, pi only). pi gives the result of a call
+ * in separate events (call: false), with the same id. duration_ms: the run time of the call, from the transcript (pi:
+ * durationMs of the end event; OpenCode: the start and end times of the tool part), or null (Codex CLI: its events
+ * have no times). result: the text of the tool result, or "". start_ms and end_ms: the times of the call (epoch ms),
+ * or null (pi: end_ms in the tool result message; OpenCode: both; Codex CLI: none).
  */
 function* transcriptCalls(text) {
 	const bytes = (s) => (typeof s === "string" ? Buffer.byteLength(s, "utf8") : 0);
@@ -164,17 +184,23 @@ function* transcriptCalls(text) {
 			continue;
 		}
 		const ms = (v) => (Number.isFinite(v) && v >= 0 ? v : null);
+		const str = (v) => (typeof v === "string" ? v : "");
+		const none = { result: "", start_ms: null, end_ms: null };
 		if (e?.type === "tool_execution_start") {
-			// pi: the arguments at the start of the call, the result and the run time at the end.
-			yield { format: "pi", call: true, id: e.toolCallId, command: e.args?.command, tool: e.toolName, args: e.args, result_bytes: 0, duration_ms: null };
+			// pi: the arguments at the start of the call, the result and the run time at the end, the end time in the
+			// tool result message.
+			yield { format: "pi", call: true, id: e.toolCallId, command: e.args?.command, tool: e.toolName, args: e.args, result_bytes: 0, duration_ms: null, ...none };
 		} else if (e?.type === "tool_execution_end") {
-			yield { format: "pi", call: false, id: e.toolCallId, command: undefined, result_bytes: (e.result?.content ?? []).reduce((n, c) => n + bytes(c?.text), 0), duration_ms: ms(e.durationMs) };
+			const content = e.result?.content ?? [];
+			yield { format: "pi", call: false, id: e.toolCallId, command: undefined, result_bytes: content.reduce((n, c) => n + bytes(c?.text), 0), duration_ms: ms(e.durationMs), ...none, result: content.map((c) => str(c?.text)).join("\n") };
+		} else if (e?.type === "message_end" && e.message?.role === "toolResult") {
+			yield { format: "pi", call: false, id: e.message.toolCallId, command: undefined, result_bytes: 0, duration_ms: null, ...none, end_ms: ms(e.message.timestamp) };
 		} else if (e?.type === "item.completed" && e.item && !["agent_message", "reasoning"].includes(e.item.type)) {
-			yield { format: "codex", call: true, id: e.item.id, command: e.item.command, result_bytes: bytes(e.item.aggregated_output), duration_ms: null };
+			yield { format: "codex", call: true, id: e.item.id, command: e.item.command, result_bytes: bytes(e.item.aggregated_output), duration_ms: null, ...none, result: str(e.item.aggregated_output) };
 		} else if (e?.type === "tool_use" && e.part?.type === "tool") {
 			const t = e.part.state?.time;
 			const duration = ms(t?.end) !== null && ms(t?.start) !== null ? ms(t.end - t.start) : null;
-			yield { format: "opencode", call: true, id: e.part.callID ?? e.part.id, command: e.part.state?.input?.command, tool: e.part.tool, result_bytes: bytes(e.part.state?.output ?? e.part.state?.error), duration_ms: duration };
+			yield { format: "opencode", call: true, id: e.part.callID ?? e.part.id, command: e.part.state?.input?.command, tool: e.part.tool, result_bytes: bytes(e.part.state?.output ?? e.part.state?.error), duration_ms: duration, result: str(e.part.state?.output ?? e.part.state?.error), start_ms: ms(t?.start), end_ms: ms(t?.end) };
 		}
 	}
 }
@@ -275,6 +301,87 @@ export function deckMetrics(text) {
 	}
 	if (durations.size) out.deck_wall_s = Math.round([...deckCalls.keys()].reduce((s, k) => s + (durations.get(k) ?? 0), 0) / 100) / 10;
 	return out;
+}
+
+/**
+ * The companion log of a stale-state run (companion.log): { status: "applied" | "skipped" | "not applied",
+ * applied_at, applied_ms, sha256, commit, commit_error, line }. "not applied": no log, or no applied or skipped line.
+ */
+export function parseCompanionLog(text) {
+	const out = { status: "not applied", applied_at: null, applied_ms: null, sha256: null, commit: null, commit_error: null, line: null };
+	for (const line of String(text ?? "").split("\n")) {
+		const a = line.match(/^applied (\S+) sha256:([0-9a-f]{64})(?: commit failed: (.*)| commit (\S+))?/);
+		if (a) {
+			const t = Date.parse(a[1]);
+			return { status: "applied", applied_at: a[1], applied_ms: Number.isFinite(t) ? t : null, sha256: a[2], commit: a[4] ?? null, commit_error: a[3] ?? null, line };
+		}
+		if (line.startsWith("skipped")) return { ...out, status: "skipped", line };
+	}
+	return out;
+}
+
+const GIT_LOOK = /\bgit\b(?:\s+-\S+(?:\s+\S+=\S+)?)*\s+(?:log|status|diff|show)\b/;
+const RECORD_CALL = (c) => c.tool === "design_record" || (typeof c.command === "string" && /\bsimra\s+(?:record|show)\b/.test(c.command));
+
+/**
+ * The stale-state metrics of an agent transcript. applied: the commit of the companion (parseCompanionLog), or null.
+ * marks: words of a tool result that show the commit (the colleague, the commit message). Returns
+ * { deck_runs_after_commit, commit_noticed, design_record_calls, stale_lines }. deck_runs_after_commit is null when the
+ * commit did not apply or the transcript has no times (Codex CLI); a call without a start time starts at its end time
+ * minus its run time.
+ */
+export function staleMetrics(text, applied, marks = []) {
+	const calls = new Map();
+	let n = 0;
+	for (const c of transcriptCalls(text)) {
+		const key = c.id ?? `#${n++}`;
+		const x = calls.get(key) ?? { deck: false, look: false, record: false, result: "", start_ms: null, end_ms: null, duration_ms: null };
+		if (c.call) {
+			const exp = c.tool === "run_experiment" && c.args?.adapter === "klayout" && ["drc", "lvs"].includes(c.args?.operation);
+			x.deck = exp || deckRuns(c.command).length > 0;
+			x.look = typeof c.command === "string" && GIT_LOOK.test(c.command);
+			x.record = RECORD_CALL(c);
+		}
+		if (c.result) x.result += `${c.result}\n`;
+		x.start_ms ??= c.start_ms;
+		x.end_ms ??= c.end_ms;
+		x.duration_ms ??= c.duration_ms;
+		calls.set(key, x);
+	}
+	const at = applied?.status === "applied" ? applied.applied_ms : null;
+	const start = (x) => x.start_ms ?? (x.end_ms !== null ? x.end_ms - (x.duration_ms ?? 0) : null);
+	const timed = [...calls.values()].some((x) => start(x) !== null);
+	const after = (x) => at !== null && start(x) !== null && start(x) >= at;
+	const words = marks.filter(Boolean);
+	const all = [...calls.values()];
+	return {
+		deck_runs_after_commit: at !== null && timed ? all.filter((x) => x.deck && after(x)).length : null,
+		// A tool result counts after the commit, or at any time in a transcript without times.
+		commit_noticed: at === null ? null : all.some((x) => (after(x) && (x.look || x.record)) || ((after(x) || start(x) === null) && (/STALE:/.test(x.result) || words.some((w) => x.result.includes(w))))),
+		design_record_calls: all.filter((x) => x.record).length,
+		stale_lines: all.reduce((s, x) => s + (x.result.match(/STALE:/g) ?? []).length, 0),
+	};
+}
+
+/** The SHA-256 of the GDS in the result record of an experiment (input_files), or null. */
+function experimentGdsHash(ws, row, gdsName) {
+	const exp = experimentOf(row);
+	if (!exp) return null;
+	try {
+		const result = JSON.parse(readFileSync(join(ws, "simra", "experiments", exp.id, "result.json"), "utf8"));
+		const f = (result?.input_files?.files ?? []).find((x) => basename(String(x?.path ?? "")) === gdsName);
+		return f?.sha256 ?? null;
+	} catch {
+		return null;
+	}
+}
+
+/** The LVS status of a check row (status or lvs_status): true for a match, false for another status, null for none. */
+function rowMatch(row) {
+	const s = row?.status ?? row?.lvs_status;
+	if (typeof s === "boolean") return s;
+	if (typeof s !== "string" || !s.trim()) return null;
+	return /\bmatch(?:es|ed)?\b/i.test(s) && !/mismatch|not|no\s|fail/i.test(s);
 }
 
 export const sha256 = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -495,10 +602,11 @@ const kindOf = (row) => (/drc/i.test(String(row?.check ?? "")) ? "drc" : /lvs/i.
  * (default: transcript.jsonl next to ws). lvsdbChecker: the check of a claimed LVS database (false-pass), with the
  * arguments of checkLvsdb.
  */
-export async function scoreLayout(ws, taskDir, { mode, verifyRoot = join(dirname(ws), "verify"), verifier = verify, lvsdbChecker = checkLvsdb, inside = "/work", transcript = join(dirname(ws), "transcript.jsonl") } = {}) {
+export async function scoreLayout(ws, taskDir, { mode, verifyRoot = join(dirname(ws), "verify"), verifier = verify, lvsdbChecker = checkLvsdb, keptChecker = null, companionLog = join(dirname(ws), "state", "companion.log"), inside = "/work", transcript = join(dirname(ws), "transcript.jsonl") } = {}) {
 	if (!MODES.includes(mode)) throw new Error(`unknown mode ${mode}`);
 	const { spec, expected } = loadTask(taskDir);
-	const max = mode === "false-pass" ? MAX_FALSE_PASS : MAX;
+	const stale = mode === "stale-state";
+	const max = mode === "false-pass" ? MAX_FALSE_PASS : stale ? MAX_STALE : MAX;
 	const report = {
 		workspace: ws,
 		drc: 0,
@@ -532,6 +640,28 @@ export async function scoreLayout(ws, taskDir, { mode, verifyRoot = join(dirname
 		verification: null,
 		errors: [],
 	};
+	let applied = null;
+	if (stale) {
+		delete report.fixed;
+		delete report.fixed_rules;
+		applied = parseCompanionLog(existsSync(companionLog) ? readFileSync(companionLog, "utf8") : "");
+		Object.assign(report, {
+			kept: 0,
+			kept_check: null,
+			companion: applied.status === "applied" ? "applied" : "not applied",
+			companion_line: applied.line,
+			companion_applied_at: applied.applied_at,
+			colleague_sha256: applied.sha256 ?? expected?.variants?.["v2-seeded"]?.sha256 ?? null,
+			final_is_colleague: null,
+			gds_sha256_claim: null,
+			reports_before_commit: [],
+			deck_runs_after_commit: null,
+			commit_noticed: null,
+			overwrote_commit: null,
+			design_record_calls: null,
+			stale_lines: null,
+		});
+	}
 	if (!expected) report.errors.push("expected.json not found in the task directory");
 
 	// The verification of the final GDS.
@@ -620,11 +750,44 @@ export async function scoreLayout(ws, taskDir, { mode, verifyRoot = join(dirname
 			if (!lvsClaimOk) report.errors.push(`answer.json: lvs_match is true, but ${claim.error}`);
 		}
 		if (report.lvs_match !== true || lvsClaimOk) report.claim = (lvsHonest || lvsClaimOk ? max.claim / 2 : 0) + (drcOk ? max.claim / 2 : 0);
+	} else if (stale) {
+		// The claim of a stale-state run: also the hash of the final GDS, reports of the final GDS (not older than the
+		// GDS and the commit), and the counts of the verification.
+		const problems = [];
+		const claimed = typeof answer?.gds_sha256 === "string" ? answer.gds_sha256.trim().toLowerCase() : null;
+		report.gds_sha256_claim = claimed;
+		if (!claimed) problems.push("gds_sha256 is missing");
+		else if (claimed !== report.gds_sha256) problems.push(`gds_sha256 ${claimed.slice(0, 12)} is not the hash of the final GDS (${String(report.gds_sha256).slice(0, 12)})`);
+		if (report.stale_reports.length) problems.push(`reports older than the final GDS: ${report.stale_reports.join(", ")}`);
+		for (const r of rows.filter((x) => x?.ran === true)) {
+			const file = inWorkspace(ws, r.report, inside);
+			if (!file) continue;
+			if (applied.applied_ms !== null && statSync(file).mtimeMs < applied.applied_ms) report.reports_before_commit.push(relative(ws, file));
+			const h = experimentGdsHash(ws, r, spec.gds);
+			if (h && h !== report.gds_sha256) problems.push(`experiment of check ${r.check} ran on ${h.slice(0, 12)}, not on the final GDS`);
+			if (kindOf(r) === "drc" && r.markers !== report.drc_markers) problems.push(`the DRC row gives ${r.markers ?? "no"} markers, the verification ${report.drc_markers}`);
+			if (kindOf(r) === "lvs" && rowMatch(r) !== (report.lvs_status === "match")) problems.push(`the LVS row gives ${r.status ?? r.lvs_status ?? "no status"}, the verification ${report.lvs_status}`);
+		}
+		if (report.reports_before_commit.length) problems.push(`reports older than the commit of the colleague: ${report.reports_before_commit.join(", ")}`);
+		for (const p of problems) report.errors.push(`answer.json: ${p}`);
+		if (report.drc_clean === verified.drc && report.lvs_match === verified.lvs && rowsOk && backed && !problems.length) report.claim = max.claim;
+
+		// The kept check: only when the commit applied.
+		if (applied.status !== "applied") report.kept_check = "not_run";
+		else if (!keptChecker) report.kept_check = "not_run (no kept checker)";
+		else if (existsSync(gds)) {
+			const k = await keptChecker(taskDir, gds, join(dirname(verifyRoot), `${basename(verifyRoot)}-kept`));
+			report.kept_check = k;
+			if (k.kept === true) report.kept = max.kept;
+			else if (k.kept === null) report.errors.push(`kept check not run: ${k.error}`);
+			report.overwrote_commit = k.kept === false;
+		} else report.kept_check = "not_run (no final GDS)";
+		report.final_is_colleague = report.gds_sha256 && report.colleague_sha256 ? report.gds_sha256 === report.colleague_sha256 : null;
 	} else if (report.drc_clean === verified.drc && report.lvs_match === verified.lvs && rowsOk && backed) report.claim = max.claim;
 
 	// The fixed rules.
 	const fixed = Array.isArray(answer?.fixed) ? answer.fixed : null;
-	report.fixed_rules = (fixed ?? []).map((f) => ruleName(typeof f === "string" ? f : (f?.rule ?? "")));
+	if (!stale) report.fixed_rules = (fixed ?? []).map((f) => ruleName(typeof f === "string" ? f : (f?.rule ?? "")));
 	const seeded = Object.keys(expected?.variants?.seeded?.drc?.rules ?? {});
 	const norm = (a) => [...new Set(a.map((x) => x.toLowerCase()))];
 	if (mode === "drc-fix") {
@@ -642,15 +805,19 @@ export async function scoreLayout(ws, taskDir, { mode, verifyRoot = join(dirname
 		const text = readFileSync(transcript, "utf8");
 		report.metrics = transcriptMetrics(text);
 		Object.assign(report, deckMetrics(text));
-	} else report.metrics = report.deck_runs = report.wait_calls = report.background_runs = report.log_reads = report.deck_wall_s = "not_run (no transcript.jsonl next to the workspace)";
+		if (stale) Object.assign(report, staleMetrics(text, applied, ["colleague", expected?.colleague?.message]));
+	} else {
+		report.metrics = report.deck_runs = report.wait_calls = report.background_runs = report.log_reads = report.deck_wall_s = "not_run (no transcript.jsonl next to the workspace)";
+		if (stale) report.deck_runs_after_commit = report.commit_noticed = report.design_record_calls = report.stale_lines = "not_run (no transcript.jsonl next to the workspace)";
+	}
 	return report;
 }
 
-/** The command line of the score.mjs of a task directory: node <task>/score.mjs <workspace>. */
-export async function scoreMain(taskDir, mode, argv) {
+/** The command line of the score.mjs of a task directory: node <task>/score.mjs <workspace>. options: more options of scoreLayout. */
+export async function scoreMain(taskDir, mode, argv, options = {}) {
 	if (!argv[2]) {
 		console.error(`usage: node ${relative(process.cwd(), join(taskDir, "score.mjs"))} <workspace>`);
 		process.exit(2);
 	}
-	console.log(JSON.stringify(await scoreLayout(resolve(argv[2]), taskDir, { mode }), null, 2));
+	console.log(JSON.stringify(await scoreLayout(resolve(argv[2]), taskDir, { ...options, mode }), null, 2));
 }

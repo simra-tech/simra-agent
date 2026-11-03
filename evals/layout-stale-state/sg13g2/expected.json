@@ -1,0 +1,275 @@
+{
+  "task": "layout-stale-state",
+  "input": "v1-seeded",
+  "pdk": "sg13g2",
+  "cell": "idac",
+  "pins": [
+    "o0",
+    "o1",
+    "o2",
+    "o3",
+    "o4",
+    "o5",
+    "o6",
+    "o7",
+    "inp",
+    "inn",
+    "outp",
+    "outn",
+    "ibias",
+    "vss"
+  ],
+  "change": {
+    "what": "the ibias stub (Metal2) from the left boundary to the core is wider, below its old bottom edge",
+    "layer": [
+      10,
+      0
+    ],
+    "box_um": [
+      -112,
+      171.25,
+      -1,
+      172.25
+    ],
+    "check_box_um": [
+      -112.5,
+      170.75,
+      -0.5,
+      172.75
+    ],
+    "widen_um": 1,
+    "bus_width_um": [
+      2,
+      3
+    ]
+  },
+  "colleague": {
+    "message": "block: widen the ibias bus; fix M2.b and M3.b",
+    "fixed_seeds": [
+      {
+        "seed": "top_vss_comb",
+        "rules": [
+          "M2.b"
+        ]
+      },
+      {
+        "seed": "top_pin_comb",
+        "rules": [
+          "M3.b"
+        ]
+      }
+    ],
+    "new_seed": [
+      {
+        "seed": "top_via2_pairs",
+        "cell": "idac",
+        "kind": "pairs of Via2 too near each other on the vss link (spacing)",
+        "sites": 4,
+        "x_um": [
+          77.2,
+          87.2
+        ],
+        "rules": {
+          "V2.b": 4
+        }
+      }
+    ]
+  },
+  "variants": {
+    "v1-seeded": {
+      "sha256": "72355bfd315cccbd9fe0523ef836e5b1aef1f535268a29e61d7a5f17ba39c514",
+      "bytes": 416028,
+      "drc": {
+        "status": "violations",
+        "markers": 38,
+        "rules": {
+          "M1.a": 4,
+          "M1.b": 1,
+          "M2.a": 1,
+          "M2.b": 5,
+          "M3.a": 2,
+          "M3.b": 4,
+          "V1.c": 6,
+          "metal2_drw_Offgrid": 4,
+          "M3.c": 2,
+          "M3.d": 8,
+          "V1.c1": 1
+        },
+        "exit": 1,
+        "runtime_s": 60.325
+      },
+      "lvs": {
+        "status": "match",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "o0",
+          "o1",
+          "o2",
+          "o3",
+          "o4",
+          "o5",
+          "o6",
+          "o7",
+          "outn",
+          "outp",
+          "vss"
+        ],
+        "runtime_s": 55.04,
+        "status_text": "MATCH"
+      },
+      "kept": {
+        "kept": false,
+        "xor_area_um2": 111,
+        "area_um2": 55.75,
+        "ref_area_um2": 166.75,
+        "xor_polygons": 1
+      }
+    },
+    "v2-seeded": {
+      "sha256": "6074155241a51067e25162ce7b76e4e885fd259d46f3bbc2bf6e428f5479696d",
+      "bytes": 416132,
+      "drc": {
+        "status": "violations",
+        "markers": 33,
+        "rules": {
+          "M1.a": 4,
+          "M1.b": 1,
+          "M2.a": 1,
+          "M3.a": 2,
+          "V1.c": 6,
+          "V2.b": 4,
+          "metal2_drw_Offgrid": 4,
+          "M3.c": 2,
+          "M3.d": 8,
+          "V1.c1": 1
+        },
+        "exit": 1,
+        "runtime_s": 58.785
+      },
+      "lvs": {
+        "status": "match",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "o0",
+          "o1",
+          "o2",
+          "o3",
+          "o4",
+          "o5",
+          "o6",
+          "o7",
+          "outn",
+          "outp",
+          "vss"
+        ],
+        "runtime_s": 54.862,
+        "status_text": "MATCH"
+      },
+      "kept": {
+        "kept": true,
+        "xor_area_um2": 0,
+        "area_um2": 166.75,
+        "ref_area_um2": 166.75,
+        "xor_polygons": 0
+      }
+    },
+    "v2-clean": {
+      "sha256": "77c772e52867a137ae05e90270c452384960644ec56063a6bbc02b4eed708c90",
+      "bytes": 414980,
+      "drc": {
+        "status": "clean",
+        "markers": 0,
+        "rules": {},
+        "exit": 0,
+        "runtime_s": 57.391
+      },
+      "lvs": {
+        "status": "match",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "o0",
+          "o1",
+          "o2",
+          "o3",
+          "o4",
+          "o5",
+          "o6",
+          "o7",
+          "outn",
+          "outp",
+          "vss"
+        ],
+        "runtime_s": 53.514,
+        "status_text": "MATCH"
+      },
+      "kept": {
+        "kept": true,
+        "xor_area_um2": 0,
+        "area_um2": 166.75,
+        "ref_area_um2": 166.75,
+        "xor_polygons": 0
+      }
+    },
+    "v1-clean": {
+      "sha256": "11f42cfd1f693cce80d5d100f11b1adb90d56fd02f1d27d199def391d0436279",
+      "bytes": 414172,
+      "drc": {
+        "status": "clean",
+        "markers": 0,
+        "rules": {},
+        "exit": 0,
+        "runtime_s": 60.642
+      },
+      "lvs": {
+        "status": "match",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "o0",
+          "o1",
+          "o2",
+          "o3",
+          "o4",
+          "o5",
+          "o6",
+          "o7",
+          "outn",
+          "outp",
+          "vss"
+        ],
+        "runtime_s": 52.572,
+        "status_text": "MATCH"
+      },
+      "kept": {
+        "kept": false,
+        "xor_area_um2": 111,
+        "area_um2": 55.75,
+        "ref_area_um2": 166.75,
+        "xor_polygons": 1
+      }
+    }
+  },
+  "decks": {
+    "drc": "python3 \"$deck\" --path=\"$gds\" --topcell=\"$top\" --run_dir=drc > drc/drc.log 2>&1",
+    "lvs": "python3 \"$deck\" --layout=\"$gds\" --netlist=block.spice --topcell=\"$top\" --run_dir=lvs > lvs/lvs.log 2>&1"
+  },
+  "provenance": {
+    "engine": "docker",
+    "image": "simra-agent-env:2d0be30",
+    "image_id": "sha256:ff57a865fdc3150f40ef8f4101c05ad995cdedcb0a1026e74862e41bf45f3b59",
+    "klayout": "KLayout 0.30.12",
+    "pdk": "ihp-sg13g2 a49358cc0b20635fcb53c0940505e3563763fc7a",
+    "made_at": "2026-11-03T03:52:44.291Z"
+  }
+}

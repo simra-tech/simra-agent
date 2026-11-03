@@ -1,0 +1,7 @@
+{
+  "gds": "v2-seeded.gds",
+  "target": "block.gds",
+  "delay_s": 30,
+  "fallback_s": 480,
+  "message": "block: widen the ibias bus; fix m2.2 and m3.2"
+}
