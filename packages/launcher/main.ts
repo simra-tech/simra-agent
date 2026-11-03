@@ -9,7 +9,7 @@ import { join } from "node:path";
 import pdfiumWasm from "@hyzyla/pdfium/pdfium.wasm" with { type: "file" };
 import piPackage from "../../node_modules/@earendil-works/pi-coding-agent/package.json" with { type: "json" };
 
-const KERNEL_COMMANDS = ["run", "check", "list", "show", "wait", "record", "pdf"];
+const KERNEL_COMMANDS = ["run", "check", "list", "show", "wait", "record", "pdf", "pack"];
 /** simra --help prints this block, then pi's help. */
 const COMMANDS = `Simra commands:
   simra run [--detach] <spec.json>  Run one experiment and record it
@@ -19,6 +19,8 @@ const COMMANDS = `Simra commands:
   simra record [<path>...]          Show the checks of each file of record
   simra check                       Check the design against requirements.json
   simra pdf <file>                  Print the text of a PDF (--render <N>: a page image)
+  simra pack init --pdk <name>      Propose a technology pack for a PDK (needs an adapter with pack_propose)
+  simra pack check --pdk <name>     Check a technology pack against its PDK
   simra update                      Update simra (--extensions, --models: pi packages, model catalogs)
   simra uninstall                   Remove simra; settings and logins stay
 `;

@@ -100,6 +100,9 @@ test("the kernel commands go to the kernel, the other arguments to pi", { skip }
 	const run = simra(t, dir, ["run"]);
 	assert.equal(run.status, 2);
 	assert.match(run.stderr, /^usage: simra run/);
+	const pack = simra(t, dir, ["pack"]);
+	assert.equal(pack.status, 2, pack.stdout + pack.stderr);
+	assert.match(pack.stderr, /simra pack init --pdk/);
 	const install = simra(t, dir, ["install", "--help"]);
 	assert.equal(install.status, 0, install.stderr);
 	assert.match(install.stdout, /simra install <source>/);
