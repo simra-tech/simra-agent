@@ -27,6 +27,8 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
 - The tool `check_requirements` (pi extension) and the command `simra check` (plain CLI) check the design
   against `requirements.json`. They run the experiments that the requirements need and write a verdict to
   `simra/checks/<id>/verdict.json`. Each row of the verdict names the experiment that gave its value.
+- The tool `design_record` (pi extension) and the command `simra record` (plain CLI) show, for each file of record
+  (for example a layout or a netlist), which checks ran on the current file and which are stale.
 - The ngspice adapter has four operations: `simulate`, `operating_point`, `lint` and `check_design`.
 - The klayout adapter has two operations: `drc` and `lvs`. They run the stock KLayout decks of the PDK and give
   typed verdicts. A check that did not complete gives "not run", not a pass.
@@ -68,7 +70,8 @@ From a plain command line:
    `{"adapter": "ngspice", "operation": "simulate", "purpose": "check the RC filter", "inputs": {"deck": "rc.spice"}}`
 2. Run `npx simra run run.json` in the design root. It prints a summary: the records, the input files, the outputs
    (path and size), the measurements, and the errors and warnings.
-3. Run `npx simra list` and `npx simra show <id>` to read the records.
+3. Run `npx simra list` and `npx simra show <id>` to read the records. `simra show` prints the summary; add
+   `--json` to print the records.
 
 In pi:
 
@@ -123,6 +126,46 @@ deck. The adapter does not use `.option temp=`, because it does not replace a `.
 The design root is the nearest directory upward with `simra.config.json`. It defines the execution
 environments. Put machine-specific settings (image ID, CPU list) in `simra.local.json`, which git ignores.
 See [examples/ota-sg13g2](examples/ota-sg13g2/README.md).
+
+## Files of record
+
+A verdict is about the file that it ran on. When the file changes after the run, the verdict is stale. The kernel
+reads the hashes of the input files in the records back, and compares them with the files in the design root.
+
+A file of record is an input file of an experiment in the design root, with a role other than `deck`,
+`technology` and `model`. For the klayout adapter, these are the layout (`layout`) and the reference netlist
+(`netlist`).
+
+1. The summary of an experiment (`run_experiment`, `wait_experiments`, `simra run`, `simra wait`, `simra show`)
+   gives one line after the input files for each file of record that changed after the run, for example
+   `STALE: layout block.gds changed after this run (now sha256:3f2a9c01b7d4)`.
+2. The design record gives one block per file of record: the path, the current sha256, the last git commit of the
+   file (when git tracks it), then one line per experiment that used the file. Current experiments come first,
+   the most recent first. A stale experiment has the note `(stale: ran on sha256:<hash>)`. A file without a
+   current experiment has the line `no check on the current file`.
+3. Run `npx simra record` to print the design record, or `npx simra record block.gds` for one file. In pi, the agent
+   calls `design_record` (optional `paths`).
+
+Example:
+
+```
+layout block.gds sha256:3f2a9c01b7d4
+  git 8d1e5a7c2b90 block: widen the vdd bus
+  20261103-101530-4be2c1 klayout drc [full] completed markers=0 rules_violated=0
+  20261103-100212-a0f3d9 klayout lvs completed match=1 unmatched_devices=0 unmatched_nets=0 (stale: ran on sha256:91c04e6a2f18)
+netlist block.spice sha256:c7b2e0d4a611
+  git 1f0a3b6c9d22 block: first version
+  20261103-100212-a0f3d9 klayout lvs completed match=1 unmatched_devices=0 unmatched_nets=0
+```
+
+The record shows at most 6 experiments per file, and one line with the count of the others. Each line gives the
+first 3 measurements of the run, without the runtime. The record runs no tool. It reads `simra/experiments` and
+hashes the files of record.
+
+In pi, the prompt rules tell the agent to confirm with `design_record` that a check is current before it reports
+the check, and to rerun a stale check. When a file of record changed under the agent (another commit, another
+process), the agent reads the new version and applies its change to it. It does not overwrite the file with its own
+earlier copy.
 
 ## System prompt
 

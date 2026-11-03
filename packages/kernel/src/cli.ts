@@ -7,7 +7,10 @@
 //   simra wait <id> [<id>...] [--timeout-s <n>]
 //                             wait until the experiments end (default timeout 3600 s); print one summary per id, or
 //                             "still running" for a run that did not end. Exit code 0 only when every run completed.
-//   simra show <id>           print the experiment and result records
+//   simra show <id> [--json]  print the summary of the experiment (with a STALE line for each input file that changed
+//                             after the run); with --json, the experiment and result records
+//   simra record [<path>...]  print the design record: each file of record, its hash, and the checks that ran on it
+//                             (current or stale). Paths are relative to the current directory.
 //   simra list                list experiments, oldest first
 //   simra check               check requirements.json; options --file <path>, --only <id,...>, --conditions <name,...>,
 //                             --parallel <n> (experiments at the same time, default 4)
@@ -19,6 +22,7 @@ import { resolve } from "node:path";
 import { findRoot } from "./config.ts";
 import { runCheck } from "./requirements.ts";
 import { runtimeEstimate } from "./estimate.ts";
+import { designRecord, formatDesignRecord } from "./record.ts";
 import { listExperiments, loadExperiment, readStatus } from "./records.ts";
 import { runDetachedWorker, runExperiment } from "./runner.ts";
 import { formatOutcome, formatStarted, formatVerdict, formatWait } from "./summary.ts";
@@ -26,7 +30,7 @@ import { waitExperiments } from "./wait.ts";
 
 function usage(): never {
 	console.error(
-		"usage: simra run [--detach] <spec.json> | simra wait <id> [<id>...] [--timeout-s <n>] | simra show <id> | simra list | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>]   [--root <dir>]",
+		"usage: simra run [--detach] <spec.json> | simra wait <id> [<id>...] [--timeout-s <n>] | simra show <id> [--json] | simra record [<path>...] | simra list | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>]   [--root <dir>]",
 	);
 	process.exit(2);
 }
@@ -36,11 +40,13 @@ async function main(argv: string[]): Promise<number> {
 	const args: string[] = [];
 	const options: Record<string, string> = {};
 	let detach = false;
+	let json = false;
 	const list = (value?: string) => value?.split(",").filter(Boolean);
 	const positive = (value: string) => (/^[1-9]\d*$/.test(value) ? Number(value) : usage());
 	for (let i = 0; i < argv.length; i++) {
 		if (argv[i] === "--root") root = resolve(argv[++i] ?? usage());
 		else if (argv[i] === "--detach") detach = true;
+		else if (argv[i] === "--json") json = true;
 		else if (argv[i] === "--detached-worker") {
 			// Internal: the supervisor of a detached run (see runExperiment). The argument is the experiment directory.
 			const result = await runDetachedWorker(argv[++i] ?? usage());
@@ -81,7 +87,14 @@ async function main(argv: string[]): Promise<number> {
 	}
 	if (command === "show" && arg) {
 		const { experiment, result } = loadExperiment(root, arg);
-		console.log(JSON.stringify({ experiment, result }, null, 2));
+		if (json) console.log(JSON.stringify({ experiment, result }, null, 2));
+		else if (result) console.log(formatOutcome(root, experiment, result, runtimeEstimate(root, experiment)));
+		else console.log(formatStarted(root, experiment, runtimeEstimate(root, experiment)).replace(": running (detached)", `: ${readStatus(root, arg)?.status ?? "no result"}`));
+		return 0;
+	}
+	if (command === "record") {
+		const r = root;
+		console.log(formatDesignRecord(designRecord(r, args.slice(1).map((p) => resolve(p)))));
 		return 0;
 	}
 	if (command === "check") {

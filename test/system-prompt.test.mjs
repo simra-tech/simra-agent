@@ -75,6 +75,8 @@ test("pi sends the chip-design preamble, the tools and their rules, and no pi do
 	assert.match(prompt, /<rules>\n[^]*- Run simulations with run_experiment[^]*- When the design has a requirements\.json, run check_requirements without a selection before you say that the design meets its requirements, and give its check id\.\n[^]*<\/rules>/);
 	assert.doesNotMatch(prompt, /- Before you say that the design meets/);
 	assert.match(prompt, /<rules>\n[^]*- Use the requirements and conditions parameters to check one row quickly[^]*- Report rows that are not measured or not run as such\.[^]*<\/rules>/);
+	assert.match(prompt, /<tools>\n[^]*- design_record: show which checks are current for each file of record[^]*\n<\/tools>/);
+	assert.match(prompt, /<rules>\n[^]*- A verdict counts only for the file that it ran on\. Before you report a check, confirm with design_record[^]*- When a file of record changed under you[^]*<\/rules>/);
 	assert.match(prompt, /<rules>\n[^]*- Run DRC and LVS with run_experiment \(adapter klayout, operations drc and lvs\), not with a DRC or LVS shell script\.[^]*<\/rules>/);
 });
 

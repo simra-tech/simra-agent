@@ -1,7 +1,7 @@
 // Simra Agent extension for pi.
 // It registers the tools run_experiment (kernel runner + adapters; blocking or detached), wait_experiments (wait for
-// detached runs in one call) and check_requirements (requirements.json against the design), and the command
-// /simra-version.
+// detached runs in one call), check_requirements (requirements.json against the design) and design_record (the checks
+// that ran on each file of record, current or stale), and the command /simra-version.
 // After a read, write, edit or bash call that names a netlist, it adds the ngspice adapter's netlist check
 // (operation "lint") to the tool result: for example a warning about ".option rshunt".
 // When SIMRA_SESSION_DEADLINE (an ISO 8601 time) is set, it adds a time note to the first tool result after 50 %
@@ -21,7 +21,9 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import {
 	BUILTIN_ADAPTER_DIR,
+	designRecord,
 	findRoot,
+	formatDesignRecord,
 	formatDiagnostic,
 	formatOutcome,
 	formatStarted,
@@ -256,6 +258,42 @@ export default function (pi: ExtensionAPI) {
 			return {
 				content: [{ type: "text", text }],
 				details: { experiments: outcomes.map((o) => ({ id: o.id, status: o.status, measurements: o.result?.measurements ?? {} })) },
+			};
+		},
+	});
+	pi.registerTool({
+		name: "design_record",
+		label: "Design record",
+		description: [
+			"Show the design record: for each file of record (an input file of an experiment in the design root, for example a",
+			"layout or a netlist), its current sha256, its last git commit, and the experiments that ran on it, current ones first.",
+			"An experiment is current when the sha256 that it recorded equals the sha256 of the file now. Else it is stale: its",
+			"verdict is about an earlier version of the file. 'no check on the current file' means that no experiment ran on the",
+			"file as it is now. The summary of an experiment also gives a STALE line for each input file that changed after the run.",
+			"It runs no tool; it reads the records in simra/experiments.",
+		].join("\n"),
+		promptSnippet: "show which checks are current for each file of record (layout, netlist), and which are stale",
+		promptGuidelines: [
+			"A verdict counts only for the file that it ran on. Before you report a check, confirm with design_record that the check is current for the file of record. If it is stale, run it again.",
+			"When a file of record changed under you (another commit, another process), do not overwrite it with your own earlier copy. Read the new version and apply your change to it.",
+		],
+		parameters: Type.Object({
+			paths: Type.Optional(Type.Array(Type.String(), { description: "Show only these files (relative to the design root). Default: all files of record" })),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const root = findRoot(ctx.cwd) ?? ctx.cwd;
+			const paths = params.paths?.map((p) => (isAbsolute(p) ? p : resolve(root, p)));
+			const record = designRecord(root, paths);
+			return {
+				content: [{ type: "text", text: formatDesignRecord(record) }],
+				details: {
+					files: record.files.map((f) => ({
+						path: f.path,
+						sha256: f.sha256,
+						current: f.experiments.filter((e) => e.current).map((e) => e.id),
+						stale: f.experiments.filter((e) => !e.current).map((e) => e.id),
+					})),
+				},
 			};
 		},
 	});

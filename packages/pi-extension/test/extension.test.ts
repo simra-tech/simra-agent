@@ -1,8 +1,8 @@
-// The extension against a fake pi API: it registers run_experiment and check_requirements, and both tools run and record.
+// The extension against a fake pi API: it registers run_experiment, wait_experiments, check_requirements and design_record, and the tools run and record.
 // Its tool_result hook adds the netlist check to the result of a call that names a netlist.
 
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -174,4 +174,36 @@ test("the tool_result hook adds the time note when SIMRA_SESSION_DEADLINE is set
 	assert.deepEqual(r.content[0], content[0]);
 	assert.match(r.content[1].text, /Simra session time: .* 0 min left\./);
 	assert.equal(await hook({ toolName: "bash", input: { command: "ls" }, content, isError: false }, { cwd: tmpdir() }), undefined);
+});
+
+test("design_record gives the checks of each file of record, and the guideline about stale checks", async (t) => {
+	const tools = new Map<string, any>();
+	extension({ registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand: () => {}, on: () => {} } as any);
+	const tool = tools.get("design_record");
+	assert.ok(tool, "design_record is not registered");
+	assert.equal(tool.parameters.properties.paths.type, "array");
+	assert.ok(!(tool.parameters.required ?? []).includes("paths"));
+	assert.ok(tool.promptGuidelines.some((g: string) => g.startsWith("A verdict counts only for the file that it ran on.")));
+	assert.ok(tool.promptGuidelines.some((g: string) => /do not overwrite it with your own earlier copy/.test(g)));
+
+	const root = mkdtempSync(join(tmpdir(), "simra-ext-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	writeFileSync(join(root, "simra.config.json"), "{}");
+	writeFileSync(join(root, "block.gds"), "v2");
+	const id = "20261103-100000-aaaaaa";
+	const dir = join(root, "simra", "experiments", id);
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, "experiment.json"), JSON.stringify({
+		id, created_at: "2026-11-03T10:00:00Z", purpose: "drc", adapter: { name: "klayout" }, operation: "drc", inputs: {}, design: {},
+	}));
+	const v1 = "a".repeat(64);
+	writeFileSync(join(dir, "result.json"), JSON.stringify({
+		status: "completed", measurements: { markers: { value: 3, unit: null, status: "measured" } },
+		input_files: { complete: true, files: [{ path: "block.gds", sha256: v1, role: "layout" }] },
+	}));
+	const result = await tool.execute("call-1", { paths: ["block.gds"] }, undefined, undefined, { cwd: root });
+	const text = result.content[0].text;
+	assert.match(text, /^layout block\.gds sha256:[0-9a-f]{12}\n {2}no check on the current file\n/);
+	assert.match(text, new RegExp(`^  ${id} klayout drc completed markers=3 \\(stale: ran on sha256:aaaaaaaaaaaa\\)$`, "m"));
+	assert.deepEqual(result.details.files, [{ path: "block.gds", sha256: result.details.files[0].sha256, current: [], stale: [id] }]);
 });
