@@ -163,11 +163,12 @@ test("an update keeps the previous release, the next one removes the oldest, a r
 test("two installers at the same time leave a working current release", { skip, timeout: 300_000 }, async (t) => {
 	const { url, script } = await releases();
 	const { home, env } = user(t, url);
-	assert.equal((await run("sh", [script("1.0.0")], env)).status, 0);
-	const both = await Promise.all([run("sh", [script("2.0.0")], env), run("sh", [script("3.0.0")], env)]);
+	for (const version of ["1.0.0", "2.0.0"]) assert.equal((await run("sh", [script(version)], env)).status, 0);
+	// 3.0.0 prunes 1.0.0, which a rerun of 1.0.0 finds installed when it does not wait for the lock.
+	const both = await Promise.all([run("sh", [script("3.0.0")], env), run("sh", [script("1.0.0")], env)]);
 	for (const install of both) assert.equal(install.status, 0, install.stderr);
 	const current = readlinkSync(join(home, ".local", "share", "simra", "current"));
-	assert.match(current, /^releases\/[23]\.0\.0$/);
+	assert.match(current, /^releases\/[13]\.0\.0$/);
 	assert.equal((await run(join(home, ".local", "bin", "simra"), ["--version"], env)).stdout.trim(), current.slice("releases/".length));
 	assert.ok(!existsSync(join(home, ".local", "share", "simra", ".lock")));
 });

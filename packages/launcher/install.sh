@@ -85,12 +85,13 @@ sha256() {
 
 installed() { [ "$("$home/releases/$version/simra" --version 2>/dev/null)" = "$version" ]; }
 
-# One installer at a time changes releases/ and current. The lock is a folder.
+# One installer at a time in $home. The lock is a folder.
 lock() {
 	i=0
 	until mkdir "$home/.lock" 2>/dev/null; do
+		[ "$i" -gt 0 ] || say "another installer runs in $home. Waiting for it."
 		i=$((i + 1))
-		[ "$i" -le 60 ] || die "another installer runs in $home. If none runs, remove $home/.lock."
+		[ "$i" -le 600 ] || die "the other installer did not end in 10 minutes. If none runs, remove $home/.lock."
 		sleep 1
 	done
 	locked=$home/.lock
@@ -102,6 +103,7 @@ install_release() {
 	sha=$(printf '%s\n' "$sums" | awk -v f="$tarball" '$2 == f { print $1 }')
 	[ -n "$sha" ] || die "this installer has no $tarball."
 	mkdir -p "$home/releases"
+	lock
 	if installed; then
 		say "simra $version is in $home/releases/$version already."
 	else
@@ -113,9 +115,6 @@ install_release() {
 		tar -xzf "$tmp/$tarball" -C "$tmp"
 		[ "$("$tmp/simra/simra" --version 2>/dev/null)" = "$version" ] ||
 			die "the new simra does not start on this machine (simra --version). Nothing was installed."
-	fi
-	lock
-	if [ -n "$tmp" ] && ! installed; then
 		rm -rf "$home/releases/$version"
 		mv "$tmp/simra" "$home/releases/$version"
 	fi
