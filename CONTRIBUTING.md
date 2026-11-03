@@ -17,6 +17,18 @@ Thank you for your interest. The project is at stage 1. The structure is still s
 2. Run `npm ci`.
 3. Run `npm test`.
 
+## Release
+
+A tag `v<version>` starts `.github/workflows/release.yml`. It runs `npm test`, builds and tests the `simra` binary
+on linux-x64, linux-arm64, darwin-x64 and darwin-arm64, and publishes one tarball per platform with `SHA256SUMS` and
+a build attestation.
+
+1. Set the version in the root `package.json`. Commit the change.
+2. Run `git tag v<version>` and `git push origin v<version>`. The tag must be the version of `package.json`.
+3. Check the release on GitHub when the workflow ends.
+
+Turn on release immutability in the repository settings once. Then the files of a published release cannot change.
+
 ## The pi dependency
 
 pi is a pinned npm dependency: `@earendil-works/pi-coding-agent` at an exact version in the root
