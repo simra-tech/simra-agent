@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-/** The releases page. SIMRA_RELEASES_URL replaces it, for example with a mirror. */
+/** The releases page. The tests replace it with SIMRA_RELEASES_URL. */
 const releases = () => (process.env.SIMRA_RELEASES_URL || "https://github.com/simra-tech/simra-agent/releases").replace(/\/+$/, "");
 const DAY_MS = 24 * 3600 * 1000;
 

@@ -38,7 +38,7 @@ export function uninstall(args: string[]): number {
 		console.log(`removed the simra block from ${profile}`);
 	}
 	// install.sh's files only: SIMRA_HOME may be a folder with other files.
-	for (const name of readdirSync(home).filter((n) => /^(releases|current|current\.new|receipt\.json|\.lock|\.staging\..*)$/.test(n))) {
+	for (const name of readdirSync(home).filter((n) => /^(releases|current|current\.new|receipt\.json|\.staging\..*)$/.test(n))) {
 		rmSync(join(home, name), { recursive: true, force: true });
 	}
 	try {
