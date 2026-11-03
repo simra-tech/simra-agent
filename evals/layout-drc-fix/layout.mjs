@@ -310,12 +310,14 @@ export function deckMetrics(text) {
 
 const EDIT_TOOL = /^(?:write|edit|apply_patch|multi_edit|str_replace_editor)$/i;
 const PYTHON_CALL = /(?:^|[\s;&|('"])python[\d.]*(?:\s+-[A-Za-z]+)*\s+\S/;
+// Files whose write is not an edit of the design: the answer file of the task and notes.
+const NOT_AN_EDIT = /(?:^|\/)(?:answer\.json|[^/]*\.(?:md|txt))$/i;
 
 /**
  * When the agent first edits, in an agent transcript: { first_edit, reads_before_edit: { query, diff, render } }.
  * first_edit: the ordinal (from 1) of the first tool call after the first DRC result that writes a file (a write or
- * edit tool of pi) or runs Python (a script, python -c or a heredoc: the form in which a layout edit is made), or null
- * when no such call follows a DRC result. reads_before_edit: the klayout read operations (query, diff, render) between
+ * edit tool of pi, except answer.json and notes in .md or .txt) or runs Python (a script, python -c or a heredoc: the
+ * form in which a layout edit is made), or null when no such call follows a DRC result. reads_before_edit: the klayout read operations (query, diff, render) between
  * the first DRC result and that call. A Python call that only reads counts as the edit: the metric is for the simra
  * arm, whose prompt rules keep Python for edits.
  */
@@ -338,7 +340,8 @@ export function editMetrics(text) {
 			reads[op] += 1;
 			continue;
 		}
-		const edit = (typeof c.tool === "string" && EDIT_TOOL.test(c.tool)) || (typeof c.command === "string" && PYTHON_CALL.test(c.command));
+		const file = c.args?.path ?? c.args?.file_path ?? "";
+		const edit = (typeof c.tool === "string" && EDIT_TOOL.test(c.tool) && !NOT_AN_EDIT.test(String(file))) || (typeof c.command === "string" && PYTHON_CALL.test(c.command));
 		if (edit) {
 			out.first_edit = n;
 			out.reads_before_edit = { ...reads };

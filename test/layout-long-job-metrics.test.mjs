@@ -88,10 +88,11 @@ test("editMetrics: the first write, edit or Python call after the first DRC resu
 		exp("e", "render"),
 		bash("f", "git status --short"),
 		exp("g", "diff"),
-		{ type: "tool_execution_start", toolCallId: "h", toolName: "write", args: { path: "fix.py", content: "..." } },
-		bash("i", "python3 fix.py"),
+		{ type: "tool_execution_start", toolCallId: "h", toolName: "write", args: { path: "answer.json", content: "{}" } }, // not an edit
+		{ type: "tool_execution_start", toolCallId: "i", toolName: "write", args: { path: "fix.py", content: "..." } },
+		bash("j", "python3 fix.py"),
 	]);
-	assert.deepEqual(editMetrics(pi), { first_edit: 8, reads_before_edit: { query: 1, diff: 1, render: 2 } });
+	assert.deepEqual(editMetrics(pi), { first_edit: 9, reads_before_edit: { query: 1, diff: 1, render: 2 } });
 	// A Python script run is the edit when no write tool precedes it; a heredoc and -c count too.
 	assert.deepEqual(editMetrics(lines([exp("b", "drc"), bash("c", "python3 fix.py")])), { first_edit: 2, reads_before_edit: { query: 0, diff: 0, render: 0 } });
 	assert.deepEqual(editMetrics(lines([exp("b", "drc"), bash("c", "cat x; python3 - <<'EOF'\nprint(1)\nEOF")])).first_edit, 2);
