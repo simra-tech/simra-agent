@@ -2,7 +2,7 @@
 // first-run setup does not run for a rebrand. The login asks for a key and needs no browser, so it works over SSH.
 // /login in simra has the other providers and the subscriptions.
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { showStartupInput, showStartupSelector } from "../../node_modules/@earendil-works/pi-coding-agent/dist/cli/startup-ui.js";
@@ -14,9 +14,15 @@ const SUGGESTIONS = [
 	{ label: "GPT-6.1 Sol: stronger", provider: "openai", model: "gpt-6.1-sol", keys: "https://platform.openai.com/api-keys" },
 ];
 
-/** A first run: pi has no settings, logins or model configuration yet, and no provider key is in the environment. */
+/**
+ * A first run: pi has no settings yet (pi writes settings.json at its first start), auth.json has no credential,
+ * there is no models.json, and no provider key is in the environment.
+ */
 export function isFirstRun(agentDir: string): boolean {
-	if (["settings.json", "auth.json", "models.json"].some((file) => existsSync(join(agentDir, file)))) return false;
+	if (["settings.json", "models.json"].some((file) => existsSync(join(agentDir, file)))) return false;
+	try {
+		if (Object.keys(JSON.parse(readFileSync(join(agentDir, "auth.json"), "utf8"))).length > 0) return false;
+	} catch {}
 	return !Object.entries(process.env).some(([name, value]) => name.endsWith("_API_KEY") && value);
 }
 

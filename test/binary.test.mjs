@@ -111,6 +111,8 @@ test("--version and --help say simra, also through a link", { skip }, (t) => {
 		assert.match(help.stdout, /SIMRA_CODING_AGENT_DIR +- Config directory \(default: ~\/\.config\/simra\)\n[^]* {2}SIMRA_NO_UPDATE_CHECK +- /);
 		assert.doesNotMatch(help.stdout, /AI coding assistant|Update pi|simra list +List installed|PI_SELF_UPDATE_COMMAND|~\/\.simra\/agent/);
 	}
+	// pi's parser finds the help option after other options too.
+	assert.match(simra(t, tmpdir(), ["--offline", "--help"]).stdout, /^simra - a chip-design agent built on pi\n/);
 });
 
 test("the kernel commands go to the kernel, the other arguments to pi", { skip }, (t) => {
@@ -370,31 +372,9 @@ test("simra update and the model API work through HTTPS_PROXY with a company CA"
 	assert.ok(connects.includes("releases.simra.test:443") && connects.includes("models.simra.test:443"), connects.join(" "));
 });
 
-/** Run the binary in a terminal (python3 pty). steps: [text to wait for, keys to send]. Gives the terminal output. */
+/** Run the binary in a terminal (test/fixtures/terminal.py). steps: [text to wait for, keys to send]. Gives the output. */
 function terminal(env, steps) {
-	const script = `
-import fcntl, json, os, pty, select, struct, sys, termios, time
-pid, fd = pty.fork()
-if pid == 0:
-    fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 140, 0, 0))
-    os.execv(sys.argv[2], sys.argv[2:])
-out = b""
-for wait, keys in json.loads(sys.argv[1]):
-    end = time.time() + 30
-    while wait.encode() not in out:
-        if time.time() > end:
-            sys.stdout.write(out.decode(errors="replace"))
-            sys.exit("timeout: no " + repr(wait))
-        if select.select([fd], [], [], 0.2)[0]:
-            try:
-                out += os.read(fd, 65536)
-            except OSError:
-                break
-    os.write(fd, keys.encode())
-os.kill(pid, 9)
-sys.stdout.write(out.decode(errors="replace"))
-`;
-	const run = spawnSync("python3", ["-c", script, JSON.stringify(steps), binary], { cwd: tmpdir(), env: { ...cleanEnv, PI_OFFLINE: "1", ...env }, encoding: "utf8", timeout: 120_000 });
+	const run = spawnSync("python3", ["-I", join(root, "test", "fixtures", "terminal.py"), JSON.stringify(steps), binary], { cwd: tmpdir(), env: { ...cleanEnv, PI_OFFLINE: "1", ...env }, encoding: "utf8", timeout: 120_000 });
 	assert.equal(run.status, 0, `${run.stdout}${run.stderr}`);
 	return run.stdout;
 }
@@ -411,6 +391,10 @@ test("the first run: a welcome, a model, an API key, then pi with the Simra head
 	assert.deepEqual([settings.defaultProvider, settings.defaultModel], ["deepseek", "deepseek-flash"]);
 	// The second start has no welcome.
 	assert.doesNotMatch(terminal({ SIMRA_CODING_AGENT_DIR: agentDir }, [["a chip-design agent built on pi", ""]]), /Welcome to Simra/);
+	// An auth.json without a credential (pi writes {} for simra update --models) does not skip the welcome.
+	const empty = tempDir(t, "agent");
+	writeFileSync(join(empty, "auth.json"), "{}");
+	terminal({ SIMRA_CODING_AGENT_DIR: empty }, [["Welcome to Simra", ""]]);
 	// A provider key in the environment skips the welcome.
 	assert.doesNotMatch(terminal({ SIMRA_CODING_AGENT_DIR: tempDir(t, "agent"), DEEPSEEK_API_KEY: "sk-env" }, [["a chip-design agent built on pi", ""]]), /Welcome to Simra/);
 });
