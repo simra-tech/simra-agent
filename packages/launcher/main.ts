@@ -31,7 +31,9 @@ if (KERNEL_COMMANDS.includes(args[0])) {
 	setupCli();
 	// pi's VERSION is the version of the release: pi reads the package.json next to the binary.
 	setVersions(VERSION, piPackage.version);
-	if (args[0] === "--help" || args[0] === "-h") {
+	// pi's own commands have their own help.
+	const { parseArgs } = await import("../../node_modules/@earendil-works/pi-coding-agent/dist/cli/args.js");
+	if (!["install", "remove", "config", "auth", "mcp"].includes(args[0]) && parseArgs(args).help) {
 		(await import("./help.ts")).printHelp();
 		process.exit(0);
 	}

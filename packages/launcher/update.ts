@@ -29,12 +29,15 @@ async function latestRelease(): Promise<string> {
 /**
  * An extension that shows "simra <v> is available: run simra update" at the start of an interactive session, when
  * the last check found a newer release. Once a day it checks again, in the background; the next start shows the
- * result. SIMRA_NO_UPDATE_CHECK=1 and pi's offline mode turn the check off.
+ * result. A failed check waits a day too. SIMRA_NO_UPDATE_CHECK=1 and pi's offline mode turn the check off.
  */
 export function updateNotice(version: string, stateFile: string) {
+	let done = false;
 	return (pi: ExtensionAPI) => {
+		// Once per process: a new session (/new) starts the event again.
 		pi.on("session_start", (_event, ctx) => {
-			if (!ctx.hasUI || process.env.SIMRA_NO_UPDATE_CHECK === "1" || process.env.PI_OFFLINE) return;
+			if (done || !ctx.hasUI || process.env.SIMRA_NO_UPDATE_CHECK === "1" || process.env.PI_OFFLINE) return;
+			done = true;
 			let state: { checked_at?: string; latest?: string } = {};
 			try {
 				state = JSON.parse(readFileSync(stateFile, "utf8"));
@@ -42,7 +45,11 @@ export function updateNotice(version: string, stateFile: string) {
 			if (state.latest && newer(state.latest, version)) ctx.ui.notify(`simra ${state.latest} is available: run simra update`, "info");
 			if (Math.abs(Date.now() - Date.parse(state.checked_at ?? "")) < DAY_MS) return;
 			const save = (latest = state.latest) => writeFileSync(stateFile, `${JSON.stringify({ checked_at: new Date().toISOString(), latest })}\n`);
-			latestRelease().then(save, () => save()).catch(() => {});
+			// The time of the check is saved first, so that a session that starts in the meantime does not check too.
+			try {
+				save();
+			} catch {}
+			latestRelease().then(save, () => {}).catch(() => {});
 		});
 	};
 }
