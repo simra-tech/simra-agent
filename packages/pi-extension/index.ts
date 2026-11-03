@@ -1,7 +1,8 @@
 // Simra Agent extension for pi.
 // It registers the tools run_experiment (kernel runner + adapters; blocking or detached), wait_experiments (wait for
 // detached runs in one call), check_requirements (requirements.json against the design) and design_record (the checks
-// that ran on each file of record, current or stale), and the command /simra-version.
+// that ran on each file of record, current or stale), and the command /simra-version. In the terminal UI, it sets a
+// Simra header.
 // After a read, write, edit or bash call that names a netlist, it adds the ngspice adapter's netlist check
 // (operation "lint") to the tool result: for example a warning about ".option rshunt".
 // Before a read call on a .pdf file, it extracts the PDF into the cache (kernel extractPdf) and points the call at the
@@ -45,6 +46,14 @@ import {
 	type AdapterManifest,
 } from "@simra-tech/kernel";
 import pkg from "./package.json" with { type: "json" };
+
+/** The versions that /simra-version and the header show. */
+const versions = { simra: pkg.version, pi: PI_VERSION };
+/** Called by the simra binary: there, pi's VERSION is the version of the simra release, and pi's own version comes from the build. */
+export function setVersions(simra: string, pi: string): void {
+	versions.simra = simra;
+	versions.pi = pi;
+}
 
 /** The images that an experiment may add to a tool result: at most MAX_IMAGES PNG outputs of role "image", MAX_IMAGE_BYTES in all. */
 export const MAX_IMAGES = 4;
@@ -220,6 +229,18 @@ export default function (pi: ExtensionAPI) {
 		chipDesignPrompt(event.systemPromptOptions);
 	});
 
+	// In the terminal UI, a Simra header replaces pi's logo and startup help.
+	pi.on("session_start", (_event, ctx) => {
+		if (ctx.mode !== "tui") return;
+		ctx.ui.setHeader((_tui, theme) => ({
+			render: () => [
+				`${theme.bold(theme.fg("accent", "Simra"))} ${theme.fg("dim", `${versions.simra}, a chip-design agent built on pi ${versions.pi}`)}`,
+				theme.fg("dim", "Esc interrupts. / lists the commands. ! runs a shell command. Ctrl+C twice exits."),
+			],
+			invalidate() {},
+		}));
+	});
+
 	// A read of a PDF reads its page-marked text from the cache. A read of <file>.pdf#page=N renders page N to a PNG in
 	// the cache, once, and reads the image. An encrypted or broken PDF, a page outside the PDF, or a model without image
 	// input for a page image blocks the call with the reason.
@@ -250,7 +271,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("simra-version", {
 		description: "Show the Simra Agent and pi versions",
 		handler: async (_args, ctx) => {
-			ctx.ui.notify(`simra-agent ${pkg.version} (pi ${PI_VERSION})`, "info");
+			ctx.ui.notify(`simra-agent ${versions.simra} (pi ${versions.pi})`, "info");
 		},
 	});
 

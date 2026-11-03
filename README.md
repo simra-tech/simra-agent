@@ -54,11 +54,31 @@ skipped. The tests of the klayout operations `query`, `diff` and `render` run on
 (`pip install klayout`); otherwise they are reported as skipped. To also test a container image, set
 `SIMRA_TEST_IMAGE` to an image with ngspice and Python, and `SIMRA_TEST_ENGINE` to `podman` (the default) or `docker`.
 
-## Build the simra binary
+## The simra binary
 
 The `simra` binary has the kernel CLI and pi with the Simra extension in one file, compiled with
-[Bun](https://bun.com). A machine that runs it needs no Node.js and no npm. The commands `run`, `check`, `list`,
-`show`, `wait`, `record` and `pdf` go to the kernel CLI. All other arguments go to pi.
+[Bun](https://bun.com). A machine that runs it needs no Node.js and no npm.
+
+- `simra run`, `check`, `list`, `show`, `wait`, `record` and `pdf` are the commands of the kernel CLI.
+- `simra update` installs the latest release. `simra update --extensions` and `simra update --models` update pi
+  packages and model catalogs.
+- All other arguments go to pi. `simra` without arguments starts the agent in the terminal.
+
+Settings, logins and sessions are in `~/.config/simra` (`$XDG_CONFIG_HOME/simra`; set `SIMRA_CODING_AGENT_DIR` for
+another folder). The settings of a project are in `.simra/` in the project.
+
+The first start in a terminal, without a model login, shows a short welcome. Choose a model (DeepSeek V4.1 Flash:
+low cost, reads images; or GPT-6.1 Sol: stronger) and paste its API key. To use another provider or a subscription,
+type `/login` in simra. When a provider key is set in the environment (for example `DEEPSEEK_API_KEY`), there is no
+welcome.
+
+Once a day, `simra` checks for a newer release and shows `simra <version> is available: run simra update` at the next
+start. It does not update itself. Set `SIMRA_NO_UPDATE_CHECK=1` to stop the check.
+
+Behind a company proxy, set `HTTPS_PROXY`. `simra` trusts the certificate authorities of the system. To add a
+company CA that is not in the system store, set `NODE_EXTRA_CA_CERTS` to its PEM file.
+
+### Build the binary
 
 1. Run `npm ci`.
 2. Run `sh packages/launcher/get-bun.sh <dir>`. It downloads the pinned Bun to `<dir>/bun` and checks its hash.
