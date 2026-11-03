@@ -8,6 +8,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { after, before, test } from "node:test";
@@ -62,12 +63,7 @@ async function makeReleases() {
 	mkdirSync(join(srv, "releases", "latest", "download"), { recursive: true });
 	writeFileSync(join(srv, "releases", "latest", "download", "install.sh"), readFileSync(join(srv, "releases", "download", "v3.0.0", "install.sh")));
 	const requests = [];
-	const server = createServer((req, res) => {
-		requests.push(req.url);
-		const file = join(srv, decodeURIComponent(req.url));
-		if (!file.startsWith(srv) || !existsSync(file)) return res.writeHead(404).end();
-		res.end(readFileSync(file));
-	});
+	const server = createServer(serve(srv, requests));
 	await new Promise((r) => server.listen(0, "127.0.0.1", r));
 	const url = `http://127.0.0.1:${server.address().port}`;
 	const close = () => {
@@ -77,9 +73,19 @@ async function makeReleases() {
 	return { srv, url, requests, close, script: (version) => join(srv, "releases", "download", `v${version}`, "install.sh") };
 }
 
+/** A handler that answers with the files in srv. */
+function serve(srv, requests) {
+	return (req, res) => {
+		requests.push(req.url);
+		const file = join(srv, decodeURIComponent(req.url));
+		if (!file.startsWith(srv) || !existsSync(file)) return res.writeHead(404).end();
+		res.end(readFileSync(file));
+	};
+}
+
 /** Run a command without a terminal and without blocking the event loop (the release server runs in this process). */
-async function run(command, args, env) {
-	const child = spawn(command, args, { env: { ...cleanEnv, ...env }, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+async function run(command, args, env, cwd) {
+	const child = spawn(command, args, { cwd, env: { ...cleanEnv, ...env }, detached: true, stdio: ["ignore", "pipe", "pipe"] });
 	let stdout = "";
 	let stderr = "";
 	child.stdout.on("data", (c) => (stdout += c));
@@ -142,6 +148,46 @@ test("an update keeps the previous release, the next one removes the oldest, a r
 	assert.equal(pinned.status, 0, pinned.stderr);
 	assert.equal(readlinkSync(join(scratch, "current")), "releases/1.0.0");
 	assert.ok(requests.includes("/releases/download/v1.0.0/install.sh"));
+	// simra update installs into the SIMRA_HOME of the running simra.
+	const update = await run(join(scratch, "current", "simra"), ["update"], env);
+	assert.equal(update.status, 0, update.stderr);
+	assert.equal(readlinkSync(join(scratch, "current")), "releases/3.0.0");
+	assert.equal(readlinkSync(join(home, ".local", "bin", "simra")), join(scratch, "current", "simra"));
+	// A relative SIMRA_HOME is relative to the current folder; the link is absolute.
+	const relative = await run("sh", [script("1.0.0")], { ...env, SIMRA_HOME: "rel/simra" }, home);
+	assert.equal(relative.status, 0, relative.stderr);
+	assert.equal(readlinkSync(join(home, ".local", "bin", "simra")), join(home, "rel", "simra", "current", "simra"));
+	assert.equal((await run(join(home, ".local", "bin", "simra"), ["--version"], env)).stdout.trim(), "1.0.0");
+});
+
+test("two installers at the same time leave a working current release", { skip, timeout: 300_000 }, async (t) => {
+	const { url, script } = await releases();
+	const { home, env } = user(t, url);
+	assert.equal((await run("sh", [script("1.0.0")], env)).status, 0);
+	const both = await Promise.all([run("sh", [script("2.0.0")], env), run("sh", [script("3.0.0")], env)]);
+	for (const install of both) assert.equal(install.status, 0, install.stderr);
+	const current = readlinkSync(join(home, ".local", "share", "simra", "current"));
+	assert.match(current, /^releases\/[23]\.0\.0$/);
+	assert.equal((await run(join(home, ".local", "bin", "simra"), ["--version"], env)).stdout.trim(), current.slice("releases/".length));
+	assert.ok(!existsSync(join(home, ".local", "share", "simra", ".lock")));
+});
+
+test("install.sh downloads with the CA in NODE_EXTRA_CA_CERTS when the system CAs fail", { skip: skip || (spawnSync("openssl", ["version"]).status !== 0 && "openssl not on PATH"), timeout: 120_000 }, async (t) => {
+	const { srv, script } = await releases();
+	const dir = tempDir(t, "tls");
+	const ssl = (...args) => assert.equal(spawnSync("openssl", args, { cwd: dir, stdio: "ignore" }).status, 0, args.join(" "));
+	ssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", "ca.key", "-out", "ca.pem", "-days", "1", "-subj", "/CN=Simra Test CA");
+	ssl("req", "-newkey", "rsa:2048", "-nodes", "-keyout", "server.key", "-out", "server.csr", "-subj", "/CN=127.0.0.1");
+	writeFileSync(join(dir, "san.cnf"), "subjectAltName=IP:127.0.0.1\n");
+	ssl("x509", "-req", "-in", "server.csr", "-CA", "ca.pem", "-CAkey", "ca.key", "-CAcreateserial", "-out", "server.pem", "-days", "1", "-extfile", "san.cnf");
+	const server = createHttpsServer({ key: readFileSync(join(dir, "server.key")), cert: readFileSync(join(dir, "server.pem")) }, serve(srv, []));
+	await new Promise((r) => server.listen(0, "127.0.0.1", r));
+	t.after(() => server.close());
+	const { env } = user(t, `https://127.0.0.1:${server.address().port}`);
+	const untrusted = await run("sh", [script("1.0.0")], env);
+	assert.notEqual(untrusted.status, 0, untrusted.stderr);
+	const trusted = await run("sh", [script("1.0.0")], { ...env, NODE_EXTRA_CA_CERTS: join(dir, "ca.pem") });
+	assert.equal(trusted.status, 0, trusted.stderr);
 });
 
 test("a wrong hash installs nothing", { skip, timeout: 120_000 }, async (t) => {
@@ -181,22 +227,32 @@ test("install.sh stops for root, musl, macOS 12, another system or CPU", { skip,
 test("with a terminal, install.sh asks and adds the PATH block once; simra uninstall removes it and keeps the settings", { skip: skip || (spawnSync("python3", ["--version"]).status !== 0 && "python3 not on PATH"), timeout: 180_000 }, async (t) => {
 	const { url, script } = await releases();
 	const { home, env } = user(t, url);
-	writeFileSync(join(home, ".bashrc"), "# my profile\n");
+	// A profile without a newline at the end.
+	writeFileSync(join(home, ".bashrc"), "export BEFORE=1");
 	const terminal = await run("python3", ["-I", join(root, "test", "fixtures", "terminal.py"), JSON.stringify([["[Y/n]", "y\r"], ["Run simra to start", ""]]), "/bin/sh", script("3.0.0")], env);
 	assert.equal(terminal.status, 0, terminal.stdout + terminal.stderr);
 	const bashrc = readFileSync(join(home, ".bashrc"), "utf8");
-	assert.equal(bashrc, `# my profile\n\n# >>> simra >>>\nexport PATH="${home}/.local/bin:$PATH"\n# <<< simra <<<\n`);
+	assert.equal(bashrc, `export BEFORE=1\n# >>> simra >>>\nexport PATH="${home}/.local/bin:$PATH"\n# <<< simra <<<\n`);
 	const again = await run("sh", [script("3.0.0")], env);
 	assert.match(again.stderr, /adds .* to the PATH already/);
 	assert.equal(readFileSync(join(home, ".bashrc"), "utf8"), bashrc);
+	writeFileSync(join(home, ".bashrc"), `${bashrc}export AFTER=2\n`);
 	mkdirSync(join(home, ".config", "simra"), { recursive: true });
 	writeFileSync(join(home, ".config", "simra", "auth.json"), "{}");
 	const uninstall = await run(join(home, ".local", "bin", "simra"), ["uninstall"], env);
 	assert.equal(uninstall.status, 0, uninstall.stderr);
-	assert.equal(readFileSync(join(home, ".bashrc"), "utf8"), "# my profile\n");
+	assert.equal(readFileSync(join(home, ".bashrc"), "utf8"), "export BEFORE=1\nexport AFTER=2\n");
 	assert.ok(!existsSync(join(home, ".local", "bin", "simra")));
 	assert.ok(!existsSync(join(home, ".local", "share", "simra")));
 	assert.ok(existsSync(join(home, ".config", "simra", "auth.json")));
+	// A link to an installation that is gone does not stop simra uninstall, and goes too.
+	assert.equal((await run("sh", [script("3.0.0")], env)).status, 0);
+	rmSync(join(home, ".local", "bin", "simra"));
+	symlinkSync(join(home, "gone", "current", "simra"), join(home, ".local", "bin", "simra"));
+	const dangling = await run(join(home, ".local", "share", "simra", "current", "simra"), ["uninstall"], env);
+	assert.equal(dangling.status, 0, dangling.stderr);
+	assert.ok(!existsSync(join(home, ".local", "share", "simra")));
+	assert.throws(() => readlinkSync(join(home, ".local", "bin", "simra")));
 });
 
 const images = process.env.SIMRA_TEST_INSTALL_IMAGES?.split(",").filter(Boolean) ?? [];

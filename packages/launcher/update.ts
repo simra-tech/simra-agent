@@ -2,14 +2,20 @@
 // day an interactive session checks for a newer release and shows a notice.
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /** The releases page. SIMRA_RELEASES_URL replaces it, for example with a mirror. */
 const releases = () => (process.env.SIMRA_RELEASES_URL || "https://github.com/simra-tech/simra-agent/releases").replace(/\/+$/, "");
 const DAY_MS = 24 * 3600 * 1000;
+
+/** The SIMRA_HOME of this binary, when install.sh installed it: <home>/releases/<version>/simra, and <home>/receipt.json. */
+export function installHome(): string | undefined {
+	const home = dirname(dirname(dirname(realpathSync(process.execPath))));
+	return existsSync(join(home, "receipt.json")) ? home : undefined;
+}
 
 /** true when version a (x.y.z) is newer than version b. */
 export function newer(a: string, b: string): boolean {
@@ -54,7 +60,10 @@ export function updateNotice(version: string, stateFile: string) {
 	};
 }
 
-/** simra update: download the install.sh of the latest release and run it. It installs the release next to this one. */
+/**
+ * simra update: download the install.sh of the latest release and run it. It installs the release next to this one:
+ * SIMRA_HOME is the folder of this installation, unless the environment sets it.
+ */
 export async function selfUpdate(args: string[]): Promise<number> {
 	if (args.length > 0) {
 		console.error("usage: simra update | simra update --extensions | simra update --models");
@@ -66,7 +75,9 @@ export async function selfUpdate(args: string[]): Promise<number> {
 	const dir = mkdtempSync(join(tmpdir(), "simra-update-"));
 	try {
 		writeFileSync(join(dir, "install.sh"), await response.text());
-		return spawnSync("sh", [join(dir, "install.sh")], { stdio: "inherit" }).status ?? 1;
+		const home = process.env.SIMRA_HOME || installHome();
+		const env = home ? { ...process.env, SIMRA_HOME: home } : process.env;
+		return spawnSync("sh", [join(dir, "install.sh")], { stdio: "inherit", env }).status ?? 1;
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
