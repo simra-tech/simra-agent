@@ -16,7 +16,7 @@
 
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import {
 	type BeforeAgentStartEvent,
 	createReadToolDefinition,

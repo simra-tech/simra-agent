@@ -24,9 +24,9 @@ pi is a pinned npm dependency: `@earendil-works/pi-coding-agent` at an exact ver
 The extension package follows the pi package rules: it declares pi as a peer dependency with the range `*`
 and does not bundle it. pi supplies its own copy at run time.
 
-Current pin: **1.4.0** (released 2026-10-21). It was the latest release when the project started. The pin is
-exact, so every install and every evaluation uses the same agent loop. Its documented extension API covers
-what stage 0 needs (`registerCommand`, RPC mode, `get_commands`).
+Current pin: **1.5.0** (released 2026-11-02). It was the latest release before the work on the `simra` binary
+(#3). The pin is exact, so every install and every evaluation uses the same agent loop. The project started on
+1.4.0.
 
 To change the pin:
 
