@@ -18,6 +18,8 @@ jobs:
   build:
     needs: test
     strategy:
+      # Every platform reports, also when another one fails.
+      fail-fast: false
       matrix:
         include:
           - { platform: linux-x64, runner: ubuntu-24.04 }

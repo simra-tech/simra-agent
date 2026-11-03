@@ -190,21 +190,23 @@ test("install.sh stops for root, musl, macOS 12, another system or CPU", { skip,
 test("with a terminal, install.sh asks and adds the PATH block once; simra uninstall removes it and keeps the settings", { skip: skip || (spawnSync("python3", ["--version"]).status !== 0 && "python3 not on PATH"), timeout: 180_000 }, async (t) => {
 	const { url, script } = await releases();
 	const { home, env } = user(t, url);
+	// The profile of bash: on macOS, terminals start login shells, so install.sh uses .bash_profile there.
+	const profile = join(home, process.platform === "darwin" ? ".bash_profile" : ".bashrc");
 	// A profile without a newline at the end.
-	writeFileSync(join(home, ".bashrc"), "export BEFORE=1");
+	writeFileSync(profile, "export BEFORE=1");
 	const terminal = await run("python3", ["-I", join(root, "test", "fixtures", "terminal.py"), JSON.stringify([["[Y/n]", "y\r"], ["Run simra to start", ""]]), "/bin/sh", script("3.0.0")], env);
 	assert.equal(terminal.status, 0, terminal.stdout + terminal.stderr);
-	const bashrc = readFileSync(join(home, ".bashrc"), "utf8");
+	const bashrc = readFileSync(profile, "utf8");
 	assert.equal(bashrc, `export BEFORE=1\n# >>> simra >>>\nexport PATH="${home}/.local/bin:$PATH"\n# <<< simra <<<\n`);
 	const again = await run("sh", [script("3.0.0")], env);
 	assert.match(again.stderr, /adds .* to the PATH already/);
-	assert.equal(readFileSync(join(home, ".bashrc"), "utf8"), bashrc);
-	writeFileSync(join(home, ".bashrc"), `${bashrc}export AFTER=2\n`);
+	assert.equal(readFileSync(profile, "utf8"), bashrc);
+	writeFileSync(profile, `${bashrc}export AFTER=2\n`);
 	mkdirSync(join(home, ".config", "simra"), { recursive: true });
 	writeFileSync(join(home, ".config", "simra", "auth.json"), "{}");
 	const uninstall = await run(join(home, ".local", "bin", "simra"), ["uninstall"], env);
 	assert.equal(uninstall.status, 0, uninstall.stderr);
-	assert.equal(readFileSync(join(home, ".bashrc"), "utf8"), "export BEFORE=1\nexport AFTER=2\n");
+	assert.equal(readFileSync(profile, "utf8"), "export BEFORE=1\nexport AFTER=2\n");
 	assert.ok(!existsSync(join(home, ".local", "bin", "simra")));
 	assert.ok(!existsSync(join(home, ".local", "share", "simra")));
 	assert.ok(existsSync(join(home, ".config", "simra", "auth.json")));
