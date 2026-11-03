@@ -78,11 +78,10 @@ skipped. The tests of the klayout operations `query`, `diff` and `render` run on
 ## The simra binary
 
 The `simra` binary has the kernel CLI and pi with the Simra extension in one file, compiled with
-[Bun](https://bun.com). A machine that runs it needs no Node.js and no npm.
+[Bun](https://bun.com).
 
 - `simra run`, `check`, `list`, `show`, `wait`, `record` and `pdf` are the commands of the kernel CLI.
-- `simra update` installs the latest release. `simra update --extensions` and `simra update --models` update pi
-  packages and model catalogs. `simra uninstall` removes simra.
+- `simra update --extensions` and `simra update --models` update pi packages and model catalogs.
 - All other arguments go to pi. `simra` without arguments starts the agent in the terminal.
 
 Settings, logins and sessions are in `~/.config/simra` (`$XDG_CONFIG_HOME/simra`; set `SIMRA_CODING_AGENT_DIR` for
@@ -93,21 +92,18 @@ low cost, reads images; or GPT-6.1 Sol: stronger) and paste its API key. To use 
 type `/login` in simra. When a provider key is set in the environment (for example `DEEPSEEK_API_KEY`), there is no
 welcome.
 
-Once a day, `simra` checks for a newer release and shows `simra <version> is available: run simra update` at the next
-start. It does not update itself. Set `SIMRA_NO_UPDATE_CHECK=1` to stop the check.
+Once a day, `simra` checks for a newer release and shows `simra <version> is available: run simra update`. It does
+not update itself. Set `SIMRA_NO_UPDATE_CHECK=1` to stop the check.
 
-Behind a company proxy, set `HTTPS_PROXY`. `simra` trusts the certificate authorities of the system. To add a
-company CA that is not in the system store, set `NODE_EXTRA_CA_CERTS` to its PEM file.
+Behind a company proxy, set `HTTPS_PROXY`. `simra` and the installer trust the certificate authorities of the system.
 
 ### Build the binary
 
 1. Run `npm ci`.
 2. Run `sh packages/launcher/get-bun.sh <dir>`. It downloads the pinned Bun to `<dir>/bun` and checks its hash.
-3. Run `BUN=<dir>/bun node packages/launcher/build.ts`. It writes the release folder `dist/simra-<os>-<cpu>/`: the
-   binary, a `package.json` with the version and the name for pi, pi's themes and docs, and `adapters/` and
-   `technologies/`. Keep the folder together: the binary reads these files from its own folder.
-4. Run `SIMRA_BINARY=dist/simra-<os>-<cpu>/simra npm test`. The tests in `test/binary.test.mjs` then run against the
-   binary. Without `SIMRA_BINARY`, they are reported as skipped.
+3. Run `BUN=<dir>/bun node packages/launcher/build.ts`. It writes the release folder `dist/simra-<os>-<cpu>/`. The
+   binary reads its other files from this folder.
+4. Run `SIMRA_BINARY=dist/simra-<os>-<cpu>/simra npm test`. Without `SIMRA_BINARY`, the binary tests are skipped.
 
 ## Environment image
 

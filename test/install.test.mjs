@@ -8,7 +8,6 @@ import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { createServer as createHttpsServer } from "node:https";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { after, before, test } from "node:test";
@@ -125,7 +124,7 @@ test("install.sh installs simra, links it, writes the receipt, and changes nothi
 	assert.deepEqual(changed, [".local/bin/simra"]);
 });
 
-test("an update keeps the previous release, the next one removes the oldest, a rerun downloads nothing", { skip, timeout: 300_000 }, async (t) => {
+test("an update keeps the previous release, the next one removes the oldest", { skip, timeout: 300_000 }, async (t) => {
 	const { url, requests, script } = await releases();
 	const { home, env } = user(t, url);
 	const simraHome = join(home, ".local", "share", "simra");
@@ -136,12 +135,6 @@ test("an update keeps the previous release, the next one removes the oldest, a r
 		assert.equal((await run(join(home, ".local", "bin", "simra"), ["--version"], env)).stdout.trim(), version);
 		assert.deepEqual(releasesOf(), kept);
 	}
-	const downloads = requests.filter((r) => r.endsWith(".tar.gz")).length;
-	const again = await run("sh", [script("3.0.0")], env);
-	assert.equal(again.status, 0, again.stderr);
-	assert.match(again.stderr, /simra 3\.0\.0 is in .* already/);
-	assert.equal(requests.filter((r) => r.endsWith(".tar.gz")).length, downloads);
-	assert.deepEqual(releasesOf(), ["2.0.0", "3.0.0"]);
 	// SIMRA_VERSION runs the installer of that release. SIMRA_HOME puts it elsewhere.
 	const scratch = join(tempDir(t, "scratch"), "simra");
 	const pinned = await run("sh", [script("3.0.0")], { ...env, SIMRA_VERSION: "v1.0.0", SIMRA_HOME: scratch });
@@ -158,37 +151,6 @@ test("an update keeps the previous release, the next one removes the oldest, a r
 	assert.equal(relative.status, 0, relative.stderr);
 	assert.equal(readlinkSync(join(home, ".local", "bin", "simra")), join(home, "rel", "simra", "current", "simra"));
 	assert.equal((await run(join(home, ".local", "bin", "simra"), ["--version"], env)).stdout.trim(), "1.0.0");
-});
-
-test("two installers at the same time leave a working current release", { skip, timeout: 300_000 }, async (t) => {
-	const { url, script } = await releases();
-	const { home, env } = user(t, url);
-	for (const version of ["1.0.0", "2.0.0"]) assert.equal((await run("sh", [script(version)], env)).status, 0);
-	// 3.0.0 prunes 1.0.0, which a rerun of 1.0.0 finds installed when it does not wait for the lock.
-	const both = await Promise.all([run("sh", [script("3.0.0")], env), run("sh", [script("1.0.0")], env)]);
-	for (const install of both) assert.equal(install.status, 0, install.stderr);
-	const current = readlinkSync(join(home, ".local", "share", "simra", "current"));
-	assert.match(current, /^releases\/[13]\.0\.0$/);
-	assert.equal((await run(join(home, ".local", "bin", "simra"), ["--version"], env)).stdout.trim(), current.slice("releases/".length));
-	assert.ok(!existsSync(join(home, ".local", "share", "simra", ".lock")));
-});
-
-test("install.sh downloads with the CA in NODE_EXTRA_CA_CERTS when the system CAs fail", { skip: skip || (spawnSync("openssl", ["version"]).status !== 0 && "openssl not on PATH"), timeout: 120_000 }, async (t) => {
-	const { srv, script } = await releases();
-	const dir = tempDir(t, "tls");
-	const ssl = (...args) => assert.equal(spawnSync("openssl", args, { cwd: dir, stdio: "ignore" }).status, 0, args.join(" "));
-	ssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", "ca.key", "-out", "ca.pem", "-days", "1", "-subj", "/CN=Simra Test CA");
-	ssl("req", "-newkey", "rsa:2048", "-nodes", "-keyout", "server.key", "-out", "server.csr", "-subj", "/CN=127.0.0.1");
-	writeFileSync(join(dir, "san.cnf"), "subjectAltName=IP:127.0.0.1\n");
-	ssl("x509", "-req", "-in", "server.csr", "-CA", "ca.pem", "-CAkey", "ca.key", "-CAcreateserial", "-out", "server.pem", "-days", "1", "-extfile", "san.cnf");
-	const server = createHttpsServer({ key: readFileSync(join(dir, "server.key")), cert: readFileSync(join(dir, "server.pem")) }, serve(srv, []));
-	await new Promise((r) => server.listen(0, "127.0.0.1", r));
-	t.after(() => server.close());
-	const { env } = user(t, `https://127.0.0.1:${server.address().port}`);
-	const untrusted = await run("sh", [script("1.0.0")], env);
-	assert.notEqual(untrusted.status, 0, untrusted.stderr);
-	const trusted = await run("sh", [script("1.0.0")], { ...env, NODE_EXTRA_CA_CERTS: join(dir, "ca.pem") });
-	assert.equal(trusted.status, 0, trusted.stderr);
 });
 
 test("a wrong hash installs nothing", { skip, timeout: 120_000 }, async (t) => {
@@ -246,14 +208,6 @@ test("with a terminal, install.sh asks and adds the PATH block once; simra unins
 	assert.ok(!existsSync(join(home, ".local", "bin", "simra")));
 	assert.ok(!existsSync(join(home, ".local", "share", "simra")));
 	assert.ok(existsSync(join(home, ".config", "simra", "auth.json")));
-	// A link to an installation that is gone does not stop simra uninstall, and goes too.
-	assert.equal((await run("sh", [script("3.0.0")], env)).status, 0);
-	rmSync(join(home, ".local", "bin", "simra"));
-	symlinkSync(join(home, "gone", "current", "simra"), join(home, ".local", "bin", "simra"));
-	const dangling = await run(join(home, ".local", "share", "simra", "current", "simra"), ["uninstall"], env);
-	assert.equal(dangling.status, 0, dangling.stderr);
-	assert.ok(!existsSync(join(home, ".local", "share", "simra")));
-	assert.throws(() => readlinkSync(join(home, ".local", "bin", "simra")));
 });
 
 const images = process.env.SIMRA_TEST_INSTALL_IMAGES?.split(",").filter(Boolean) ?? [];

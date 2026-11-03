@@ -1,9 +1,9 @@
 // simra uninstall: removes what install.sh installed: the releases in SIMRA_HOME, the link ~/.local/bin/simra and the
 // PATH block in the shell profile. The settings, logins and sessions in ~/.config/simra stay.
 
-import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, sep } from "node:path";
+import { join } from "node:path";
 import { installHome } from "./update.ts";
 
 export function uninstall(args: string[]): number {
@@ -16,12 +16,8 @@ export function uninstall(args: string[]): number {
 		console.error(`simra uninstall: install.sh did not install ${realpathSync(process.execPath)} (no receipt.json).`);
 		return 1;
 	}
-	// The link of install.sh points to <home>/current/simra. A link to a removed installation is removed too.
 	const link = join(homedir(), ".local", "bin", "simra");
-	if (lstatSync(link, { throwIfNoEntry: false })?.isSymbolicLink()) {
-		const target = existsSync(link) ? realpathSync(link) : readlinkSync(link);
-		if (target.startsWith(home + sep) || target.endsWith(join("current", "simra"))) rmSync(link);
-	}
+	if (lstatSync(link, { throwIfNoEntry: false })?.isSymbolicLink()) rmSync(link);
 	// The profiles that install.sh can change.
 	const profiles = [
 		join(process.env.ZDOTDIR || homedir(), ".zshrc"),
@@ -38,7 +34,7 @@ export function uninstall(args: string[]): number {
 		console.log(`removed the simra block from ${profile}`);
 	}
 	// install.sh's files only: SIMRA_HOME may be a folder with other files.
-	for (const name of readdirSync(home).filter((n) => /^(releases|current|current\.new|receipt\.json|\.lock|\.staging\..*)$/.test(n))) {
+	for (const name of readdirSync(home).filter((n) => /^(releases|current|current\.new|receipt\.json|\.staging\..*)$/.test(n))) {
 		rmSync(join(home, name), { recursive: true, force: true });
 	}
 	try {

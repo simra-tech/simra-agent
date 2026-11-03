@@ -1,11 +1,5 @@
-// Build the simra binary and its release folder for this machine:
-//
+// Build the simra binary and its release folder (pi's binary release layout) for this machine. Needs Bun ($BUN or PATH).
 //   node packages/launcher/build.ts [--out <dir>]
-//
-// The folder (default dist/simra-<os>-<cpu>) has the layout of pi's binary release: the binary simra, a package.json
-// (name, version, piConfig), pi's theme, assets, export templates, docs, examples, Photon WebAssembly and clipboard
-// helper, and Simra's adapters/ and technologies/. The version is the version of the root package.json.
-// It needs Bun: $BUN, else bun on the PATH.
 
 import { execFileSync } from "node:child_process";
 import { copyFileSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -24,9 +18,8 @@ const { version } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"))
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 console.log(`bun ${execFileSync(bun, ["--version"], { encoding: "utf8" }).trim()}: simra ${version} for ${platform} in ${out}`);
-// The workers are entries too, so that Bun embeds them (see src/). The binary does not read bunfig.toml or .env files of
-// the current folder (as pi's binary). Bytecode makes the start 4 to 10 times faster and the binary about 20 % larger.
-// The binary trusts the certificate authorities of the system (for example a company CA), not only Bun's own list.
+// The workers are entries too, so that Bun embeds them (see src/). The other flags: as pi's binary, faster start
+// (bytecode), and the system's certificate authorities (a company CA).
 const launcher = join(root, "packages/launcher");
 execFileSync(
 	bun,

@@ -3,15 +3,8 @@
 #
 #   curl -fsSL https://github.com/simra-tech/simra-agent/releases/latest/download/install.sh | sh
 #
-# It downloads simra @VERSION@ for this machine and checks its SHA-256 hash. It unpacks it to
-# $SIMRA_HOME/releases/@VERSION@ (default ~/.local/share/simra) and links ~/.local/bin/simra to it. If ~/.local/bin is
-# not on the PATH, it asks before it adds a marked block to your shell profile. It changes nothing else.
-# Run it again to update. It keeps the previous release. "simra uninstall" removes simra.
-#
-#   SIMRA_VERSION=<version>   install that release
-#   SIMRA_HOME=<dir>          install to <dir>, for example a scratch disk
-#   SIMRA_NO_MODIFY_PATH=1    do not change the shell profile
-#   SIMRA_RELEASES_URL=<url>  download from a mirror of the releases page
+# It installs simra @VERSION@ (hash checked) to ~/.local/share/simra and links ~/.local/bin/simra. It asks before it
+# changes your shell profile. Options: SIMRA_VERSION=<v>, SIMRA_HOME=<dir>, SIMRA_NO_MODIFY_PATH=1.
 set -eu
 
 version=@VERSION@
@@ -23,7 +16,6 @@ releases=${SIMRA_RELEASES_URL:-https://github.com/simra-tech/simra-agent/release
 home=${SIMRA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/simra}
 bin=$HOME/.local/bin
 tmp=
-locked=
 
 say() { printf 'simra: %s\n' "$*" >&2; }
 die() {
@@ -51,8 +43,6 @@ check_machine() {
 	aarch64 | arm64) cpu=arm64 ;;
 	*) die "the CPU $(uname -m) is not supported. simra runs on x64 and arm64." ;;
 	esac
-	# A shell under Rosetta on an Apple silicon Mac reports x86_64.
-	if [ "$os" = darwin ] && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = 1 ]; then cpu=arm64; fi
 	platform=$os-$cpu
 	command -v curl >/dev/null || command -v wget >/dev/null || die "curl or wget is needed to download simra."
 	command -v sha256sum >/dev/null || command -v shasum >/dev/null || command -v openssl >/dev/null ||
@@ -60,16 +50,12 @@ check_machine() {
 	for tool in tar gzip; do command -v "$tool" >/dev/null || die "$tool is needed to unpack simra."; done
 }
 
-# Downloads $1 to $2. curl and wget use HTTPS_PROXY and the CAs of the system. If that fails and NODE_EXTRA_CA_CERTS
-# names a CA file (simra uses it), they try again with that CA.
+# Downloads $1 to $2. curl and wget use HTTPS_PROXY.
 fetch() {
 	if command -v curl >/dev/null; then
-		curl -fsSL --retry 2 -o "$2" "$1" ||
-			{ [ -n "${NODE_EXTRA_CA_CERTS:-}" ] && curl -fsSL --retry 2 --cacert "$NODE_EXTRA_CA_CERTS" -o "$2" "$1"; }
+		curl -fsSL --retry 2 -o "$2" "$1"
 	else
-		export https_proxy="${https_proxy:-${HTTPS_PROXY:-}}"
-		wget -q -O "$2" "$1" ||
-			{ [ -n "${NODE_EXTRA_CA_CERTS:-}" ] && wget -q --ca-certificate="$NODE_EXTRA_CA_CERTS" -O "$2" "$1"; }
+		https_proxy=${https_proxy:-${HTTPS_PROXY:-}} wget -q -O "$2" "$1"
 	fi
 }
 
@@ -83,28 +69,13 @@ sha256() {
 	fi
 }
 
-installed() { [ "$("$home/releases/$version/simra" --version 2>/dev/null)" = "$version" ]; }
-
-# One installer at a time in $home. The lock is a folder.
-lock() {
-	i=0
-	until mkdir "$home/.lock" 2>/dev/null; do
-		[ "$i" -gt 0 ] || say "another installer runs in $home. Waiting for it."
-		i=$((i + 1))
-		[ "$i" -le 600 ] || die "the other installer did not end in 10 minutes. If none runs, remove $home/.lock."
-		sleep 1
-	done
-	locked=$home/.lock
-}
-
 # Puts the release in $home/releases/$version, then points $home/current at it in one rename.
 install_release() {
 	tarball=simra-$platform.tar.gz
 	sha=$(printf '%s\n' "$sums" | awk -v f="$tarball" '$2 == f { print $1 }')
 	[ -n "$sha" ] || die "this installer has no $tarball."
 	mkdir -p "$home/releases"
-	lock
-	if installed; then
+	if [ -d "$home/releases/$version" ]; then
 		say "simra $version is in $home/releases/$version already."
 	else
 		# The staging folder is on the same disk, so the move into releases/ is a rename.
@@ -130,8 +101,6 @@ install_release() {
 	fi
 	printf '{"version": "%s", "platform": "%s", "sha256": "%s", "installed_at": "%s"}\n' \
 		"$version" "$platform" "$sha" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$home/receipt.json"
-	rmdir "$locked"
-	locked=
 }
 
 link() {
@@ -175,7 +144,7 @@ add_to_path() {
 main() {
 	check_machine
 	case $home in /*) ;; *) home=$PWD/$home ;; esac
-	trap 'rm -rf "$tmp"; [ -z "$locked" ] || rmdir "$locked"' EXIT
+	trap 'rm -rf "$tmp"' EXIT
 	if [ -n "${SIMRA_VERSION:-}" ] && [ "${SIMRA_VERSION#v}" != "$version" ]; then
 		# The installer of that release has its hashes.
 		tmp=$(mktemp -d)
