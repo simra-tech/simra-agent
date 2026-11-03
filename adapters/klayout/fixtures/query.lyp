@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Test fixture for the operations query and diff: three named layers in the two name forms of the PDK files
-     (IHP: Metal1.drawing; SKY130: "Via1 - 19/0"). The layer 99/0 has no name. -->
+<!-- Test fixture for the operations query, diff and render: three named layers in the two name forms of the PDK
+     files (IHP: Metal1.drawing; SKY130: "Via1 - 19/0"). The layer 99/0 has no name. Metal1 is solid blue and Via1
+     solid magenta, so that the tests of render can check pixels. -->
 <layer-properties>
  <properties>
   <name>Metal1.drawing</name>
   <source>8/0</source>
+  <fill-color>#0000ff</fill-color>
+  <frame-color>#0000ff</frame-color>
+  <dither-pattern>I0</dither-pattern>
  </properties>
  <properties>
   <name>Metal1.text</name>
@@ -13,6 +17,9 @@
  <properties>
   <name>Via1 - 19/0</name>
   <source>19/0@1</source>
+  <fill-color>#ff00ff</fill-color>
+  <frame-color>#ff00ff</frame-color>
+  <dither-pattern>I0</dither-pattern>
  </properties>
  <properties>
   <name>Metal2.drawing</name>

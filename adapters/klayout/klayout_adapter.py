@@ -38,6 +38,19 @@ Operation "query" (see layout_read.py). Inputs:
 It reads the layout with the KLayout Python module klayout.db in this process (no external command). The layer
 names come from the file of klayout.<pdk>.layer_properties. Measurements: queries, rows, runtime_s. The answer is
 in "report" (at most 200 lines) and in work/query.json.
+
+Operation "render" (see layout_render.py). Inputs:
+  gds, cell, technology   as for drc
+  box           [x1, y1, x2, y2] in µm, in top-cell coordinates: the region to draw; or
+  drc, rule     the id of a completed klayout drc experiment and a rule name: draw a marker of that rule, with
+                index (default 1) or all (up to max, default 4), the marker outlined in red
+  layers        optional; the layers to show (default: all)
+  size          optional; the longer side in pixels (default 1024, at most 2048)
+  labels, grid  optional; show texts (default true), show the scale bar and, for a view up to 50 µm, a 1 µm grid
+  hierarchy     optional; the levels of hierarchy to draw (default: all)
+It draws with the KLayout Python module klayout.lay in this process, with the layer colours of the layer
+properties file. Each image is work/render.png (or render-<n>.png), an output with role "image". Measurements:
+images, runtime_s. The report has one line per image: the box, the view box, the file and the layers shown.
 """
 
 import hashlib
@@ -52,6 +65,7 @@ import xml.etree.ElementTree as ET
 
 import layout_diff
 import layout_read
+import layout_render
 
 CONTRACT = "simra.adapter/0"
 HERE = os.path.dirname(os.path.realpath(__file__))
@@ -191,7 +205,8 @@ def outputs_of(work_dir, root):
     for base, dirs, files in os.walk(work_dir):
         dirs.sort()
         for name in sorted(files):
-            out.append(file_entry(os.path.join(base, name), root))
+            role = "image" if name.lower().endswith(".png") else None
+            out.append(file_entry(os.path.join(base, name), root, role))
     return out
 
 
@@ -674,7 +689,8 @@ def read_setup(request, layout_keys):
     if pack_path:
         files.append(file_entry(pack_path, root, "technology"))
     return {"root": root, "inputs": inputs, "tool": tool, "db": db, "names": names, "diagnostics": diagnostics,
-            "files": files, "complete": complete, "work_dir": request["work_dir"],
+            "files": files, "complete": complete, "lyp": lyp if lyp and os.path.isfile(lyp) else None,
+            "work_dir": request["work_dir"],
             "exp_dir": os.path.dirname(os.path.realpath(request["work_dir"]))}, None
 
 
@@ -868,6 +884,49 @@ def diff(request):
         response["commands"] = commands
     return response
 
+RENDER_UNITS = (("images", None), ("runtime_s", "s"))
+
+
+def render(request):
+    ctx, error = read_setup(request, ("gds",))
+    if error:
+        error["measurements"] = none_measured(RENDER_UNITS)
+        return error
+    inputs, tool = ctx["inputs"], ctx["tool"]
+
+    def fail(message):
+        return failure(tool, message, none_measured(RENDER_UNITS))
+
+    lay = layout_render.klayout_lay()
+    if lay is None:
+        return fail("the KLayout Python module klayout.lay is not installed for {} (pip package klayout)".format(sys.executable))
+    tool["module"] = "klayout.lay"
+    gds = os.path.join(ctx["root"], inputs["gds"])
+    if not os.path.isfile(gds):
+        return fail("input 'gds': file not found: {}".format(inputs["gds"]))
+    table = None
+    try:
+        kind = layout_render.view_kind(inputs)
+    except layout_read.QueryError as e:
+        return fail(str(e))
+    if kind == "drc":
+        table, message = drc_table(ctx, "drc", gds)
+        if message:
+            return fail(message)
+    start = time.monotonic()
+    try:
+        report, full, paths = layout_render.run_render(lay, ctx["db"], gds, inputs["cell"], inputs, ctx["names"], ctx["lyp"],
+                                                       ctx["work_dir"], lambda p: rel(ctx, p), table)
+    except layout_read.QueryError as e:
+        return fail(str(e))
+    except RuntimeError as e:
+        return fail("klayout.lay could not draw {}: {}".format(inputs["gds"], str(e).splitlines()[0] if str(e) else e))
+    runtime = round(time.monotonic() - start, 3)
+    full.update({"gds": inputs["gds"], "drc": inputs.get("drc"), "rule": inputs.get("rule"), "runtime_s": runtime})
+    write_json(os.path.join(ctx["work_dir"], "render.json"), full)
+    measurements = {"images": measured(len(paths), None, "adapter"), "runtime_s": measured(runtime, "s", "adapter")}
+    return read_response(ctx, "completed", measurements, report, "render.json", [gds])
+
 
 # ---------------------------------------------------------------- main
 
@@ -880,7 +939,7 @@ def main(argv):
     if request.get("contract") != CONTRACT:
         sys.stderr.write("unsupported contract: {}\n".format(request.get("contract")))
         return 2
-    operation = {"drc": drc, "lvs": lvs, "query": query, "diff": diff}.get(request.get("operation"))
+    operation = {"drc": drc, "lvs": lvs, "query": query, "diff": diff, "render": render}.get(request.get("operation"))
     if operation is None:
         response = failure(None, "unknown operation: {}".format(request.get("operation")))
     else:

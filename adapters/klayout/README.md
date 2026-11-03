@@ -1,21 +1,22 @@
 # klayout adapter
 
 The klayout adapter runs the stock KLayout DRC and LVS decks of a PDK and gives typed verdicts. It also answers
-questions about a layout (operation `query`) and compares two layouts (operation `diff`) with the KLayout Python
-module `klayout.db`. It follows the
+questions about a layout (operation `query`), compares two layouts (operation `diff`) and draws a region or a DRC
+marker as a picture (operation `render`) with the KLayout Python modules `klayout.db` and `klayout.lay`. It follows the
 JSON-in / JSON-out contract `simra.adapter/0` (see [CONTRIBUTING.md](../../CONTRIBUTING.md)). It is written in
 Python and has no PDK facts. The deck commands, the report paths, the log texts and the exit codes come from the
 `klayout` section of the technology pack (see [technologies/README.md](../../technologies/README.md)).
 
 | File | Contents |
 | --- | --- |
-| `adapter.json` | the manifest: the command and the operations `drc`, `lvs`, `query` and `diff` |
+| `adapter.json` | the manifest: the command and the operations `drc`, `lvs`, `query`, `diff` and `render` |
 | `klayout_adapter.py` | the adapter |
 | `layout_read.py` | the questions of `query`: it reads a layout with `klayout.db` and the layer names from the layer properties file of the PDK |
 | `layout_diff.py` | the comparison of `diff`: layers, cell tree and DRC markers |
+| `layout_render.py` | the pictures of `render`: a box or a DRC marker, drawn with `klayout.lay` in the colours of the layer properties file |
 | `lvsdb_probe.py` | reads an LVS database with `klayout.db.LayoutVsSchematic` and writes its compare result as JSON |
-| `test_klayout_adapter.py` | host tests on the fixtures; the tests of `query` and `diff` need `klayout.db` and are skipped without it |
-| `fixtures/` | marker databases, LVS logs and probe outputs from runs in the container image, and a small layer properties file |
+| `test_klayout_adapter.py` | host tests on the fixtures; the tests of `query` and `diff` need `klayout.db`, the tests of `render` also `klayout.lay`; they are skipped without the module |
+| `fixtures/` | marker databases, LVS logs and probe outputs from runs in the container image, and a small layer properties file with colours |
 
 ## KLayout
 
@@ -359,6 +360,54 @@ jobs on the machine. The run of the experiment (container start included) took a
 XOR in one deep shape store; only a layer with a difference gets the two differences. The deep mode is also faster
 than the flat mode on the flat block. A diff with `box` uses the flat mode in the box only.
 
+## Operation `render`
+
+`render` draws a region of a layout, or a DRC marker, as a PNG picture in one run. It does not run a deck. It
+draws with the KLayout Python module `klayout.lay` (a layout view without a display) in the colours of the layer
+properties file of the PDK. The pi extension adds the picture to the result of `run_experiment` as an image part
+after the summary, so the agent sees it. Use it to look at a marker or a region before you choose the edit.
+
+Inputs:
+
+| Input | Contents |
+| --- | --- |
+| `gds` | the layout, relative to the design root |
+| `cell` | the top cell |
+| `technology` | optional; the pack (as for `drc`). The default is the pack that lists `$PDK` |
+| `box` | the region: `[x1, y1, x2, y2]` in µm, in the coordinates of the top cell. A point `[x, y]` gives a view of 1 µm |
+| `drc`, `rule` | instead of `box`: the id of a completed `drc` experiment and a rule name. The marker of that rule is drawn as a red outline, in the cell of the marker, with at least 3 µm around it |
+| `index` | with `drc`: the marker to draw, in the order of `work/drc.json` (default 1) |
+| `all`, `max` | with `drc`: `all` true draws one picture per marker, up to `max` (default 4, at most 8) |
+| `layers` | optional; the layers to show: names of the layer properties file or `layer/datatype`. The default is all layers |
+| `size` | optional; the longer side of the picture in pixels (default 1024, at most 2048). The other side follows the view |
+| `labels` | optional; show the texts (default true) |
+| `grid` | optional; show a scale bar, and a 1 µm grid when the view is 50 µm or less (default true) |
+| `hierarchy` | optional; the levels of cells to draw: 0 is the top cell alone, 1 adds its instances. The default is all levels |
+
+The view is the box plus a margin of 10 % on each side, at least 0.5 µm. For a marker the margin is at least 3 µm
+and half of the longer side of the marker. The pictures are `work/render.png`, or `work/render-<n>.png` for several
+markers, each an output with the role `image`. The scale bar is a ruler at the lower left with the length in µm and
+the view box. The marker outline is drawn on a scratch layer in memory (9999/0, or the next free layer number); the
+file is not changed.
+
+The report has one line per picture:
+
+```
+[1] marker M3.d 1/8 cell=idac box=(12.000,4.000;12.500,4.500) view=(9.000,1.000;15.500,7.500) image=work/render.png 1024x1024 layers=Metal2,Via2,Metal3
+```
+
+The layers at the end are the visible layers with shapes in the view. `work/render.json` has the full answer (the
+boxes as numbers, the file and the size of each picture, the layer properties file). Measurements: `images`,
+`runtime_s`.
+
+A bad input (no view, both views, an unknown layer or cell, a rule without markers, an index above the marker
+count) gives a failed response with one error diagnostic and no picture. Without `klayout.lay` the response is
+failed with the module name in the diagnostic.
+
+A picture of 1024 x 1024 pixels of the block of `layout-block-fix` is about 100 kB and takes 0.2 s to draw in the
+container image. The pi extension adds at most 4 pictures and at most 1 MB of pictures to one tool result; the
+summary names every picture.
+
 ## The command in the response
 
 The response of `drc` and of `lvs` has the field `commands` (see the adapter contract in
@@ -397,6 +446,7 @@ outputs) had 3427 bytes and 2654 bytes.
 
 1. Run `python3 -m unittest discover -s adapters/klayout -p "test_*.py"` (part of `npm test`).
 2. To test in the image, set `SIMRA_TEST_IMAGE` (and `SIMRA_TEST_ENGINE`), then run
-   `node --test test/klayout-container.test.mjs test/klayout-read-container.test.mjs`.
-3. The tests of `query` and `diff` need the KLayout Python module on the host. Install it with `pip install klayout`. Without
-   it, they are reported as skipped.
+   `node --test test/klayout-container.test.mjs test/klayout-read-container.test.mjs test/klayout-render-container.test.mjs`.
+3. The tests of `query`, `diff` and `render` need the KLayout Python module on the host. Install it with `pip install klayout`.
+   Without it, they are reported as skipped. The tests of `render` check pixels of the pictures with the colours of
+   `fixtures/query.lyp` (Metal1 solid blue, Via1 solid magenta).

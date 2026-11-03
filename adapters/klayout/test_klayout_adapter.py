@@ -18,9 +18,12 @@ sys.path.insert(0, HERE)
 
 import klayout_adapter as ka  # noqa: E402
 import layout_read as lr  # noqa: E402
+import layout_render as lrd  # noqa: E402
 
 DB = lr.klayout_db()
+LAY = lrd.klayout_lay()
 NO_DB = "the KLayout Python module klayout.db is not installed (pip package klayout)"
+NO_LAY = "the KLayout Python module klayout.lay is not installed (pip package klayout)"
 
 FIXTURES = os.path.join(HERE, "fixtures")
 TECHNOLOGIES = os.path.join(os.path.dirname(os.path.dirname(HERE)), "technologies")
@@ -624,6 +627,9 @@ class ReadFixture(unittest.TestCase):
             json.dump(request, f)
         saved = dict(os.environ)
         os.environ.update(self.env if env is None else env)
+        for key in self.env:
+            if env is not None and key not in env:
+                os.environ.pop(key, None)
         try:
             self.assertEqual(ka.main(["klayout_adapter.py", os.path.join(exp, "request.json")]), 0)
         finally:
@@ -1005,6 +1011,187 @@ class DiffTest(ReadFixture):
         self.assertTrue(r["report"][-1].startswith("... ") and r["report"][-1].endswith(" more rows in work/diff.json"))
         with open(os.path.join(exp, "work", "diff.json")) as f:
             self.assertEqual(len(json.load(f)["layers"][0]["added"]), 300)
+
+
+class RenderGeometry(unittest.TestCase):
+    """The pure functions of render: no KLayout needed."""
+
+    class Box:
+        def __init__(self, x1, y1, x2, y2):
+            self.left, self.bottom, self.right, self.top = x1, y1, x2, y2
+
+        def width(self):
+            return self.right - self.left
+
+        def height(self):
+            return self.top - self.bottom
+
+    def test_image_size_follows_the_aspect(self):
+        self.assertEqual(lrd.image_size(self.Box(0, 0, 10, 10), 1024), (1024, 1024))
+        self.assertEqual(lrd.image_size(self.Box(0, 0, 20, 10), 1024), (1024, 512))
+        self.assertEqual(lrd.image_size(self.Box(0, 0, 10, 40), 1024), (256, 1024))
+        # A very thin box keeps the minimum side.
+        self.assertEqual(lrd.image_size(self.Box(0, 0, 100, 0.1), 1024), (1024, 64))
+        self.assertEqual(lrd.image_size(self.Box(0, 0, 0, 0), 512), (512, 512))
+
+    def test_scale_length(self):
+        self.assertEqual(lrd.scale_length(self.Box(0, 0, 10, 10)), 2.0)
+        self.assertEqual(lrd.scale_length(self.Box(0, 0, 100, 10)), 20.0)
+        self.assertEqual(lrd.scale_length(self.Box(0, 0, 7.2, 1)), 2.0)
+        self.assertEqual(lrd.scale_length(self.Box(0, 0, 0.3, 1)), 0.1)
+
+
+@unittest.skipIf(DB is None or LAY is None, NO_LAY)
+class RenderTest(ReadFixture):
+    """render through main(), on the fixture layout, with the colours of fixtures/query.lyp: Metal1 solid blue,
+    Via1 solid magenta."""
+
+    def render(self, **inputs):
+        inputs.setdefault("gds", "block.gds")
+        inputs.setdefault("cell", "top")
+        return self.run_op("render", inputs)
+
+    def done(self, **inputs):
+        r, exp = self.render(**inputs)
+        self.assertEqual(r["status"], "completed", r["diagnostics"])
+        return r, exp
+
+    def failed(self, **inputs):
+        r, _ = self.render(**inputs)
+        self.assertEqual(r["status"], "failed")
+        self.assertEqual([d["severity"] for d in r["diagnostics"]][-1], "error")
+        self.assertEqual(r["measurements"]["images"]["status"], "failed")
+        self.assertEqual(r["outputs"], [])
+        return r["diagnostics"][-1]["message"]
+
+    @staticmethod
+    def rgb(image, x, y):
+        p = image.pixel(x, y)
+        return (p >> 16) & 255, (p >> 8) & 255, p & 255
+
+    def pixel_at(self, image, view, x, y):
+        """The colour of the image at the layout point (x, y) µm of the view box [x1, y1, x2, y2]."""
+        px = int((x - view[0]) / (view[2] - view[0]) * image.width())
+        py = int((view[3] - y) / (view[3] - view[1]) * image.height())
+        return self.rgb(image, px, py)
+
+    @staticmethod
+    def pixels(image, test):
+        n = 0
+        for y in range(0, image.height(), 2):
+            for x in range(0, image.width(), 2):
+                p = image.pixel(x, y)
+                if test((p >> 16) & 255, (p >> 8) & 255, p & 255):
+                    n += 1
+        return n
+
+    def drc_experiment(self, exp_id, table, layout="block.gds"):
+        exp = os.path.join(self.root, "simra", "experiments", exp_id)
+        os.makedirs(os.path.join(exp, "work"))
+        ka.write_json(os.path.join(exp, "work", "drc.json"), table)
+        ka.write_json(os.path.join(exp, "result.json"), {"status": "completed", "input_files": {"files": [
+            {"role": "layout", "path": layout, "sha256": ka.sha256(os.path.join(self.root, layout))}]}})
+
+    def test_box(self):
+        r, exp = self.done(box=[0, 0, 6, 2])
+        self.assertEqual(r["tool"]["module"], "klayout.lay")
+        self.assertEqual([(o["path"], o.get("role")) for o in r["outputs"]],
+                         [("simra/experiments/e1/work/render.json", None), ("simra/experiments/e1/work/render.png", "image")])
+        self.assertEqual(r["measurements"]["images"], {"value": 1, "unit": None, "status": "measured", "source": "adapter"})
+        self.assertEqual(r["measurements"]["runtime_s"]["unit"], "s")
+        self.assertEqual(len(r["report"]), 1)
+        # The view box is the box plus 10 % and at least 0.5 µm: 7.2 µm x 3.0 µm, so the image is 1024 x 427. The
+        # layers are the visible layers with shapes in the view: the label "vdd" is on Metal1.text.
+        self.assertEqual(r["report"][0], "[1] box cell=top box=(0.000,0.000;6.000,2.000) view=(-0.600,-0.500;6.600,2.500) "
+                                         "image=work/render.png 1024x427 layers=Metal1,Metal1.text,Via1")
+        roles = [(f["role"], f["path"]) for f in r["input_files"]["files"]]
+        self.assertEqual(roles[:2], [("layout", "block.gds"), ("layer_properties", os.path.join(self.pdk_root, "fake", "layers.lyp"))])
+        with open(os.path.join(exp, "work", "render.json")) as f:
+            full = json.load(f)
+        self.assertEqual(full["views"][0]["view"], [-0.6, -0.5, 6.6, 2.5])
+        self.assertEqual(full["layer_properties"], os.path.join(self.pdk_root, "fake", "layers.lyp"))
+        image = LAY.PixelBuffer.read_png(os.path.join(exp, "work", "render.png"))
+        self.assertEqual((image.width(), image.height()), (1024, 427))
+        view = full["views"][0]["view"]
+        # Metal1 of top at (5,0;6,1) is blue; the Via1 in the unit at the origin is magenta; (3.5,0.5) is empty.
+        self.assertEqual(self.pixel_at(image, view, 5.5, 0.3), (0, 0, 255))
+        self.assertEqual(self.pixel_at(image, view, 0.5, 0.5), (255, 0, 255))
+        self.assertEqual(self.pixel_at(image, view, 3.5, 0.5), (255, 255, 255))
+        # No marker: no red pixel.
+        self.assertEqual(self.pixels(image, lambda cr, g, b: cr > 200 and g < 60 and b < 60), 0)
+
+    def test_layers_size_and_options(self):
+        r, exp = self.done(box=[0, 0, 6, 2], layers=["Metal1"], size=512, labels=False, grid=False)
+        self.assertTrue(r["report"][0].endswith("image=work/render.png 512x213 layers=Metal1"), r["report"])
+        image = LAY.PixelBuffer.read_png(os.path.join(exp, "work", "render.png"))
+        self.assertEqual((image.width(), image.height()), (512, 213))
+        view = [-0.6, -0.5, 6.6, 2.5]
+        # Via1 is hidden: the via position shows Metal1.
+        self.assertEqual(self.pixel_at(image, view, 0.5, 0.5), (0, 0, 255))
+        # Layers as layer/datatype, and a point as the box: the view is 1 µm around the point. No Via1 is in it.
+        r, _ = self.done(box=[5.5, 0.5], layers=["19/0"], size=64)
+        self.assertIn("box=(5.500,0.500;5.500,0.500) view=(5.000,0.000;6.000,1.000)", r["report"][0])
+        self.assertTrue(r["report"][0].endswith("64x64 layers=none"), r["report"])
+
+    def test_hierarchy_levels(self):
+        # Level 0 draws the shapes of the top cell alone: the unit cells (Metal1 at (0,0;1,1)) are not drawn.
+        r, exp = self.done(box=[0, 0, 6, 2], hierarchy=0, size=256)
+        image = LAY.PixelBuffer.read_png(os.path.join(exp, "work", "render.png"))
+        view = [-0.6, -0.5, 6.6, 2.5]
+        self.assertEqual(self.pixel_at(image, view, 5.5, 0.3), (0, 0, 255))
+        self.assertEqual(self.pixel_at(image, view, 0.5, 0.5), (255, 255, 255))
+
+    def test_markers(self):
+        self.drc_experiment("d1", DRC_RULES)
+        r, exp = self.done(drc="d1", rule="M1.a")
+        self.assertEqual(r["report"], ["[1] marker M1.a 1/2 cell=top box=(5.000,0.000;6.000,1.000) "
+                                       "view=(2.000,-3.000;9.000,4.000) image=work/render.png 1024x1024 layers=Metal1,Metal1.text,Via1"])
+        self.assertEqual([f["role"] for f in r["input_files"]["files"]], ["layout", "layer_properties", "technology", "drc"])
+        image = LAY.PixelBuffer.read_png(os.path.join(exp, "work", "render.png"))
+        # The marker outline is red; the marker box itself shows the blue Metal1.
+        self.assertGreater(self.pixels(image, lambda cr, g, b: cr > 200 and g < 60 and b < 60), 20)
+        self.assertEqual(self.pixel_at(image, [2, -3, 9, 4], 5.5, 0.5), (0, 0, 255))
+        # all: one image per marker, up to max; the second marker is at (9,0;10,1).
+        r, exp = self.done(drc="d1", rule="M1.a", all=True, size=256)
+        self.assertEqual([o["path"] for o in r["outputs"] if o.get("role") == "image"],
+                         ["simra/experiments/e2/work/render-1.png", "simra/experiments/e2/work/render-2.png"])
+        self.assertEqual(r["measurements"]["images"]["value"], 2)
+        self.assertTrue(r["report"][1].startswith("[2] marker M1.a 2/2 cell=top box=(9.000,0.000;10.000,1.000) "), r["report"])
+        r, _ = self.done(drc="d1", rule="M1.a", all=True, max=1, size=256)
+        self.assertEqual(r["measurements"]["images"]["value"], 1)
+        # A marker in a sub cell is drawn in that cell.
+        r, exp = self.done(drc="d1", rule="V1.b", size=256)
+        self.assertTrue(r["report"][0].startswith("[1] marker V1.b 1/1 cell=unit box=(0.400,0.400;0.600,0.600) "
+                                                  "view=(-2.600,-2.600;3.600,3.600) "), r["report"])
+        image = LAY.PixelBuffer.read_png(os.path.join(exp, "work", "render.png"))
+        self.assertEqual(self.pixel_at(image, [-2.6, -2.6, 3.6, 3.6], 0.5, 0.5), (255, 0, 255))
+        self.assertEqual(self.pixel_at(image, [-2.6, -2.6, 3.6, 3.6], 2.5, 0.5), (255, 255, 255))
+
+    def test_without_layer_names(self):
+        env = dict(self.env)
+        del env["PDK_ROOT"]
+        r, exp = self.run_op("render", {"gds": "block.gds", "cell": "top", "box": [0, 0, 6, 2], "size": 128}, env)
+        self.assertEqual(r["status"], "completed", r["diagnostics"])
+        self.assertEqual(r["diagnostics"][0]["severity"], "warning")
+        self.assertTrue(r["report"][0].endswith("layers=8/0,8/25,19/0"), r["report"])
+        image = LAY.PixelBuffer.read_png(os.path.join(exp, "work", "render.png"))
+        # Default colours: the shapes are drawn, so the image is not all white.
+        self.assertGreater(self.pixels(image, lambda cr, g, b: (cr, g, b) != (255, 255, 255)), 50)
+
+    def test_bad_inputs(self):
+        self.assertIn("give one view", self.failed())
+        self.assertIn("give one view", self.failed(box=[0, 0, 1, 1], drc="d1"))
+        self.assertIn("'box' must be", self.failed(box=[0, 0, 1]))
+        self.assertIn("'size' must be an integer from 64 to 2048", self.failed(box=[0, 0, 1, 1], size=4096))
+        self.assertIn("unknown layer 'Poly'", self.failed(box=[0, 0, 1, 1], layers=["Poly"]))
+        self.assertIn("'layers' must be a list", self.failed(box=[0, 0, 1, 1], layers="Metal1"))
+        self.assertIn("no cell 'nope'", self.failed(box=[0, 0, 1, 1], cell="nope"))
+        self.assertIn("file not found", self.failed(box=[0, 0, 1, 1], gds="missing.gds"))
+        self.assertIn("experiment d1 has no readable result.json", self.failed(drc="d1", rule="M1.a"))
+        self.drc_experiment("d1", DRC_RULES)
+        self.assertIn("'rule' is required", self.failed(drc="d1"))
+        self.assertIn("rule 'M9.z' is not in the drc table (rules with markers: M1.a, V1.b)", self.failed(drc="d1", rule="M9.z"))
+        self.assertIn("'index' must be an integer from 1 to 2", self.failed(drc="d1", rule="M1.a", index=3))
 
 
 if __name__ == "__main__":
