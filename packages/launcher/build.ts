@@ -26,6 +26,7 @@ mkdirSync(out, { recursive: true });
 console.log(`bun ${execFileSync(bun, ["--version"], { encoding: "utf8" }).trim()}: simra ${version} for ${platform} in ${out}`);
 // The workers are entries too, so that Bun embeds them (see src/). The binary does not read bunfig.toml or .env files of
 // the current folder (as pi's binary). Bytecode makes the start 4 to 10 times faster and the binary about 20 % larger.
+// The binary trusts the certificate authorities of the system (for example a company CA), not only Bun's own list.
 const launcher = join(root, "packages/launcher");
 execFileSync(
 	bun,
@@ -36,6 +37,7 @@ execFileSync(
 		"--format=esm",
 		"--no-compile-autoload-bunfig",
 		"--no-compile-autoload-dotenv",
+		"--compile-exec-argv=--use-system-ca",
 		join(launcher, "main.ts"),
 		join(launcher, "src/utils/image-resize-worker.ts"),
 		join(launcher, "src/extensions/codemode/worker.ts"),
