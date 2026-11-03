@@ -44,8 +44,7 @@ import {
 	waitExperiments,
 	type AdapterManifest,
 } from "@simra-tech/kernel";
-
-const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as { version: string };
+import pkg from "./package.json" with { type: "json" };
 
 /** The images that an experiment may add to a tool result: at most MAX_IMAGES PNG outputs of role "image", MAX_IMAGE_BYTES in all. */
 export const MAX_IMAGES = 4;

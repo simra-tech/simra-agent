@@ -54,6 +54,20 @@ skipped. The tests of the klayout operations `query`, `diff` and `render` run on
 (`pip install klayout`); otherwise they are reported as skipped. To also test a container image, set
 `SIMRA_TEST_IMAGE` to an image with ngspice and Python, and `SIMRA_TEST_ENGINE` to `podman` (the default) or `docker`.
 
+## Build the simra binary
+
+The `simra` binary has the kernel CLI and pi with the Simra extension in one file, compiled with
+[Bun](https://bun.com). A machine that runs it needs no Node.js and no npm. The commands `run`, `check`, `list`,
+`show`, `wait`, `record` and `pdf` go to the kernel CLI. All other arguments go to pi.
+
+1. Run `npm ci`.
+2. Run `sh packages/launcher/get-bun.sh <dir>`. It downloads the pinned Bun to `<dir>/bun` and checks its hash.
+3. Run `BUN=<dir>/bun node packages/launcher/build.ts`. It writes the release folder `dist/simra-<os>-<cpu>/`: the
+   binary, a `package.json` with the version and the name for pi, pi's themes and docs, and `adapters/` and
+   `technologies/`. Keep the folder together: the binary reads these files from its own folder.
+4. Run `SIMRA_BINARY=dist/simra-<os>-<cpu>/simra npm test`. The tests in `test/binary.test.mjs` then run against the
+   binary. Without `SIMRA_BINARY`, they are reported as skipped.
+
 ## Environment image
 
 `container/Containerfile` adds Node.js 22, pi (from the lockfile) and OpenCode to a pinned

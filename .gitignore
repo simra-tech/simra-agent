@@ -5,3 +5,4 @@ simra/experiments/
 evals/*/work/
 __pycache__/
 evals/layout-long-job/*/flat-seeded.gds
+dist/

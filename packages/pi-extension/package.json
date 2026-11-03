@@ -5,6 +5,9 @@
   "description": "Simra Agent extension for pi",
   "license": "Apache-2.0",
   "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
   "keywords": [
     "pi-package"
   ],

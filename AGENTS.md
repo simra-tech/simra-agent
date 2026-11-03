@@ -13,7 +13,8 @@ also work without pi. See [README.md](README.md) for the status.
 | Path | Contents |
 | --- | --- |
 | `packages/kernel/` | runner, experiment records, environments, PDF reader, `simra` CLI (no pi dependency) |
-| `packages/pi-extension/` | the pi extension (the only package that imports pi) |
+| `packages/pi-extension/` | the pi extension |
+| `packages/launcher/` | the `simra` binary: kernel CLI, pi and the extension in one Bun-compiled file |
 | `adapters/` | tool adapters (JSON-in / JSON-out), one directory per tool |
 | `technologies/` | technology packs: the PDK facts that adapters need, one directory per PDK family |
 | `examples/` | small public example designs |
@@ -30,7 +31,8 @@ also work without pi. See [README.md](README.md) for the status.
 
 ## Rules
 
-- pi is a pinned npm dependency. Do not fork, vendor or patch pi. Only `packages/pi-extension` may import pi.
+- pi is a pinned npm dependency. Do not fork, vendor or patch pi. Only `packages/pi-extension` and
+  `packages/launcher` may import pi.
 - Other code (kernel, records, adapters) must work without pi, from a plain command line.
 - The kernel and the adapters do not contain PDK facts. PDK facts go in a technology pack in `technologies/`.
   A feature that uses PDK facts has its evaluation on at least two PDKs.

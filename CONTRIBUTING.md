@@ -6,7 +6,8 @@ Thank you for your interest. The project is at stage 1. The structure is still s
 
 - Add one capability at a time. Each capability comes with a test.
 - Do not add directories for future work. A directory appears when it has content.
-- Only `packages/pi-extension` imports pi. Other code must work without pi, from a plain command line.
+- Only `packages/pi-extension` and `packages/launcher` (the `simra` binary) import pi. Other code must work without
+  pi, from a plain command line.
 - Do not commit credentials, data under NDA, foundry data outside a public PDK, or large simulation outputs.
 - Report a check that did not run as **not run**. Do not omit it.
 

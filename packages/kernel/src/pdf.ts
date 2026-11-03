@@ -223,7 +223,13 @@ export function pdfPages(doc: PdfDocument, first = 1, last = doc.meta.pages): st
 }
 
 let pdfium: Promise<PDFiumLibrary> | undefined;
+let pdfiumWasmPath: string | undefined;
 let renderQueue: Promise<unknown> = Promise.resolve();
+
+/** Called by the simra binary with the path of the PDFium WebAssembly file that it embeds. Without it, PDFium loads its own file. */
+export function setPdfiumWasmPath(path: string): void {
+	pdfiumWasmPath = path;
+}
 
 /**
  * Render page N of a PDF to page-N.png in its cache folder, if the folder does not have it, and give its path.
@@ -238,7 +244,7 @@ export async function renderPage(file: string, page: number): Promise<string> {
 	if (existsSync(png)) return png;
 	const render = renderQueue.then(async () => {
 		if (existsSync(png)) return png;
-		pdfium ??= PDFiumLibrary.init();
+		pdfium ??= PDFiumLibrary.init(pdfiumWasmPath === undefined ? undefined : { wasmBinary: readFileSync(pdfiumWasmPath) });
 		const doc = await (await pdfium).loadDocument(pdf.data);
 		try {
 			const pdfPage = doc.getPage(page - 1);
