@@ -63,7 +63,7 @@ export function formatOutcome(root: string, experiment: ExperimentRecord, result
 	// The outputs that the adapter recorded, in its order, with paths relative to the design root (as in result.json).
 	if (result.outputs.length) {
 		lines.push("outputs:");
-		for (const f of result.outputs) lines.push(`  ${f.path}${f.bytes === undefined ? "" : ` (${f.bytes} bytes)`}`);
+		for (const f of result.outputs) lines.push(`  ${f.role ? `${f.role} ` : ""}${f.path}${f.bytes === undefined ? "" : ` (${f.bytes} bytes)`}`);
 	}
 	const names = Object.keys(result.measurements);
 	if (names.length) {

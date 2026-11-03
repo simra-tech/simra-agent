@@ -56,6 +56,17 @@ test("the summary lists the outputs after the input files, in the order of the r
 	]);
 });
 
+test("an output with a role is listed with the role, for example an image", () => {
+	const dir = `simra/experiments/${id}`;
+	const text = formatOutcome(root, experiment, result([
+		{ path: `${dir}/work/render.json`, sha256: "b".repeat(64), bytes: 300 },
+		{ path: `${dir}/work/render.png`, sha256: "c".repeat(64), bytes: 98000, role: "image" },
+	]));
+	const lines = text.split("\n");
+	const at = lines.indexOf("outputs:");
+	assert.deepEqual(lines.slice(at + 1, at + 3), [`  ${dir}/work/render.json (300 bytes)`, `  image ${dir}/work/render.png (98000 bytes)`]);
+});
+
 test("a summary without outputs has no outputs line", () => {
 	assert.doesNotMatch(formatOutcome(root, experiment, result([])), /^outputs:/m);
 });

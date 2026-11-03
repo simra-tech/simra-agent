@@ -30,10 +30,11 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
 - The tool `design_record` (pi extension) and the command `simra record` (plain CLI) show, for each file of record
   (for example a layout or a netlist), which checks ran on the current file and which are stale.
 - The ngspice adapter has four operations: `simulate`, `operating_point`, `lint` and `check_design`.
-- The klayout adapter has four operations: `drc`, `lvs`, `query` and `diff`. `drc` and `lvs` run the stock KLayout
-  decks of the PDK and give typed verdicts. A check that did not complete gives "not run", not a pass. `query`
+- The klayout adapter has five operations: `drc`, `lvs`, `query`, `diff` and `render`. `drc` and `lvs` run the stock
+  KLayout decks of the PDK and give typed verdicts. A check that did not complete gives "not run", not a pass. `query`
   answers questions about a layout (layers, cells, shapes, instances, texts, distances) in one recorded run. `diff`
-  compares two layouts (a file or a git ref), and optionally the DRC markers of two runs, in one recorded run.
+  compares two layouts (a file or a git ref), and optionally the DRC markers of two runs, in one recorded run. `render`
+  draws a region or a DRC marker as a picture that the agent sees in the result.
 - One example design exists: a two-stage OTA for the open IHP SG13G2 PDK.
 
 ## Requirements
@@ -49,7 +50,7 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
 
 The tests need no model, no API key and no network access after `npm ci`. The adapter tests need Python 3.6
 or later. The integration test with ngspice runs only if `ngspice` is on the PATH; otherwise it is reported as
-skipped. The tests of the klayout operations `query` and `diff` run only if the KLayout Python module is installed
+skipped. The tests of the klayout operations `query`, `diff` and `render` run only if the KLayout Python module is installed
 (`pip install klayout`); otherwise they are reported as skipped. To also test a container image, set
 `SIMRA_TEST_IMAGE` to an image with ngspice and Python, and `SIMRA_TEST_ENGINE` to `podman` (the default) or `docker`.
 
@@ -361,7 +362,10 @@ answer is in `work/query.json`. The run is recorded like a deck run, with the ha
 To see what an edit or a commit changed, the agent calls the operation `diff`: the new layout against a file or
 against `git:<ref>`. The answer gives, per layer, the area added and removed and the largest polygons with their cell
 path, then the changed cells. With the ids of two `drc` runs, it also gives the new, fixed and unchanged markers of
-each rule. The prompt rules tell the agent to write Python only to change a layout. See
+each rule. To see a region or a DRC marker, the agent calls the operation `render`: a box, or the id of a `drc` run
+and a rule. The picture (PNG, in the colours of the PDK, the marker outlined in red) comes with the result of
+`run_experiment` as an image, after the summary. The prompt rules tell the agent to look at the picture before it
+chooses the edit, and to write Python only to change a layout. See
 [adapters/klayout/README.md](adapters/klayout/README.md).
 
 ## Layout
@@ -371,7 +375,7 @@ each rule. The prompt rules tell the agent to write Python only to change a layo
 | `packages/kernel/` | runner, experiment records, environments, `simra` CLI (no pi dependency) |
 | `packages/pi-extension/` | the pi extension (the only package that imports pi) |
 | `adapters/ngspice/` | ngspice adapter (Python) and its tests; `design_check.py` has the operation `check_design` |
-| `adapters/klayout/` | klayout adapter (Python) and its tests: DRC and LVS with the stock KLayout decks of the PDK, with typed verdicts, questions about a layout (`query`) and the comparison of two layouts (`diff`) |
+| `adapters/klayout/` | klayout adapter (Python) and its tests: DRC and LVS with the stock KLayout decks of the PDK, with typed verdicts, questions about a layout (`query`), the comparison of two layouts (`diff`) and pictures of a region or a marker (`render`) |
 | `technologies/` | technology packs: the PDK facts that adapters need |
 | `examples/ota-sg13g2/` | two-stage OTA for IHP SG13G2 |
 | `evals/` | demo evaluations for the inner development loop (not decision benchmarks): the OTA at 3 corners, the OTA against a PVT spec, OTA synthesis from a pin specification (`ota-synthesis`), comparator synthesis from a pin specification (`comparator-synthesis`), their scorers and an arm runner. `synthesis-family.mjs` makes variants of the two synthesis tasks with tighter limits, from a hidden target design and a difficulty factor |

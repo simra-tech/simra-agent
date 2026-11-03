@@ -51,7 +51,9 @@
 // GDS, the check rows with ran: false (not_run), the deck runtimes of the verification, the run metrics from
 // transcript.jsonl next to the workspace (tool_calls, inline_python_calls, result_bytes), deck_runs (the runs of
 // drc.sh and lvs.sh in the transcript, and in deck_runs.run_experiment the run_experiment calls of the klayout
-// adapter for each operation: drc, lvs, query and diff), wait_calls (shell commands that wait: sleep, a while or until loop, tail -f),
+// adapter for each operation: drc, lvs, query, diff and render), first_edit and reads_before_edit (the ordinal of the
+// first write, edit or Python call after the first DRC result, and the query, diff and render calls before it;
+// editMetrics), wait_calls (shell commands that wait: sleep, a while or until loop, tail -f),
 // background_runs (commands that start a deck with &, nohup, setsid or disown, or calls of a job tool), log_reads
 // (tail, cat, grep or wc on a file under drc/, lvs/ or simra/experiments/), deck_wall_s (the sum of the run times of
 // the deck calls, from the transcript; null for a transcript without run times) and errors. stale-state also gives
@@ -275,14 +277,14 @@ export function logRead(command) {
  * The deck runs, the wait calls and the job behaviour of an agent transcript: { deck_runs: { drc, lvs, run_experiment:
  * { drc, lvs } }, wait_calls, background_runs, log_reads, deck_wall_s }. drc and lvs: the wrapper runs of shell
  * commands. run_experiment: the run_experiment calls of the klayout adapter, for each operation (drc, lvs, and the
- * read operations query and diff, which are not deck runs). background_runs: the
+ * read operations query, diff and render, which are not deck runs). background_runs: the
  * shell commands that start a deck in the background (backgroundRun), and the calls of a job tool that name drc.sh,
  * lvs.sh or a drc or lvs operation. log_reads: the shell commands that read a deck log or report (logRead).
  * deck_wall_s: the sum of the run times of the tool calls that run a deck (a wrapper or a klayout experiment), in
  * seconds; null when the transcript has no run times (Codex CLI).
  */
 export function deckMetrics(text) {
-	const out = { deck_runs: { drc: 0, lvs: 0, run_experiment: { drc: 0, lvs: 0, query: 0, diff: 0 } }, wait_calls: 0, background_runs: 0, log_reads: 0, deck_wall_s: null };
+	const out = { deck_runs: { drc: 0, lvs: 0, run_experiment: { drc: 0, lvs: 0, query: 0, diff: 0, render: 0 } }, wait_calls: 0, background_runs: 0, log_reads: 0, deck_wall_s: null };
 	const deckCalls = new Map();
 	const durations = new Map();
 	let n = 0;
@@ -303,6 +305,46 @@ export function deckMetrics(text) {
 		if (experiment || runs.length) deckCalls.set(key, true);
 	}
 	if (durations.size) out.deck_wall_s = Math.round([...deckCalls.keys()].reduce((s, k) => s + (durations.get(k) ?? 0), 0) / 100) / 10;
+	return out;
+}
+
+const EDIT_TOOL = /^(?:write|edit|apply_patch|multi_edit|str_replace_editor)$/i;
+const PYTHON_CALL = /(?:^|[\s;&|('"])python[\d.]*(?:\s+-[A-Za-z]+)*\s+\S/;
+
+/**
+ * When the agent first edits, in an agent transcript: { first_edit, reads_before_edit: { query, diff, render } }.
+ * first_edit: the ordinal (from 1) of the first tool call after the first DRC result that writes a file (a write or
+ * edit tool of pi) or runs Python (a script, python -c or a heredoc: the form in which a layout edit is made), or null
+ * when no such call follows a DRC result. reads_before_edit: the klayout read operations (query, diff, render) between
+ * the first DRC result and that call. A Python call that only reads counts as the edit: the metric is for the simra
+ * arm, whose prompt rules keep Python for edits.
+ */
+export function editMetrics(text) {
+	const out = { first_edit: null, reads_before_edit: { query: 0, diff: 0, render: 0 } };
+	const reads = { query: 0, diff: 0, render: 0 };
+	let n = 0;
+	let drcSeen = false;
+	for (const c of transcriptCalls(text)) {
+		if (!c.call) continue;
+		n += 1;
+		const klayout = c.tool === "run_experiment" && c.args?.adapter === "klayout";
+		const op = c.args?.operation;
+		if ((klayout && op === "drc") || deckRuns(c.command).includes("drc")) {
+			drcSeen = true;
+			continue;
+		}
+		if (!drcSeen) continue;
+		if (klayout && Object.hasOwn(reads, op)) {
+			reads[op] += 1;
+			continue;
+		}
+		const edit = (typeof c.tool === "string" && EDIT_TOOL.test(c.tool)) || (typeof c.command === "string" && PYTHON_CALL.test(c.command));
+		if (edit) {
+			out.first_edit = n;
+			out.reads_before_edit = { ...reads };
+			return out;
+		}
+	}
 	return out;
 }
 
@@ -808,10 +850,11 @@ export async function scoreLayout(ws, taskDir, { mode, verifyRoot = join(dirname
 	if (existsSync(transcript)) {
 		const text = readFileSync(transcript, "utf8");
 		report.metrics = transcriptMetrics(text);
-		Object.assign(report, deckMetrics(text));
+		Object.assign(report, deckMetrics(text), editMetrics(text));
 		if (stale) Object.assign(report, staleMetrics(text, applied, ["colleague", expected?.colleague?.message]));
 	} else {
 		report.metrics = report.deck_runs = report.wait_calls = report.background_runs = report.log_reads = report.deck_wall_s = "not_run (no transcript.jsonl next to the workspace)";
+		report.first_edit = report.reads_before_edit = "not_run (no transcript.jsonl next to the workspace)";
 		if (stale) report.deck_runs_after_commit = report.commit_noticed = report.design_record_calls = report.stale_lines = "not_run (no transcript.jsonl next to the workspace)";
 	}
 	return report;

@@ -4,7 +4,10 @@
 // "values" also takes inputs.at {name: {sweep: value}}: the "at" of that measurement (a sweep point).
 // "values" and "failed" also take inputs.diagnostics, the diagnostics of the response.
 // "values" also takes inputs.report: the lines of the response field "report".
+// "image": the response of "ok" with inputs.count (default 1) PNG outputs work/render-<n>.png of role "image"
+// (a 1 x 1 pixel PNG each, or inputs.bytes zero bytes each), and a work/render.json output without a role.
 import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 const request = JSON.parse((await import("node:fs")).readFileSync(process.argv[2], "utf8"));
 const mode = request.inputs.mode;
@@ -30,7 +33,19 @@ else if (mode === "values") {
 	const report = request.inputs.report ? { report: request.inputs.report } : {};
 	respond({ ...ok, measurements, diagnostics: request.inputs.diagnostics ?? [], ...report });
 }
-else if (mode === "failed") respond({ ...ok, status: "failed", measurements: {}, diagnostics: request.inputs.diagnostics ?? [] });
+else if (mode === "image") {
+	const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+	const data = request.inputs.bytes ? Buffer.alloc(request.inputs.bytes) : png;
+	const outputs = [];
+	const entry = (name) => ({ path: join(request.work_dir, name), sha256: "0".repeat(64), bytes: data.length });
+	writeFileSync(join(request.work_dir, "render.json"), "{}");
+	outputs.push({ ...entry("render.json"), bytes: 2 });
+	for (let n = 1; n <= (request.inputs.count ?? 1); n++) {
+		writeFileSync(join(request.work_dir, `render-${n}.png`), data);
+		outputs.push({ ...entry(`render-${n}.png`), role: "image" });
+	}
+	respond({ ...ok, outputs, report: outputs.filter((o) => o.role).map((o, i) => `[${i + 1}] image=${o.path}`) });
+} else if (mode === "failed") respond({ ...ok, status: "failed", measurements: {}, diagnostics: request.inputs.diagnostics ?? [] });
 else if (mode === "crash") {
 	console.error("fake adapter: crash");
 	process.exit(3);

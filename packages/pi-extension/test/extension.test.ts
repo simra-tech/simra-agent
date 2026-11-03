@@ -2,7 +2,7 @@
 // Its tool_result hook adds the netlist check to the result of a call that names a netlist.
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -34,6 +34,32 @@ test("run_experiment runs the adapter and names the records", async (t) => {
 	assert.match(text, /x = 1\.5 V/);
 	assert.equal(result.details.status, "completed");
 	assert.ok(existsSync(join(root, "simra", "experiments", result.details.id, "result.json")));
+});
+
+test("run_experiment adds the PNG outputs of role image as image parts after the text, up to the limits", async (t) => {
+	const tools = new Map<string, any>();
+	extension({ registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand: () => {}, on: () => {} } as any);
+	const run = tools.get("run_experiment");
+	assert.ok(run.promptGuidelines.some((g: string) => /operation render/.test(g) && /Look at the picture/.test(g)));
+	const root = mkdtempSync(join(tmpdir(), "simra-ext-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	writeFileSync(join(root, "simra.config.json"), JSON.stringify({ adapter_dirs: [fakeAdapters] }));
+	const ctx = { cwd: root };
+	const one = await run.execute("call-1", { adapter: "fake", operation: "run", inputs: { mode: "image" }, purpose: "picture" }, undefined, undefined, ctx);
+	assert.equal(one.content.length, 2);
+	assert.match(one.content[0].text, /^outputs:\n.*render\.json \(2 bytes\)\n  image .*render-1\.png \(\d+ bytes\)$/m);
+	assert.deepEqual(one.content[1], { type: "image", data: readFileSync(join(root, "simra/experiments", one.details.id, "work/render-1.png")).toString("base64"), mimeType: "image/png" });
+	// Six images: four parts (the first four).
+	const six = await run.execute("call-2", { adapter: "fake", operation: "run", inputs: { mode: "image", count: 6 }, purpose: "pictures" }, undefined, undefined, ctx);
+	assert.equal(six.content.filter((c: any) => c.type === "image").length, 4);
+	// Images over the byte limit in all are skipped; the text still names them.
+	const big = await run.execute("call-3", { adapter: "fake", operation: "run", inputs: { mode: "image", count: 2, bytes: 600_000 }, purpose: "big" }, undefined, undefined, ctx);
+	assert.equal(big.content.filter((c: any) => c.type === "image").length, 1);
+	assert.match(big.content[0].text, /image .*render-2\.png \(600000 bytes\)/);
+	// A detached run: wait_experiments carries the image too.
+	const started = await run.execute("call-4", { adapter: "fake", operation: "run", inputs: { mode: "image" }, purpose: "detached", detached: true }, undefined, undefined, ctx);
+	const done = await tools.get("wait_experiments").execute("call-5", { ids: [started.details.id], timeout_s: 30 }, undefined, undefined, ctx);
+	assert.equal(done.content.filter((c: any) => c.type === "image").length, 1);
 });
 
 test("run_experiment detached starts the run, and wait_experiments gives the summary of a blocking run", async (t) => {

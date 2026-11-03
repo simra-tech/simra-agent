@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { backgroundRun, deckMetrics, logRead } from "../evals/layout-drc-fix/layout.mjs";
+import { backgroundRun, deckMetrics, editMetrics, logRead } from "../evals/layout-drc-fix/layout.mjs";
 import { checkGenerated } from "../evals/run-arm.mjs";
 
 const lines = (events) => events.map((e) => JSON.stringify(e)).join("\n");
@@ -69,12 +69,40 @@ test("deckMetrics: background runs, log reads and the deck wall time of a pi tra
 	// The deck calls: a (0.04 s), c (95.25 s), d (200 s) and the job tool call e (0.015 s: it starts the deck and returns).
 	// The query call g is counted in run_experiment, but it is not a deck call.
 	assert.deepEqual(deckMetrics(pi), {
-		deck_runs: { drc: 2, lvs: 1, run_experiment: { drc: 1, lvs: 0, query: 1, diff: 0 } },
+		deck_runs: { drc: 2, lvs: 1, run_experiment: { drc: 1, lvs: 0, query: 1, diff: 0, render: 0 } },
 		wait_calls: 1,
 		background_runs: 2,
 		log_reads: 1,
 		deck_wall_s: 295.3,
 	});
+});
+
+test("editMetrics: the first write, edit or Python call after the first DRC result, and the reads before it", () => {
+	const exp = (id, operation) => ({ type: "tool_execution_start", toolCallId: id, toolName: "run_experiment", args: { adapter: "klayout", operation, inputs: {} } });
+	const bash = (id, command) => ({ type: "tool_execution_start", toolCallId: id, toolName: "bash", args: { command } });
+	const pi = lines([
+		bash("a", "python3 -c 'import klayout.db'"), // before the DRC: not the edit
+		exp("b", "drc"),
+		exp("c", "query"),
+		exp("d", "render"),
+		exp("e", "render"),
+		bash("f", "git status --short"),
+		exp("g", "diff"),
+		{ type: "tool_execution_start", toolCallId: "h", toolName: "write", args: { path: "fix.py", content: "..." } },
+		bash("i", "python3 fix.py"),
+	]);
+	assert.deepEqual(editMetrics(pi), { first_edit: 8, reads_before_edit: { query: 1, diff: 1, render: 2 } });
+	// A Python script run is the edit when no write tool precedes it; a heredoc and -c count too.
+	assert.deepEqual(editMetrics(lines([exp("b", "drc"), bash("c", "python3 fix.py")])), { first_edit: 2, reads_before_edit: { query: 0, diff: 0, render: 0 } });
+	assert.deepEqual(editMetrics(lines([exp("b", "drc"), bash("c", "cat x; python3 - <<'EOF'\nprint(1)\nEOF")])).first_edit, 2);
+	// A wrapper DRC run counts as the DRC result; no edit after it: null.
+	assert.deepEqual(editMetrics(lines([bash("a", "./drc.sh block.gds idac"), bash("b", "ls")])), { first_edit: null, reads_before_edit: { query: 0, diff: 0, render: 0 } });
+	// Codex CLI: the command form of its events.
+	const codex = lines([
+		{ type: "item.completed", item: { id: "item_1", type: "command_execution", command: "/usr/bin/bash -lc './drc.sh block.gds idac'", aggregated_output: "" } },
+		{ type: "item.completed", item: { id: "item_2", type: "command_execution", command: "/usr/bin/bash -lc 'python3 - <<EOF\nimport klayout.db\nEOF'", aggregated_output: "" } },
+	]);
+	assert.equal(editMetrics(codex).first_edit, 2);
 });
 
 test("deckMetrics: Codex CLI has no run times (deck_wall_s null); OpenCode has them", () => {
@@ -83,12 +111,12 @@ test("deckMetrics: Codex CLI has no run times (deck_wall_s null); OpenCode has t
 		{ type: "item.completed", item: { id: "item_2", type: "command_execution", command: "/usr/bin/bash -lc 'tail -n 5 drc/drc.log'", aggregated_output: "" } },
 		{ type: "item.completed", item: { id: "item_3", type: "command_execution", command: "/usr/bin/bash -lc './lvs.sh block.gds idac'", aggregated_output: "" } },
 	]);
-	assert.deepEqual(deckMetrics(codex), { deck_runs: { drc: 1, lvs: 1, run_experiment: { drc: 0, lvs: 0, query: 0, diff: 0 } }, wait_calls: 0, background_runs: 1, log_reads: 1, deck_wall_s: null });
+	assert.deepEqual(deckMetrics(codex), { deck_runs: { drc: 1, lvs: 1, run_experiment: { drc: 0, lvs: 0, query: 0, diff: 0, render: 0 } }, wait_calls: 0, background_runs: 1, log_reads: 1, deck_wall_s: null });
 	const opencode = lines([
 		{ type: "tool_use", part: { type: "tool", tool: "bash", callID: "x", state: { input: { command: "./drc.sh block.gds idac" }, output: "", time: { start: 1000, end: 191_000 } } } },
 		{ type: "tool_use", part: { type: "tool", tool: "bash", callID: "y", state: { input: { command: "cat lvs/lvs.log" }, output: "", time: { start: 191_500, end: 191_600 } } } },
 	]);
-	assert.deepEqual(deckMetrics(opencode), { deck_runs: { drc: 1, lvs: 0, run_experiment: { drc: 0, lvs: 0, query: 0, diff: 0 } }, wait_calls: 0, background_runs: 0, log_reads: 1, deck_wall_s: 190 });
+	assert.deepEqual(deckMetrics(opencode), { deck_runs: { drc: 1, lvs: 0, run_experiment: { drc: 0, lvs: 0, query: 0, diff: 0, render: 0 } }, wait_calls: 0, background_runs: 0, log_reads: 1, deck_wall_s: 190 });
 	// A transcript with run times but no deck call: 0 s.
 	const none = lines([
 		{ type: "tool_execution_start", toolCallId: "a", toolName: "bash", args: { command: "ls" } },

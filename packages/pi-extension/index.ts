@@ -10,7 +10,7 @@
 // documentation section; the tool list and the rules stay (see chipDesignPrompt).
 // All logic lives in @simra-tech/kernel, which works without pi.
 
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import {
@@ -29,6 +29,7 @@ import {
 	formatStarted,
 	formatVerdict,
 	formatWait,
+	type ResultRecord,
 	runCheck,
 	queryAdapter,
 	runExperiment,
@@ -38,6 +39,30 @@ import {
 } from "@simra-tech/kernel";
 
 const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as { version: string };
+
+/** The images that an experiment may add to a tool result: at most MAX_IMAGES PNG outputs of role "image", MAX_IMAGE_BYTES in all. */
+export const MAX_IMAGES = 4;
+export const MAX_IMAGE_BYTES = 1_000_000;
+
+/**
+ * The image parts of a tool result: the outputs of role "image" of a result (PNG files), in the order of the result,
+ * up to MAX_IMAGES and MAX_IMAGE_BYTES in all. An output that is missing, is not a PNG, or does not fit is skipped;
+ * the summary text still names it. Paths are relative to the design root, or absolute.
+ */
+export function imageParts(root: string, result: Pick<ResultRecord, "outputs">): { type: "image"; data: string; mimeType: string }[] {
+	const parts: { type: "image"; data: string; mimeType: string }[] = [];
+	let total = 0;
+	for (const f of result.outputs) {
+		if (f.role !== "image" || !/\.png$/i.test(f.path) || parts.length >= MAX_IMAGES) continue;
+		const path = isAbsolute(f.path) ? f.path : join(root, f.path);
+		if (!existsSync(path)) continue;
+		const size = statSync(path).size;
+		if (size === 0 || total + size > MAX_IMAGE_BYTES) continue;
+		total += size;
+		parts.push({ type: "image", data: readFileSync(path).toString("base64"), mimeType: "image/png" });
+	}
+	return parts;
+}
 
 /** One line per built-in adapter operation, for the tool description. */
 function adapterCatalog(): string {
@@ -199,6 +224,7 @@ export default function (pi: ExtensionAPI) {
 			"Run simulations with run_experiment, not with a direct shell command, so that each run is recorded.",
 			"Run DRC and LVS with run_experiment (adapter klayout, operations drc and lvs), not with a DRC or LVS shell script. Report a DRC or LVS that did not run as not run, not as a pass.",
 			"To read a layout, use run_experiment with adapter klayout, operation query, and put several questions in one call. To see what an edit or a commit changed, use operation diff (against a file or git:<ref>). Write Python only to change a layout.",
+			"To see a region of a layout or a DRC marker, use run_experiment with adapter klayout, operation render (a box, or a drc experiment id and a rule): the picture comes with the result. Look at the picture before you choose the edit.",
 			"When you report a simulated number, give the experiment id that produced it.",
 			"For a run that takes minutes, or for independent runs, start them with run_experiment detached and wait_experiments; do not poll with sleep, tail or log reads.",
 			"When a task asks for output files (a changed design, an answer file), write them as soon as you have a first result, and update them each time you find a better one. A session can end before you finish.",
@@ -232,7 +258,7 @@ export default function (pi: ExtensionAPI) {
 			}
 			const outcome = await runExperiment({ ...opts, signal });
 			return {
-				content: [{ type: "text", text: formatOutcome(root, outcome.experiment, outcome.result, outcome.estimate) }],
+				content: [{ type: "text", text: formatOutcome(root, outcome.experiment, outcome.result, outcome.estimate) }, ...imageParts(root, outcome.result)],
 				details: { id: outcome.id, status: outcome.result.status, measurements: outcome.result.measurements },
 			};
 		},
@@ -257,7 +283,7 @@ export default function (pi: ExtensionAPI) {
 			const outcomes = await waitExperiments(root, params.ids, { timeoutS: params.timeout_s ?? 3600, signal });
 			const text = formatWait(root, outcomes, (Date.now() - start) / 1000, (e) => runtimeEstimate(root, e));
 			return {
-				content: [{ type: "text", text }],
+				content: [{ type: "text", text }, ...outcomes.flatMap((o) => (o.result ? imageParts(root, o.result) : []))],
 				details: { experiments: outcomes.map((o) => ({ id: o.id, status: o.status, measurements: o.result?.measurements ?? {} })) },
 			};
 		},
