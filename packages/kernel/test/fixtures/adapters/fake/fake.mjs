@@ -6,7 +6,10 @@
 // "values" also takes inputs.report: the lines of the response field "report".
 // "image": the response of "ok" with inputs.count (default 1) PNG outputs work/render-<n>.png of role "image"
 // (a 1 x 1 pixel PNG each, or inputs.bytes zero bytes each), and a work/render.json output without a role.
-import { writeFileSync } from "node:fs";
+// Operation pack_propose: an invented pack for inputs.pdk (no file read); inputs.mode "nopack" proposes nothing.
+// Operation pack_check: one item per corner of the section "fake" of the pack file inputs.pack; a corner named
+// "bad" fails with class simulator; the item reference_build is not run.
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const request = JSON.parse((await import("node:fs")).readFileSync(process.argv[2], "utf8"));
@@ -22,7 +25,29 @@ const ok = {
 	diagnostics: [],
 };
 
-if (mode === "ok") respond(ok);
+if (request.operation === "pack_propose") {
+	const pdk = request.inputs.pdk;
+	const pack = { schema: "simra.technology/0", name: pdk.toLowerCase(), pdks: [pdk],
+		fake: { [pdk]: { corners: request.inputs.corners ?? ["tt", "ss"], kit: "{pdk_root}/models" } } };
+	const path = join(request.work_dir, "pack.proposed.json");
+	if (mode !== "nopack") writeFileSync(path, JSON.stringify(pack, null, 2));
+	const questions = ["Is the corner list right?"];
+	respond({ ...ok, status: mode === "nopack" ? "failed" : "completed", measurements: {},
+		tool: { name: "fake", version: "1", pack: mode === "nopack" ? null : pack, questions, facts: [], read_inside: [] },
+		outputs: mode === "nopack" ? [] : [{ path, sha256: "0".repeat(64), bytes: 1, role: "technology" }],
+		diagnostics: mode === "nopack" ? [{ severity: "error", message: "no pack proposed: no kit" }] : [],
+		report: [`pack ${pack.name} for PDK ${pdk} from ${request.inputs.pdk_root ?? "(no pdk_root)"}`, "open questions: 1"] });
+} else if (request.operation === "pack_check") {
+	const pack = JSON.parse(readFileSync(request.inputs.pack, "utf8"));
+	const corners = pack.fake?.[request.inputs.pdk]?.corners ?? [];
+	const items = corners.map((c) => (c === "bad" ? { name: `simulate ${c}`, status: "fail", class: "simulator", reason: "invented failure" }
+		: { name: `simulate ${c}`, status: "pass", value: 0.4 }));
+	items.push({ name: "reference_build", status: "not run", reason: "the fake pack has no facts for this step" });
+	const failed = items.some((i) => i.status === "fail");
+	respond({ ...ok, status: failed ? "failed" : "completed", measurements: {},
+		tool: { name: "fake", version: "1", check: { pack: pack.name, items } },
+		diagnostics: failed ? [{ severity: "error", message: "1 check failed" }] : [] });
+} else if (mode === "ok") respond(ok);
 else if (mode === "values") {
 	const measurements = {};
 	for (const [name, value] of Object.entries(request.inputs.values ?? {})) {

@@ -35,6 +35,8 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
   answers questions about a layout (layers, cells, shapes, instances, texts, distances) in one recorded run. `diff`
   compares two layouts (a file or a git ref), and optionally the DRC markers of two runs, in one recorded run. `render`
   draws a region or a DRC marker as a picture that the agent sees in the result.
+- The commands `simra pack init` and `simra pack check` add a PDK to a site: an adapter proposes a technology pack
+  from the kit, the user confirms it, and the adapter checks it (see "Add a PDK").
 - One example design exists: a two-stage OTA for the open IHP SG13G2 PDK.
 
 ## Install
@@ -181,6 +183,29 @@ deck. The adapter does not use `.option temp=`, because it does not replace a `.
 The design root is the nearest directory upward with `simra.config.json`. It defines the execution
 environments. Put machine-specific settings (image ID, CPU list) in `simra.local.json`, which git ignores.
 See [examples/ota-sg13g2](examples/ota-sg13g2/README.md).
+
+## Add a PDK
+
+A technology pack holds the facts of one PDK for the adapters (see [technologies/README.md](technologies/README.md)).
+A pack for a PDK that is not in this repository is site data: it fits the kit version of the site. An adapter that
+has the operations `pack_propose` and `pack_check` (see [CONTRIBUTING.md](CONTRIBUTING.md)) makes the pack from the
+kit. To add a PDK:
+
+1. Run `npx simra pack init --pdk <name> --pdk-root <kit directory>` in the design root. Add `--adapter <name>` when
+   more than one adapter has `pack_propose`. Add `--inputs '<json>'` for more inputs of the adapter, for example
+   `'{"vdd_v": 0.8}'`.
+2. Read the report. Each fact has its source and a confidence (`sure`, `guess` or `todo`). Answer the open
+   questions. The run is a normal experiment record; `npx simra show <id>` prints it again.
+3. Run the command again with `--write`. In a terminal, the command also asks before it writes. It writes the pack to
+   `<dir>/<pdk>/technology.json`. `<dir>` is `--dir`, else the first entry of `technology_dirs`, else
+   `${XDG_DATA_HOME:-~/.local/share}/simra/technologies`. It never overwrites a pack file.
+4. When the command says so, add the directory to `technology_dirs` of `simra.config.json` or `simra.local.json`.
+5. Edit the pack file for the answers of step 2.
+6. Run `npx simra pack check --pdk <name>`. It prints `pass`, `fail` (with the failure class) or `not run` (with the
+   reason) for each check of the adapter.
+
+Two packs with the same PDK name or pack name in the technology directories are an error. `simra pack check`
+names both files.
 
 ## Files of record
 

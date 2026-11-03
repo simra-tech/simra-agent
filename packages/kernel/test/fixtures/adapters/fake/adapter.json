@@ -5,6 +5,8 @@
   "command": ["node", "{adapter_dir}/fake.mjs"],
   "operations": {
     "run": { "description": "Test adapter. inputs.mode selects the behaviour." },
-    "check_design": { "description": "The same as run, with the operation name of a design check." }
+    "check_design": { "description": "The same as run, with the operation name of a design check." },
+    "pack_propose": { "description": "Test adapter. Proposes an invented pack for inputs.pdk from inputs.pdk_root (it reads no file)." },
+    "pack_check": { "description": "Test adapter. Checks the pack file of inputs.pack: one item per corner of the invented section fake." }
   }
 }

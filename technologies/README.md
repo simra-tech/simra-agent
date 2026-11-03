@@ -91,6 +91,10 @@ A pack name or a PDK name selects the first pack that has it. A pack of a config
 built-in pack with the same name. A configured directory that does not exist stops the run with an error. A path
 with `:` is not supported.
 
+`simra pack init` and `simra pack check` use a strict lookup: two packs with the same pack name or PDK name are an
+error that names both files. `simra pack init` makes a pack from a kit through an adapter (see "Add a PDK" in the
+[README](../README.md)).
+
 To add a PDK:
 
 1. Run an operating point with ngspice, then `show <letter> : all`.

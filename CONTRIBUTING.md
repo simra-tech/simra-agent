@@ -149,3 +149,24 @@ Rules:
   variable from `technology_dirs` of the configuration and the built-in directory, and a container environment
   mounts each directory read-only. The adapter adds the pack file to `input_files` with the role
   `technology`.
+
+Optional operations for PDK onboarding (`simra pack init` and `simra pack check` run them):
+
+- `pack_propose` inspects a PDK kit and proposes a technology pack. Inputs: `pdk` (the PDK name of the pack),
+  `pdk_root` (optional; the kit directory), and inputs of the adapter. Response fields:
+  - `tool.pack`: the proposed pack (a `simra.technology/0` object), or null when the adapter proposes none. The
+    response status is then `failed`.
+  - `tool.questions`: a list of strings, the open questions for the user. Empty when there are none.
+  - `tool.facts` (optional): a list of `{ key, value, source: { file, line, read }, confidence, note }`. `read` is
+    `surface` (file names, directory layout, section and header lines) or `inside` (the content of a kit file).
+    `confidence` is `sure`, `guess` or `todo`.
+  - `tool.read_inside` (optional): a list of `{ file, why }`, one entry for each read inside a kit file.
+  - `outputs`: the pack file in `work_dir`, with the role `technology`.
+  - `report`: the facts and the questions as short lines.
+  The adapter writes nothing outside `work_dir`. It puts only names, sections, units, paths and device names into
+  the pack: no model text and no parameter values of the kit. The kernel writes the pack after the user confirms.
+- `pack_check` checks a pack on the kit. Inputs: `pack` (the path of the pack file), `pdk`, and inputs of the
+  adapter. Response field `tool.check`: `{ pack, items }`. Each item has `name`, `status` (`pass`, `fail` or
+  `not run`), and optionally `class` (the failure class of a `fail`), `reason` (for `fail` and `not run`) and
+  `value`. A check that did not run is an item with `not run`, never left out. The response status is `failed`
+  when an item fails.

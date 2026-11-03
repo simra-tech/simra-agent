@@ -16,12 +16,20 @@
 //                             --parallel <n> (experiments at the same time, default 4)
 //   simra pdf <file>          print the text of a PDF with a [page N] marker before each page; option --pages <a-b>,
 //                             or --render <N> (render page N to a PNG in the cache and print its path)
+//   simra pack init --pdk <name> [--adapter <name>] [--pdk-root <dir>] [--dir <technology dir>] [--inputs <json>]
+//                             [--write]
+//                             run the adapter operation pack_propose, print its report and open questions; with
+//                             --write (or a yes in a terminal), write the pack to <dir>/<pdk>/technology.json
+//   simra pack check --pdk <name> [--adapter <name>] [--inputs <json>]
+//                             run the adapter operation pack_check on the pack; print pass, fail or not run per item
 //
 // Option: --root <dir> (default: the nearest directory upward with simra.config.json, else the current directory)
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { findRoot } from "./config.ts";
+import { createInterface } from "node:readline/promises";
+import { formatPackCheck, formatPackInit, packCheck, packInit, writeProposed } from "./packs.ts";
 import { extractPdf, pdfPages, renderPage } from "./pdf.ts";
 import { runCheck } from "./requirements.ts";
 import { runtimeEstimate } from "./estimate.ts";
@@ -33,7 +41,7 @@ import { waitExperiments } from "./wait.ts";
 
 function usage(): never {
 	console.error(
-		"usage: simra run [--detach] <spec.json> | simra wait <id> [<id>...] [--timeout-s <n>] | simra show <id> [--json] | simra record [<path>...] | simra list | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>] | simra pdf <file> [--pages <a-b> | --render <N>]   [--root <dir>]",
+		"usage: simra run [--detach] <spec.json> | simra wait <id> [<id>...] [--timeout-s <n>] | simra show <id> [--json] | simra record [<path>...] | simra list | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>] | simra pdf <file> [--pages <a-b> | --render <N>] | simra pack init --pdk <name> [--adapter <name>] [--pdk-root <dir>] [--dir <dir>] [--inputs <json>] [--write] | simra pack check --pdk <name> [--adapter <name>] [--inputs <json>]   [--root <dir>]",
 	);
 	process.exit(2);
 }
@@ -44,17 +52,19 @@ async function main(argv: string[]): Promise<number> {
 	const options: Record<string, string> = {};
 	let detach = false;
 	let json = false;
+	let write = false;
 	const list = (value?: string) => value?.split(",").filter(Boolean);
 	const positive = (value: string) => (/^[1-9]\d*$/.test(value) ? Number(value) : usage());
 	for (let i = 0; i < argv.length; i++) {
 		if (argv[i] === "--root") root = resolve(argv[++i] ?? usage());
 		else if (argv[i] === "--detach") detach = true;
 		else if (argv[i] === "--json") json = true;
+		else if (argv[i] === "--write") write = true;
 		else if (argv[i] === "--detached-worker") {
 			// Internal: the supervisor of a detached run (see runExperiment). The argument is the experiment directory.
 			const result = await runDetachedWorker(argv[++i] ?? usage());
 			return result.status === "completed" ? 0 : 1;
-		} else if (["--file", "--only", "--conditions", "--parallel", "--timeout-s", "--pages", "--render"].includes(argv[i])) options[argv[i].slice(2)] = argv[++i] ?? usage();
+		} else if (["--file", "--only", "--conditions", "--parallel", "--timeout-s", "--pages", "--render", "--pdk", "--adapter", "--pdk-root", "--dir", "--inputs"].includes(argv[i])) options[argv[i].slice(2)] = argv[++i] ?? usage();
 		else args.push(argv[i]);
 	}
 	root ??= findRoot(process.cwd()) ?? process.cwd();
@@ -118,6 +128,30 @@ async function main(argv: string[]): Promise<number> {
 		if (page === undefined) process.stdout.write(pdfPages(await extractPdf(arg), range[0], range[1] ?? range[0]));
 		else console.log(await renderPage(arg, page));
 		return 0;
+	}
+	if (command === "pack" && (arg === "init" || arg === "check")) {
+		const pdk = options.pdk ?? usage();
+		const inputs = options.inputs === undefined ? {} : JSON.parse(options.inputs);
+		if (arg === "check") {
+			const outcome = await packCheck({ root, adapter: options.adapter, pdk, inputs });
+			console.log(formatPackCheck(outcome));
+			return outcome.run.result.status === "completed" ? 0 : 1;
+		}
+		const base = { root, adapter: options.adapter, pdk, pdkRoot: options["pdk-root"], dir: options.dir, inputs };
+		let outcome = await packInit({ ...base, write });
+		console.log(formatPackInit(outcome));
+		if (!write && outcome.pack && process.stdin.isTTY && process.stdout.isTTY) {
+			const rl = createInterface({ input: process.stdin, output: process.stdout });
+			const answer = await rl.question(`write the pack to ${outcome.target}? [y/N] `);
+			rl.close();
+			if (/^y(es)?$/i.test(answer.trim())) {
+				// The proposal of this run is written; the adapter does not run again.
+				outcome = { ...outcome, ...writeProposed(outcome) };
+				console.log(`wrote ${outcome.target}`);
+				if (outcome.outsideConfig) console.log(`add ${resolve(outcome.target, "..", "..")} to technology_dirs of simra.config.json or simra.local.json`);
+			}
+		}
+		return outcome.pack ? 0 : 1;
 	}
 	if (command === "list") {
 		for (const { id, experiment, result } of listExperiments(root)) {
