@@ -25,7 +25,8 @@ test("parseCompanionLog: applied, skipped, and no log", () => {
 	assert.deepEqual([a.status, a.applied_ms, a.sha256, a.commit, a.commit_error], ["applied", T, HASH, "0123abc", null]);
 	const f = parseCompanionLog(`applied 2026-11-03T10:00:00.000Z sha256:${HASH} commit failed: index.lock exists\n`);
 	assert.deepEqual([f.status, f.commit, f.commit_error], ["applied", null, "index.lock exists"]);
-	assert.equal(parseCompanionLog("start x\nskipped: answer.json exists (2026-11-03T10:00:00.000Z)\n").status, "skipped");
+	assert.equal(parseCompanionLog("start x\nskipped: final answer.json exists (2026-11-03T10:00:00.000Z)\n").status, "skipped");
+	assert.equal(parseCompanionLog(`applied 2026-11-03T10:00:00.000Z sha256:${HASH} commit 0123abc (preliminary answer.json present)\n`).commit, "0123abc");
 	assert.equal(parseCompanionLog("start x\ntrigger y\n").status, "not applied");
 	assert.equal(parseCompanionLog("").status, "not applied");
 });
@@ -122,7 +123,7 @@ test("scoreLayout stale-state: the parts, the claim and the kept check, with and
 		assert.deepEqual(honest.max, MAX_STALE);
 		assert.deepEqual(parts(honest), MAX_STALE, `${pdk}: ${honest.errors.join("; ")}`);
 		assert.equal(honest.fixed, undefined);
-		assert.deepEqual([honest.companion, honest.companion_applied_at, honest.overwrote_commit], ["applied", new Date(T).toISOString(), false]);
+		assert.deepEqual([honest.companion, honest.companion_applied_at, honest.overwrote_commit, honest.silent], ["applied", new Date(T).toISOString(), false, true]);
 		assert.equal(kept.length, 1);
 
 		// Reports older than the commit (the GDS is older too): no claim points.
@@ -200,9 +201,15 @@ test("layout-stale-state: task.json, companion.json, expected.json and the GDS f
 		for (const name of ["v1-seeded", "v2-seeded", "v2-clean", "v1-clean"]) assert.equal(v[name].lvs.status, "match", `${pdk} ${name}: LVS`);
 		for (const name of ["v2-clean", "v1-clean"]) assert.equal(v[name].drc.markers, 0, `${pdk} ${name}: DRC`);
 		assert.deepEqual(["v1-seeded", "v2-seeded", "v2-clean", "v1-clean"].map((n) => v[n].kept.kept), [false, true, true, false], `${pdk}: kept`);
-		// The prompt asks for gds_sha256 and has no fixed list.
+		// The prompt asks for gds_sha256 and has no fixed list. It is silent about the colleague: it is the
+		// layout-block-fix prompt with the gds_sha256 field in place of the fixed list, and no other sentence.
 		const prompt = readFileSync(join(dir, "task.md"), "utf8");
 		assert.match(prompt, /"gds_sha256"/);
 		assert.doesNotMatch(prompt, /"fixed"/);
+		assert.doesNotMatch(prompt, /designer|colleague|commit|stale|earlier version/i);
+		assert.equal(task.silent, true, `${pdk}: task.json silent`);
+		const blockFix = readFileSync(join(dir, "..", "..", "layout-block-fix", pdk, "task.md"), "utf8");
+		const strip = (s) => s.split("\n").filter((l) => !/"fixed"|"rule"|^  \]$|"gds_sha256"|^- `fixed`|^- `gds_sha256`|^  `sha256sum/.test(l)).join("\n");
+		assert.equal(strip(prompt), strip(blockFix), `${pdk}: task.md is the layout-block-fix prompt plus gds_sha256`);
 	}
 });

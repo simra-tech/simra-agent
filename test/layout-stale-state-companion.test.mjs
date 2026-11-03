@@ -1,6 +1,6 @@
 // The colleague of layout-stale-state (evals/layout-stale-state/companion.py) on a fake workspace: it waits for the
 // first complete marker database and the delay (or the fallback), then commits the new version of block.gds as the
-// colleague; it does nothing when answer.json exists. Host (python3 and git), and one case in the sandbox of
+// colleague; it does nothing when a final answer.json exists, and acts over a preliminary one. Host (python3 and git), and one case in the sandbox of
 // run-arm.mjs (container).
 
 import assert from "node:assert/strict";
@@ -89,13 +89,30 @@ test("the companion acts after the fallback time without a report", (t) => {
 	assert.match(out, new RegExp(`^applied \\S+Z sha256:${sha("v2")} commit [0-9a-f]{40}$`, "m"));
 });
 
-test("the companion does nothing when answer.json exists", (t) => {
-	const ws = setup(t);
-	report(ws.work, "drc/block_idac_full.lyrdb", { ago_s: 60 });
-	writeFileSync(join(ws.work, "answer.json"), "{}");
-	assert.match(run(ws, "--once"), /^skipped: answer\.json exists \(\S+Z\)$/m);
-	assert.equal(readFileSync(join(ws.work, "block.gds"), "utf8"), "v1");
-	assert.equal(git(ws.work, "rev-list", "--count", "HEAD"), "1");
+test("the companion does nothing when a final answer.json exists", (t) => {
+	for (const answer of [
+		'{ "drc_clean": true, "lvs_match": true, "checks": [] }',
+		'{ "drc_clean": false, "checks": [ { "check": "drc", "ran": true }, { "check": "lvs", "ran": true } ] }',
+	]) {
+		const ws = setup(t);
+		report(ws.work, "drc/block_idac_full.lyrdb", { ago_s: 60 });
+		writeFileSync(join(ws.work, "answer.json"), answer);
+		assert.match(run(ws, "--once"), /^skipped: final answer\.json exists \(\S+Z\)$/m);
+		assert.equal(readFileSync(join(ws.work, "block.gds"), "utf8"), "v1");
+		assert.equal(git(ws.work, "rev-list", "--count", "HEAD"), "1");
+	}
+});
+
+test("the companion applies over a preliminary answer.json", (t) => {
+	for (const answer of ['{ "drc_clean": false, "checks": [ { "check": "drc", "ran": false } ] }', "{}", "not json"]) {
+		const ws = setup(t);
+		report(ws.work, "drc/block_idac_full.lyrdb", { ago_s: 60 });
+		writeFileSync(join(ws.work, "answer.json"), answer);
+		const out = run(ws, "--once");
+		assert.match(out, new RegExp(`^applied \\S+Z sha256:${sha("v2")} commit [0-9a-f]{40} \\(preliminary answer\\.json present\\)$`, "m"));
+		assert.equal(readFileSync(join(ws.work, "block.gds"), "utf8"), "v2");
+		assert.equal(git(ws.work, "rev-list", "--count", "HEAD"), "2");
+	}
 });
 
 test("the companion loop starts, sees the report and applies after the delay", (t) => {

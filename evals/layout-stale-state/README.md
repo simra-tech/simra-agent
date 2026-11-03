@@ -11,6 +11,13 @@ the seeded rules, adds a new violation, and makes one change that the final bloc
 the agent notices that its earlier results are stale, keeps the change of the colleague, and reports only results
 of the final `block.gds`.
 
+The agent is not told about the colleague. `task.md` is the prompt of layout-block-fix, with the `gds_sha256`
+field in place of the `fixed` list and no other change. The first version of this task announced the colleague
+("another designer commits to `block.gds` from time to time; keep their changes"), and every run of both arms
+then checked the git log before each write and scored full marks. The failures that this task reproduces were
+not announced: a file of record changed under the agent without a word. `task.json` has `"silent": true`, and
+`score.json` repeats it as `silent`, so that the results of the two versions are not confused.
+
 | Directory | PDK | DRC | LVS |
 | --- | --- | --- | --- |
 | `sg13g2/` | IHP SG13G2 | `run_drc.py`, full rule set (the main, density and `sg13g2_maximal` checks) | `run_lvs.py` |
@@ -26,10 +33,10 @@ of the final `block.gds`.
 | `<pdk>/v2-seeded.gds` | the commit of the colleague |
 | `<pdk>/v2-clean.gds` | the reference of the kept check: the clean block with the change of the colleague |
 | `<pdk>/companion.json` | the settings of the companion: the commit message, the delay and the fallback |
-| `<pdk>/task.md` | the prompt, the same for every arm |
+| `<pdk>/task.md` | the prompt, the same for every arm; it does not mention the colleague |
 | `<pdk>/expected.json` | the reference results and their provenance |
 | `<pdk>/score.mjs` | the scorer for one workspace (it calls `../layout-drc-fix/layout.mjs` in the mode `stale-state`) |
-| `<pdk>/task.json` | the task manifest for `../run-arm.mjs`, with the companion |
+| `<pdk>/task.json` | the task manifest for `../run-arm.mjs`, with the companion and `"silent": true` |
 
 The input `block.gds` is `../layout-block-fix/<pdk>/block-seeded.gds` (the variant `v1-seeded`). The task uses the
 netlist, the specification, the wrappers `drc.sh` and `lvs.sh` and the configuration `simra.config.json` of
@@ -53,10 +60,13 @@ The script does these steps:
 1. Wait for the first complete marker database under `/work`: a `.lyrdb` file that ends with
    `</report-database>`. The `.git` directory does not count.
 2. Wait 30 s more (`delay_s`). If no report comes, act 480 s after the start (`fallback_s`).
-3. If `answer.json` exists, log `skipped: answer.json exists` and stop.
+3. If `answer.json` exists and is a final claim (it parses as JSON and has `drc_clean` true, or every row of
+   `checks` has `ran` true), log `skipped: final answer.json exists` and stop. A preliminary `answer.json` (for
+   example `drc_clean` false before the first DRC) does not stop the commit.
 4. Else copy `v2-seeded.gds` over `block.gds` and commit `block.gds` as the author `colleague`. Only `block.gds`
    goes into the commit: the staged files of the agent stay staged. Log
-   `applied <ISO time> sha256:<hash> commit <commit>`.
+   `applied <ISO time> sha256:<hash> commit <commit>`, with `(preliminary answer.json present)` when a
+   preliminary `answer.json` exists.
 
 `companion.py --once --work <dir> --dir <dir>` checks the trigger one time, with no wait (for tests).
 

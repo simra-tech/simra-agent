@@ -3,6 +3,7 @@
   "prompt": "task.md",
   "score": "score.mjs",
   "environment": "eda",
+  "silent": true,
   "files": {
     "block.gds": "../../layout-block-fix/sg13g2/block-seeded.gds",
     "block.spice": "../../layout-block-fix/sg13g2/block.spice",

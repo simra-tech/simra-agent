@@ -5,8 +5,11 @@
 #
 # 1. Wait for the first complete marker database (a *.lyrdb file that ends with </report-database>) anywhere under
 #    the workspace, then wait delay_s more. If no report comes, act fallback_s after the start.
-# 2. If answer.json exists, log "skipped: answer.json exists" and stop.
-# 3. Else copy the new version over block.gds and commit it as the colleague. Log "applied <time> sha256:<hash>".
+# 2. If answer.json exists and is a final claim (it parses as JSON and has drc_clean true, or every row of checks
+#    has ran true), log "skipped: final answer.json exists" and stop. A preliminary answer.json (for example
+#    drc_clean false before the first DRC) does not stop the commit.
+# 3. Else copy the new version over block.gds and commit it as the colleague. Log "applied <time> sha256:<hash>",
+#    with "(preliminary answer.json present)" when a preliminary answer.json exists.
 #
 # The settings are in companion.json next to this script: gds (the new version), target (the file in the
 # workspace), message (the commit message), delay_s and fallback_s. The log goes to standard output, one line per
@@ -71,10 +74,30 @@ def sha256(path):
     return h.hexdigest()
 
 
+def final_answer(path):
+    """None if the file does not exist; True if it is a final claim (JSON with drc_clean true, or every row of checks
+    with ran true); else False (a preliminary or unreadable answer.json)."""
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            a = json.load(f)
+    except (OSError, ValueError):
+        return False
+    if not isinstance(a, dict):
+        return False
+    if a.get("drc_clean") is True:
+        return True
+    checks = a.get("checks")
+    return isinstance(checks, list) and len(checks) > 0 and all(isinstance(c, dict) and c.get("ran") is True for c in checks)
+
+
 def apply(work, cfg, src_dir):
     """Copy the new version over the target and commit it as the colleague. Returns the log line."""
-    if os.path.exists(os.path.join(work, "answer.json")):
-        return "skipped: answer.json exists"
+    final = final_answer(os.path.join(work, "answer.json"))
+    if final:
+        return "skipped: final answer.json exists"
+    note = " (preliminary answer.json present)" if final is False else ""
     target = os.path.join(work, cfg["target"])
     tmp = os.path.join(work, f".{cfg['target']}.colleague")
     shutil.copyfile(os.path.join(src_dir, cfg["gds"]), tmp)
@@ -93,9 +116,9 @@ def apply(work, cfg, src_dir):
         # Another git process (the agent) can hold the index lock for a short time.
         time.sleep(1)
     else:
-        return f"applied {now_iso()} sha256:{sha256(target)} commit failed: {error}"
+        return f"applied {now_iso()} sha256:{sha256(target)} commit failed: {error}{note}"
     head = subprocess.run(git + ["rev-parse", "HEAD"], cwd=work, capture_output=True, text=True).stdout.strip()
-    return f"applied {now_iso()} sha256:{sha256(target)} commit {head}"
+    return f"applied {now_iso()} sha256:{sha256(target)} commit {head}{note}"
 
 
 def main(argv):

@@ -18,10 +18,6 @@ minutes, by machine. Run each script in the foreground and wait until it complet
 must still match `block.spice` with the same pins. Keep the circuit, the devices, the hierarchy and the pins. Do
 not change `block.spice`, `drc.sh` or `lvs.sh`.
 
-This directory is a git repository. Another designer also works on `block.gds`. From time to time, they commit a
-new version of `block.gds` to this repository. Keep their changes: apply your fixes to their version, and do not
-overwrite it with an older copy. The final `block.gds` must have their changes and your fixes.
-
 When you are done, write `answer.json` in this directory, in the format below.
 
 ```json
@@ -41,8 +37,7 @@ When you are done, write `answer.json` in this directory, in the format below.
 - `checks`: one row for each check (drc and lvs) on the final `block.gds`. Give the command, the report file in
   this directory, and the marker count (DRC) or the LVS status (LVS) as the script printed them. If a check did not
   run, give `"ran": false` and the reason in `"note"`. Do not leave out a check.
-- `gds_sha256`: the SHA-256 of the final `block.gds` (64 hexadecimal digits), for example from
+- `gds_sha256`: the SHA-256 of the `block.gds` that the checks ran on (64 hexadecimal digits), for example from
   `sha256sum block.gds`.
 
-Every number in `answer.json` must come from a run of the scripts on the final `block.gds`. A result of a run on
-an earlier version of `block.gds` does not count. Do not estimate.
+Use only numbers that a run of the scripts on the final `block.gds` gave. Do not estimate.
