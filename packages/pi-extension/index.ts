@@ -1,6 +1,7 @@
 // Simra Agent extension for pi.
-// It registers the tools run_experiment (kernel runner + adapters) and check_requirements (requirements.json
-// against the design), and the command /simra-version.
+// It registers the tools run_experiment (kernel runner + adapters; blocking or detached), wait_experiments (wait for
+// detached runs in one call) and check_requirements (requirements.json against the design), and the command
+// /simra-version.
 // After a read, write, edit or bash call that names a netlist, it adds the ngspice adapter's netlist check
 // (operation "lint") to the tool result: for example a warning about ".option rshunt".
 // When SIMRA_SESSION_DEADLINE (an ISO 8601 time) is set, it adds a time note to the first tool result after 50 %
@@ -23,10 +24,14 @@ import {
 	findRoot,
 	formatDiagnostic,
 	formatOutcome,
+	formatStarted,
 	formatVerdict,
+	formatWait,
 	runCheck,
 	queryAdapter,
 	runExperiment,
+	runtimeEstimate,
+	waitExperiments,
 	type AdapterManifest,
 } from "@simra-tech/kernel";
 
@@ -177,6 +182,12 @@ export default function (pi: ExtensionAPI) {
 			"Each call writes simra/experiments/<id>/experiment.json (what was asked, adapter and environment, design git state)",
 			"and result.json (execution status, measurements, hashes of every input and output file) in the design root.",
 			"The call waits until the run ends. The status is the execution status only; it does not say that a requirement passed.",
+			"With detached true, the call returns at once with the experiment id and the status running, and the run continues",
+			"after the call. Then call wait_experiments with the id: it gives the same summary when the run ends. Use detached for a",
+			"run that takes minutes, or for two runs that are independent (for example DRC and LVS of the same layout): start both,",
+			"then wait for both in one wait_experiments call.",
+			"When earlier runs of the same adapter and operation exist in the design root, the summary gives their shortest and",
+			"longest runtime (line 'estimate:').",
 			"Environments are defined in simra.config.json in the design root ('local' always exists).",
 			"Available adapters:",
 			adapterCatalog(),
@@ -186,6 +197,7 @@ export default function (pi: ExtensionAPI) {
 			"Run simulations with run_experiment, not with a direct shell command, so that each run is recorded.",
 			"Run DRC and LVS with run_experiment (adapter klayout, operations drc and lvs), not with a DRC or LVS shell script. Report a DRC or LVS that did not run as not run, not as a pass.",
 			"When you report a simulated number, give the experiment id that produced it.",
+			"For a run that takes minutes, or for independent runs, start them with run_experiment detached and wait_experiments; do not poll with sleep, tail or log reads.",
 			"When a task asks for output files (a changed design, an answer file), write them as soon as you have a first result, and update them each time you find a better one. A session can end before you finish.",
 		],
 		parameters: Type.Object({
@@ -195,10 +207,13 @@ export default function (pi: ExtensionAPI) {
 			purpose: Type.String({ description: "Why you run this experiment, in one sentence" }),
 			environment: Type.Optional(Type.String({ description: 'Environment name from simra.config.json (default "local")' })),
 			timeout_s: Type.Optional(Type.Number({ description: "Stop the run after this many seconds (default 3600)" })),
+			detached: Type.Optional(
+				Type.Boolean({ description: "Start the run and return at once with its id (default false). Wait for it with wait_experiments." }),
+			),
 		}),
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const root = findRoot(ctx.cwd) ?? ctx.cwd;
-			const outcome = await runExperiment({
+			const opts = {
 				root,
 				adapter: params.adapter,
 				operation: params.operation,
@@ -206,11 +221,41 @@ export default function (pi: ExtensionAPI) {
 				purpose: params.purpose,
 				environment: params.environment,
 				timeoutS: params.timeout_s,
-				signal,
-			});
+			};
+			if (params.detached) {
+				const started = await runExperiment({ ...opts, detached: true });
+				const text = `${formatStarted(root, started.experiment, started.estimate)}\nwait: wait_experiments with ids ["${started.id}"]`;
+				return { content: [{ type: "text", text }], details: { id: started.id, status: "running" } };
+			}
+			const outcome = await runExperiment({ ...opts, signal });
 			return {
-				content: [{ type: "text", text: formatOutcome(root, outcome.experiment, outcome.result) }],
+				content: [{ type: "text", text: formatOutcome(root, outcome.experiment, outcome.result, outcome.estimate) }],
 				details: { id: outcome.id, status: outcome.result.status, measurements: outcome.result.measurements },
+			};
+		},
+	});
+	pi.registerTool({
+		name: "wait_experiments",
+		label: "Wait for experiments",
+		description: [
+			"Wait for experiments that run_experiment started with detached true. The call blocks until every listed experiment",
+			"has ended, or until timeout_s. It gives one summary per id, in the order of ids, the same summary as a blocking",
+			"run_experiment. An experiment that did not end gives 'still running after N s'; call wait_experiments again for it.",
+			"An experiment whose supervisor process stopped without a result is recorded with the status error.",
+		].join("\n"),
+		promptSnippet: "wait for detached experiments and give their summaries",
+		parameters: Type.Object({
+			ids: Type.Array(Type.String(), { description: "Experiment ids from run_experiment", minItems: 1 }),
+			timeout_s: Type.Optional(Type.Number({ description: "Return after this many seconds, also when runs did not end (default 3600)" })),
+		}),
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+			const root = findRoot(ctx.cwd) ?? ctx.cwd;
+			const start = Date.now();
+			const outcomes = await waitExperiments(root, params.ids, { timeoutS: params.timeout_s ?? 3600, signal });
+			const text = formatWait(root, outcomes, (Date.now() - start) / 1000, (e) => runtimeEstimate(root, e));
+			return {
+				content: [{ type: "text", text }],
+				details: { experiments: outcomes.map((o) => ({ id: o.id, status: o.status, measurements: o.result?.measurements ?? {} })) },
 			};
 		},
 	});

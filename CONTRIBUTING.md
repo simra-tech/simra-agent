@@ -58,10 +58,18 @@ The runner (`packages/kernel`) does these steps for each experiment:
 
 1. It makes the directory `simra/experiments/<id>/` in the design root, with a `work/` subdirectory.
 2. It writes `experiment.json` (what was asked) and `request.json`.
-3. It starts `command` with the path of `request.json` as the last argument, in the selected environment
+3. It writes `status.json` with the status `running`, the start time, and the pid and host of the process that
+   runs the experiment. For a detached run, this process is a supervisor (`simra run --detached-worker <dir>`).
+   Its own stdout and stderr go to `supervisor.stdout.log` and `supervisor.stderr.log`, and the command line of
+   the adapter is in `job.json`.
+4. It starts `command` with the path of `request.json` as the last argument, in the selected environment
    (`local`, or `container` with the engine `podman` or `docker`, from `simra.config.json`).
-4. It writes the stdout and stderr of the adapter to `adapter.stdout.log` and `adapter.stderr.log`.
-5. It reads `response.json` and writes `result.json`.
+5. It writes the stdout and stderr of the adapter to `adapter.stdout.log` and `adapter.stderr.log`.
+6. It reads `response.json` and writes `result.json`. Then it sets the result status in `status.json`.
+
+`result.json` is the source of truth: a run without `result.json` did not end. The status `running` is only in
+`status.json`, never in `result.json`. When the process of `status.json` is gone and there is no `result.json`,
+the next wait (`waitExperiments`, `simra wait`, `wait_experiments`) writes `result.json` with the status `error`.
 
 Request (written by the runner):
 

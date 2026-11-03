@@ -3,7 +3,8 @@
 //
 // 1. The prompt starts with the chip-design preamble. It lists each tool once, keeps the rules of the tools (with the
 //    rule to run DRC and LVS through run_experiment, and the check_requirements rule only for a design with a
-//    requirements.json), and has no pi documentation section.
+//    requirements.json, and the rule to start long or independent runs detached and wait with wait_experiments), and
+//    has no pi documentation section.
 // 2. A prompt that the user gives (--system-prompt) stays as it is.
 
 import assert from "node:assert/strict";
@@ -68,6 +69,8 @@ test("pi sends the chip-design preamble, the tools and their rules, and no pi do
 	assert.doesNotMatch(prompt, /operating inside pi|Pi documentation|<docs>/);
 	assert.match(prompt, /<tools>\n[^]*- run_experiment: run and record one simulation[^]*\n<\/tools>/);
 	assert.match(prompt, /- check_requirements: run the experiments in requirements\.json/);
+	assert.match(prompt, /<tools>\n[^]*- wait_experiments: wait for detached experiments and give their summaries[^]*\n<\/tools>/);
+	assert.match(prompt, /<rules>\n[^]*- For a run that takes minutes, or for independent runs, start them with run_experiment detached and wait_experiments; do not poll with sleep, tail or log reads\.\n[^]*<\/rules>/);
 	assert.doesNotMatch(prompt, /run_experiment: run_experiment|check_requirements: check_requirements/);
 	assert.match(prompt, /<rules>\n[^]*- Run simulations with run_experiment[^]*- When the design has a requirements\.json, run check_requirements without a selection before you say that the design meets its requirements, and give its check id\.\n[^]*<\/rules>/);
 	assert.doesNotMatch(prompt, /- Before you say that the design meets/);

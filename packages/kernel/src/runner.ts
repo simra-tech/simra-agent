@@ -1,12 +1,13 @@
 // Local job runner. It runs one experiment to the end and writes its records.
-// Stage 1: the call blocks until the adapter exits. Detached jobs come later.
+// A blocking run ends when the adapter exits. A detached run continues in a supervisor process (see runDetachedWorker),
+// and waitExperiments waits for it.
 //
 // Contract with the adapter (simra.adapter/0): the runner writes request.json and starts the adapter with its
 // path as the only argument. The adapter writes response.json. See CONTRIBUTING.md.
 
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createWriteStream, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { closeSync, createWriteStream, existsSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { loadConfig } from "./config.ts";
@@ -14,6 +15,9 @@ import { buildInvocation } from "./environments.ts";
 import {
 	type CommandRun,
 	createExperimentDir,
+	finishStatus,
+	readStatus,
+	writeStatus,
 	EXPERIMENT_SCHEMA,
 	experimentDir,
 	type ExecutionStatus,
@@ -23,8 +27,10 @@ import {
 	RESULT_SCHEMA,
 	type ResultRecord,
 	readJson,
+	type StatusRecord,
 	writeJsonAtomic,
 } from "./records.ts";
+import { runtimeEstimate, type RuntimeEstimate } from "./estimate.ts";
 
 export const CONTRACT = "simra.adapter/0";
 export const KERNEL_VERSION: string = readJson<{ version: string }>(
@@ -51,7 +57,10 @@ export interface RunOptions {
 	environment?: string;
 	purpose?: string;
 	timeoutS?: number;
+	/** Blocking run only: abort stops the adapter, and the run is recorded as cancelled. */
 	signal?: AbortSignal;
+	/** Run the experiment in a supervisor process and return at once (status "running"). */
+	detached?: boolean;
 }
 
 export interface RunOutcome {
@@ -59,6 +68,17 @@ export interface RunOutcome {
 	dir: string;
 	experiment: ExperimentRecord;
 	result: ResultRecord;
+	/** The runtimes of earlier runs of the same kind (see runtimeEstimate), or null. */
+	estimate: RuntimeEstimate | null;
+}
+
+/** A detached experiment just after its start. */
+export interface DetachedOutcome {
+	id: string;
+	dir: string;
+	experiment: ExperimentRecord;
+	status: StatusRecord;
+	estimate: RuntimeEstimate | null;
 }
 
 export function findAdapter(name: string, dirs: string[]): { dir: string; manifest: AdapterManifest } {
@@ -103,7 +123,20 @@ export function gitState(root: string): ExperimentRecord["design"] {
 	}
 }
 
-export async function runExperiment(opts: RunOptions): Promise<RunOutcome> {
+/** The facts that the runner needs to run a prepared experiment: in this process, or in a detached supervisor. */
+interface Job {
+	root: string;
+	id: string;
+	command: string;
+	args: string[];
+	timeout_s: number;
+}
+
+const JOB_FILE = "job.json";
+const CLI_PATH = new URL("./cli.ts", import.meta.url).pathname;
+
+/** Check the options, make the experiment directory, and write experiment.json and request.json. */
+function prepareExperiment(opts: RunOptions): { job: Job; env: NodeJS.ProcessEnv; dir: string; experiment: ExperimentRecord } {
 	const root = resolve(opts.root);
 	const config = loadConfig(root);
 	const envName = opts.environment ?? "local";
@@ -154,17 +187,25 @@ export async function runExperiment(opts: RunOptions): Promise<RunOutcome> {
 		work_dir: join(dir, "work"),
 		response_path: responsePath,
 	});
+	const job = { root, id, command: invocation.command, args: invocation.args, timeout_s: opts.timeoutS ?? 3600 };
+	return { job, env: invocation.env, dir, experiment };
+}
 
+/** Run the adapter of a prepared experiment to the end and write result.json and the final status.json. */
+async function executeJob(job: Job, env: NodeJS.ProcessEnv, signal?: AbortSignal): Promise<ResultRecord> {
+	const { root, id } = job;
+	const dir = experimentDir(root, id);
+	const responsePath = join(dir, "response.json");
 	const started = new Date();
 	const stdoutPath = join(dir, "adapter.stdout.log");
 	const stderrPath = join(dir, "adapter.stderr.log");
-	const exit = await spawnAndWait(invocation.command, invocation.args, {
+	const exit = await spawnAndWait(job.command, job.args, {
 		cwd: root,
-		env: invocation.env,
+		env,
 		stdoutPath,
 		stderrPath,
-		timeoutS: opts.timeoutS ?? 3600,
-		signal: opts.signal,
+		timeoutS: job.timeout_s,
+		signal,
 	});
 	const finished = new Date();
 
@@ -189,7 +230,7 @@ export async function runExperiment(opts: RunOptions): Promise<RunOutcome> {
 	if (exit.spawnError) result.errors.push(`could not start the adapter: ${exit.spawnError}`);
 	if (exit.timedOut) {
 		result.status = "timeout";
-		result.errors.push(`the adapter did not finish in ${opts.timeoutS ?? 3600} s and was stopped`);
+		result.errors.push(`the adapter did not finish in ${job.timeout_s} s and was stopped`);
 	} else if (exit.cancelled) {
 		result.status = "cancelled";
 		result.errors.push("the run was cancelled");
@@ -200,7 +241,68 @@ export async function runExperiment(opts: RunOptions): Promise<RunOutcome> {
 	}
 
 	writeJsonAtomic(join(dir, "result.json"), result);
-	return { id, dir, experiment, result };
+	finishStatus(root, id, result);
+	return result;
+}
+
+export function runExperiment(opts: RunOptions & { detached: true }): Promise<DetachedOutcome>;
+export function runExperiment(opts: RunOptions & { detached?: false }): Promise<RunOutcome>;
+export function runExperiment(opts: RunOptions): Promise<RunOutcome | DetachedOutcome>;
+/**
+ * Run one experiment. By default the call waits until the run ends. With detached: true, a supervisor process runs
+ * the experiment, and the call returns at once with the status "running". The supervisor writes result.json as the
+ * blocking run does; waitExperiments waits for it.
+ */
+export async function runExperiment(opts: RunOptions): Promise<RunOutcome | DetachedOutcome> {
+	const { job, env, dir, experiment } = prepareExperiment(opts);
+	const { root, id } = job;
+	const estimate = runtimeEstimate(root, experiment);
+	if (opts.detached) {
+		// The job file has no environment variables: the supervisor gets them from its process environment.
+		writeJsonAtomic(join(dir, JOB_FILE), job);
+		const out = openSync(join(dir, "supervisor.stdout.log"), "w");
+		const err = openSync(join(dir, "supervisor.stderr.log"), "w");
+		try {
+			const child = spawn(process.execPath, [CLI_PATH, "run", "--detached-worker", dir], {
+				cwd: root,
+				env,
+				detached: true,
+				stdio: ["ignore", out, err],
+			});
+			// A start error without a pid is thrown here; a later error is seen by the next wait (no process).
+			child.on("error", () => {});
+			if (child.pid === undefined) throw new Error("could not start the supervisor process");
+			child.unref();
+			const status = writeStatus(root, id, { status: "running", detached: true, pid: child.pid, started_at: new Date().toISOString() });
+			return { id, dir, experiment, status, estimate };
+		} finally {
+			closeSync(out);
+			closeSync(err);
+		}
+	}
+	writeStatus(root, id, { status: "running", detached: false, pid: process.pid, started_at: new Date().toISOString() });
+	const result = await executeJob(job, env, opts.signal);
+	return { id, dir, experiment, result, estimate };
+}
+
+/**
+ * The supervisor of a detached experiment (simra run --detached-worker <dir>). It runs the job of the directory to
+ * the end. SIGTERM or SIGINT stops the adapter, and the run is recorded as cancelled.
+ */
+export async function runDetachedWorker(dir: string): Promise<ResultRecord> {
+	const job = readJson<Job>(join(resolve(dir), JOB_FILE));
+	const status = readStatus(job.root, job.id);
+	writeStatus(job.root, job.id, { status: "running", detached: true, pid: process.pid, started_at: status?.started_at ?? new Date().toISOString() });
+	const controller = new AbortController();
+	const stop = () => controller.abort();
+	process.once("SIGTERM", stop);
+	process.once("SIGINT", stop);
+	try {
+		return await executeJob(job, process.env, controller.signal);
+	} finally {
+		process.off("SIGTERM", stop);
+		process.off("SIGINT", stop);
+	}
 }
 
 export interface QueryOutcome {

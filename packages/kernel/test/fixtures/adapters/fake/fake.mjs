@@ -1,4 +1,5 @@
-// Test adapter. inputs.mode: ok | failed | crash | invalid-json | wrong-contract | bad-exit | sleep | values
+// Test adapter. inputs.mode: ok | failed | crash | invalid-json | wrong-contract | bad-exit | sleep | slow | values
+// "slow": the response of "ok" after inputs.seconds seconds.
 // "values": inputs.values {name: number | null} become the measurements, with units from inputs.units.
 // "values" also takes inputs.at {name: {sweep: value}}: the "at" of that measurement (a sweep point).
 // "values" and "failed" also take inputs.diagnostics, the diagnostics of the response.
@@ -37,3 +38,4 @@ else if (mode === "bad-exit") {
 	respond(ok);
 	process.exit(1);
 } else if (mode === "sleep") setTimeout(() => {}, 60_000);
+else if (mode === "slow") setTimeout(() => respond(ok), (request.inputs.seconds ?? 1) * 1000);

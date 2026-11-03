@@ -17,6 +17,10 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
 
 - The tool `run_experiment` (pi extension) and the command `simra run` (plain CLI) run one simulation through
   an adapter.
+- A run can be detached: `run_experiment` with `detached: true` (pi) or `simra run --detach` (CLI) starts the run in
+  a supervisor process and returns at once. The tool `wait_experiments` (pi) and the command `simra wait` (CLI)
+  wait for one or more runs in one call. The summary of a run gives the runtimes of the earlier runs of the same
+  kind.
 - Each run writes a record to `simra/experiments/<id>/` in the design root: the request, the environment
   (container image ID, CPU pinning), the git state of the design, the hash of every input file (including the
   PDK model files), the tool version, the measurements, the logs and the hashed outputs.
@@ -70,6 +74,42 @@ In pi:
 
 1. Run `npx pi -e ./packages/pi-extension` in the design root.
 2. Ask for a simulation. The agent calls `run_experiment` and cites the experiment id.
+
+## Run a long job
+
+A run that takes minutes (for example a DRC or LVS deck of a large layout) can run detached. The run continues in
+a supervisor process, also after the tool call or the command ends. Two independent runs (for example DRC and LVS)
+can run at the same time.
+
+From a plain command line:
+
+1. Run `npx simra run --detach run.json`. The command prints the experiment id and the status `running`, and
+   returns at once.
+2. Run `npx simra wait <id> [<id>...]`. The command waits until each run ends, and prints the summary of each run.
+   Add `--timeout-s <n>` to stop the wait after `n` seconds (default 3600). A run that did not end is shown as
+   `still running`; the run continues. The command exits with 0 only when every run completed.
+
+In pi:
+
+1. The agent calls `run_experiment` with `detached: true`. The tool gives the id and the status `running`.
+2. The agent calls `wait_experiments` with the ids. The call blocks until the runs end (or `timeout_s`, default
+   3600 s) and gives the same summary as a blocking `run_experiment`, one block per id. The model does not use
+   tokens while the call waits.
+
+The prompt rules tell the agent to use these tools for long or independent runs, and not to poll with `sleep`,
+`tail` or log reads.
+
+The runner writes `status.json` in the experiment directory: the status (`running`, then the result status), the
+start time, and the pid and host of the process that runs the experiment. When the process is gone and there is
+no `result.json`, the next wait writes `result.json` with the status `error`. The supervisor stops the adapter
+at the timeout of the run (`timeout_s`, default 3600 s). On `SIGTERM`, it stops the adapter and records the run
+as `cancelled`.
+
+When an experiment starts, the summary gets one line with the runtimes of the earlier runs, for example
+`estimate: earlier runs of klayout drc on this design took 391.8 to 427.7 s (2 runs)`. The line uses the
+completed runs in `simra/experiments` of the design root with the same adapter, the same operation and the same
+input `rule_set`, that ended before the new run started. It gives only the shortest runtime, the longest runtime
+and the number of runs. When there is no such run, there is no line.
 
 The `simulate` operation of the ngspice adapter takes two optional inputs for the condition of a run:
 

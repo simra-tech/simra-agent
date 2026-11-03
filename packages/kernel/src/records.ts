@@ -1,16 +1,19 @@
 // Experiment and result records. They are plain JSON files in the design repository:
 //
 //   <root>/simra/experiments/<id>/experiment.json   what was asked (written before the run)
+//   <root>/simra/experiments/<id>/status.json       running, then the result status; the pid of the run
 //   <root>/simra/experiments/<id>/result.json       what happened (written after the run)
 //
 // The files are the source of truth. Any tool can read them without this code.
 
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { join } from "node:path";
 
 export const EXPERIMENT_SCHEMA = "simra.experiment/0";
 export const RESULT_SCHEMA = "simra.result/0";
+export const STATUS_SCHEMA = "simra.status/0";
 
 /** Execution status only. It says nothing about whether a requirement passed. */
 export type ExecutionStatus = "completed" | "failed" | "error" | "timeout" | "cancelled";
@@ -78,6 +81,22 @@ export interface ResultRecord {
 	logs: { adapter_stdout: string; adapter_stderr: string };
 }
 
+/**
+ * The state of a run. result.json is the source of truth: when it exists, the run has ended. Without result.json,
+ * status.json tells a running experiment from a dead one: the process with pid (on host) runs the experiment.
+ */
+export interface StatusRecord {
+	schema: typeof STATUS_SCHEMA;
+	experiment: string;
+	status: ExecutionStatus | "running";
+	/** true: a supervisor process runs the experiment; false: the caller of the blocking run. */
+	detached: boolean;
+	pid: number;
+	host: string;
+	started_at: string;
+	finished_at: string | null;
+}
+
 export function experimentsDir(root: string): string {
 	return join(root, "simra", "experiments");
 }
@@ -107,6 +126,38 @@ export function createExperimentDir(root: string, id: string): string {
 	const dir = experimentDir(root, id);
 	mkdirSync(join(dir, "work"), { recursive: true });
 	return dir;
+}
+
+export function readStatus(root: string, id: string): StatusRecord | null {
+	const path = join(experimentDir(root, id), "status.json");
+	try {
+		return existsSync(path) ? readJson<StatusRecord>(path) : null;
+	} catch {
+		return null;
+	}
+}
+
+export function writeStatus(
+	root: string,
+	id: string,
+	fields: Pick<StatusRecord, "status" | "detached" | "pid" | "started_at"> & Partial<StatusRecord>,
+): StatusRecord {
+	const status: StatusRecord = { schema: STATUS_SCHEMA, experiment: id, host: hostname(), finished_at: null, ...fields };
+	writeJsonAtomic(join(experimentDir(root, id), "status.json"), status);
+	return status;
+}
+
+/** Set the result status in status.json after result.json is written. */
+export function finishStatus(root: string, id: string, result: Pick<ResultRecord, "status" | "started_at" | "finished_at">): void {
+	const old = readStatus(root, id);
+	writeStatus(root, id, {
+		status: result.status,
+		detached: old?.detached ?? false,
+		pid: old?.pid ?? process.pid,
+		host: old?.host ?? hostname(),
+		started_at: old?.started_at ?? result.started_at,
+		finished_at: result.finished_at,
+	});
 }
 
 export interface ExperimentSummary {

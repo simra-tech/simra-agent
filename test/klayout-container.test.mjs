@@ -9,6 +9,8 @@
 //    seeded block gives the deck command after the tool line, lists the outputs, gives every marker box and the
 //    paths of the full table, and is under 6 kB for IHP. The test prints its size, its command line, and the size of
 //    the output of drc.sh on the same block.
+// 5. A detached DRC and a detached LVS start at the same time, and one wait gives both results: the same counts as
+//    the blocking runs. The start of the DRC gives the runtime estimate of the earlier blocking DRC.
 // It runs only with SIMRA_TEST_IMAGE, an image with KLayout and both PDKs (optional: SIMRA_TEST_ENGINE podman or
 // docker, default podman). A skipped case is reported by the test runner as skipped: that check did not run.
 
@@ -18,7 +20,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSyn
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
-import { runExperiment } from "@simra-tech/kernel";
+import { formatStarted, formatWait, runExperiment, waitExperiments } from "@simra-tech/kernel";
 import { loadTask, runContainer, taskEnvironment } from "../evals/layout-drc-fix/layout.mjs";
 import { brokenLvs, PDKS } from "../evals/layout-block-fix/reference.mjs";
 
@@ -139,5 +141,38 @@ for (const pdk of PDKS) {
 		assert.ok([0, 1].includes(sh.code), sh.stderr);
 		const shBytes = Buffer.byteLength(readFileSync(join(root, "sh/drc.out"), "utf8"));
 		t.diagnostic(`${pdk}: summary of simra run (klayout drc, seeded block) ${Buffer.byteLength(cli.stdout)} bytes; drc.sh output ${shBytes} bytes`);
+	});
+
+	test(`klayout ${pdk}: a detached drc and a detached lvs, and one wait for both (container)`, { skip, timeout: 900_000 }, async (t) => {
+		const { spec, expected } = loadTask(join(repo, "evals/layout-block-fix", pdk));
+		const root = await designRoot(t, pdk);
+		const drcInputs = { gds: "block-seeded.gds", cell: spec.cell };
+		const blocking = (await run(root, "drc", drcInputs)).result;
+		assert.equal(blocking.status, "completed", why(blocking));
+		const t0 = Date.now();
+		const detached = (operation, inputs) => runExperiment({ root, adapter: "klayout", operation, environment: "eda", inputs, purpose: "container test, detached", detached: true });
+		const drc = await detached("drc", drcInputs);
+		const lvs = await detached("lvs", { gds: "block-clean.gds", cell: spec.cell, netlist: "block.spice", pins: spec.pins });
+		const startS = (Date.now() - t0) / 1000;
+		assert.deepEqual([drc.status.status, lvs.status.status], ["running", "running"]);
+		const started = formatStarted(root, drc.experiment, drc.estimate);
+		assert.match(started, /^estimate: earlier runs of klayout drc on this design took [\d.]+ s \(1 run\)$/m);
+		assert.equal(lvs.estimate, null);
+		const outcomes = await waitExperiments(root, [drc.id, lvs.id], { timeoutS: 900 });
+		const waitS = (Date.now() - t0) / 1000;
+		assert.deepEqual(outcomes.map((o) => o.status), ["completed", "completed"], why(outcomes[0].result ?? outcomes[1].result));
+		const e = expected.variants.seeded.drc;
+		assert.deepEqual([values(outcomes[0].result).markers, values(outcomes[0].result).rules_violated], [e.markers, Object.keys(e.rules).length]);
+		assert.deepEqual([values(outcomes[0].result).markers, values(outcomes[0].result).rules_violated], [values(blocking).markers, values(blocking).rules_violated]);
+		assert.equal(values(outcomes[1].result).match, 1, why(outcomes[1].result));
+		const text = formatWait(root, outcomes, waitS);
+		assert.equal(text.split("\n\n").length, 2);
+		assert.match(text, new RegExp(`^experiment ${drc.id}: completed \\([\\d.]+ s\\)$`, "m"));
+		assert.match(text, new RegExp(`^experiment ${lvs.id}: completed \\([\\d.]+ s\\)$`, "m"));
+		// The two runs overlapped: each started before the other ended.
+		const [a, b] = outcomes.map((o) => o.result);
+		assert.ok(a.started_at < b.finished_at && b.started_at < a.finished_at, `${a.started_at}..${a.finished_at} / ${b.started_at}..${b.finished_at}`);
+		t.diagnostic(`${pdk}: two detached starts in ${startS.toFixed(1)} s; wait returned after ${waitS.toFixed(1)} s; drc ${a.duration_s.toFixed(1)} s, lvs ${b.duration_s.toFixed(1)} s`);
+		t.diagnostic(`${pdk} start text:\n${started}`);
 	});
 }

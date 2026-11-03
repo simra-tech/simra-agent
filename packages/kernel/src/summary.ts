@@ -2,16 +2,49 @@
 // It always names the records, so every number can be traced to its run.
 
 import { join, relative } from "node:path";
+import type { RuntimeEstimate } from "./estimate.ts";
 import { type CommandRun, experimentDir, type ExperimentRecord, type ResultRecord } from "./records.ts";
 import { checksDir, type Limit, NOT_SELECTED, type VerdictRecord, type VerdictRow } from "./requirements.ts";
+import type { WaitOutcome } from "./wait.ts";
 
-export function formatOutcome(root: string, experiment: ExperimentRecord, result: ResultRecord): string {
+/** The lines that name the records, the adapter, the environment and the runtime estimate. */
+function headLines(root: string, experiment: ExperimentRecord, estimate: RuntimeEstimate | null | undefined): string[] {
 	const lines: string[] = [];
-	lines.push(`experiment ${experiment.id}: ${result.status} (${result.duration_s.toFixed(1)} s)`);
 	lines.push(`records: ${relative(root, experimentDir(root, experiment.id))}/{experiment,result}.json`);
 	lines.push(`adapter: ${experiment.adapter.name} ${experiment.adapter.version}, operation ${experiment.operation}`);
+	if (estimate) lines.push(formatEstimate(estimate));
 	const env = experiment.environment as { name?: string; image_id?: string };
 	lines.push(`environment: ${env.name}${env.image_id ? ` (${env.image_id.slice(0, 19)})` : ""}`);
+	return lines;
+}
+
+/** `estimate: earlier runs of <adapter> <operation> on this design took <min> to <max> s (<n> runs)`. */
+export function formatEstimate(e: RuntimeEstimate): string {
+	const kind = `${e.adapter} ${e.operation}${e.rule_set === null ? "" : ` (rule set ${e.rule_set})`}`;
+	const took = e.runs === 1 ? `${e.min_s.toFixed(1)} s (1 run)` : `${e.min_s.toFixed(1)} to ${e.max_s.toFixed(1)} s (${e.runs} runs)`;
+	return `estimate: earlier runs of ${kind} on this design took ${took}`;
+}
+
+/** The summary of a detached experiment just after its start. */
+export function formatStarted(root: string, experiment: ExperimentRecord, estimate: RuntimeEstimate | null): string {
+	return [`experiment ${experiment.id}: running (detached)`, ...headLines(root, experiment, estimate)].join("\n");
+}
+
+/** One block per outcome of a wait: the summary of an ended run, or one line for a run that still runs. */
+export function formatWait(root: string, outcomes: WaitOutcome[], waitedS: number, estimate: (experiment: ExperimentRecord) => RuntimeEstimate | null = () => null): string {
+	return outcomes
+		.map((o) =>
+			o.result
+				? formatOutcome(root, o.experiment, o.result, estimate(o.experiment))
+				: `experiment ${o.id}: still running after ${Math.round(waitedS)} s (records: ${relative(root, experimentDir(root, o.id))}/)`,
+		)
+		.join("\n\n");
+}
+
+export function formatOutcome(root: string, experiment: ExperimentRecord, result: ResultRecord, estimate?: RuntimeEstimate | null): string {
+	const lines: string[] = [];
+	lines.push(`experiment ${experiment.id}: ${result.status} (${result.duration_s.toFixed(1)} s)`);
+	lines.push(...headLines(root, experiment, estimate));
 	if (result.tool) lines.push(`tool: ${result.tool.name} ${result.tool.version}`);
 	for (const c of result.commands ?? []) lines.push(formatCommand(c));
 	const design = experiment.design;
