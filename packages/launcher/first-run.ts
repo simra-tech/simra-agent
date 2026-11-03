@@ -1,6 +1,4 @@
-// The first start of simra in a terminal: a short welcome and a login with an API key, before pi starts. pi's own
-// first-run setup does not run for a rebrand. The login asks for a key and needs no browser, so it works over SSH.
-// /login in simra has the other providers and the subscriptions.
+// The first start in a terminal: a welcome and an API key login (no browser, so it works over SSH), before pi starts.
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -8,16 +6,12 @@ import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { showStartupInput, showStartupSelector } from "../../node_modules/@earendil-works/pi-coding-agent/dist/cli/startup-ui.js";
 import { AuthStorage } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/auth-storage.js";
 
-/** A low-cost model that reads images (for example the page images of a PDF), and a stronger model. */
 const SUGGESTIONS = [
 	{ label: "DeepSeek V4.1 Flash: low cost, reads images", provider: "deepseek", model: "deepseek-flash", keys: "https://platform.deepseek.com/api_keys" },
 	{ label: "GPT-6.1 Sol: stronger", provider: "openai", model: "gpt-6.1-sol", keys: "https://platform.openai.com/api-keys" },
 ];
 
-/**
- * A first run: pi has no settings yet (pi writes settings.json at its first start), auth.json has no credential,
- * there is no models.json, and no provider key is in the environment.
- */
+/** No settings (pi writes them at its first start), no credential, no models.json and no provider key in the env. */
 export function isFirstRun(agentDir: string): boolean {
 	if (["settings.json", "models.json"].some((file) => existsSync(join(agentDir, file)))) return false;
 	try {
@@ -26,7 +20,6 @@ export function isFirstRun(agentDir: string): boolean {
 	return !Object.entries(process.env).some(([name, value]) => name.endsWith("_API_KEY") && value);
 }
 
-/** The welcome and the login. It saves the key in auth.json and the model as the default model. */
 export async function firstRun(agentDir: string): Promise<void> {
 	const settings = SettingsManager.create(process.cwd(), agentDir, { projectTrusted: false });
 	const choice = await showStartupSelector(settings, "Welcome to Simra, a chip-design agent. Choose a model:", [

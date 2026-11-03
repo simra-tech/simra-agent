@@ -3,14 +3,8 @@
 #
 #   curl -fsSL https://github.com/simra-tech/simra-agent/releases/latest/download/install.sh | sh
 #
-# It downloads simra @VERSION@ for this machine and checks its SHA-256 hash. It unpacks it to
-# $SIMRA_HOME/releases/@VERSION@ (default ~/.local/share/simra) and links ~/.local/bin/simra to it. If ~/.local/bin is
-# not on the PATH, it asks before it adds a marked block to your shell profile. It changes nothing else.
-# Run it again to update. It keeps the previous release. "simra uninstall" removes simra.
-#
-#   SIMRA_VERSION=<version>   install that release
-#   SIMRA_HOME=<dir>          install to <dir>, for example a scratch disk
-#   SIMRA_NO_MODIFY_PATH=1    do not change the shell profile
+# It installs simra @VERSION@ (hash checked) to ~/.local/share/simra and links ~/.local/bin/simra. It asks before it
+# changes your shell profile. Options: SIMRA_VERSION=<v>, SIMRA_HOME=<dir>, SIMRA_NO_MODIFY_PATH=1.
 set -eu
 
 version=@VERSION@
@@ -49,8 +43,6 @@ check_machine() {
 	aarch64 | arm64) cpu=arm64 ;;
 	*) die "the CPU $(uname -m) is not supported. simra runs on x64 and arm64." ;;
 	esac
-	# A shell under Rosetta on an Apple silicon Mac reports x86_64.
-	if [ "$os" = darwin ] && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = 1 ]; then cpu=arm64; fi
 	platform=$os-$cpu
 	command -v curl >/dev/null || command -v wget >/dev/null || die "curl or wget is needed to download simra."
 	command -v sha256sum >/dev/null || command -v shasum >/dev/null || command -v openssl >/dev/null ||
@@ -83,7 +75,7 @@ install_release() {
 	sha=$(printf '%s\n' "$sums" | awk -v f="$tarball" '$2 == f { print $1 }')
 	[ -n "$sha" ] || die "this installer has no $tarball."
 	mkdir -p "$home/releases"
-	if [ "$("$home/releases/$version/simra" --version 2>/dev/null)" = "$version" ]; then
+	if [ -d "$home/releases/$version" ]; then
 		say "simra $version is in $home/releases/$version already."
 	else
 		# The staging folder is on the same disk, so the move into releases/ is a rename.

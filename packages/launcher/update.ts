@@ -1,5 +1,4 @@
-// Updates of simra. simra never updates itself: simra update runs the install.sh of the latest release, and once a
-// day an interactive session checks for a newer release and shows a notice.
+// simra update and the daily update notice. simra never updates itself.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -18,7 +17,7 @@ export function installHome(): string | undefined {
 }
 
 /** true when version a (x.y.z) is newer than version b. */
-export function newer(a: string, b: string): boolean {
+function newer(a: string, b: string): boolean {
 	const [x, y] = [a, b].map((v) => v.split(/[.-]/).slice(0, 3).map(Number));
 	const i = x.findIndex((n, k) => n !== y[k]);
 	return i !== -1 && x[i] > y[i];
@@ -33,37 +32,29 @@ async function latestRelease(): Promise<string> {
 }
 
 /**
- * An extension that shows "simra <v> is available: run simra update" at the start of an interactive session, when
- * the last check found a newer release. Once a day it checks again, in the background; the next start shows the
- * result. A failed check waits a day too. SIMRA_NO_UPDATE_CHECK=1 and pi's offline mode turn the check off.
+ * Once a day, an interactive session checks for a newer release and shows "simra <v> is available: run simra update".
+ * stateFile has the time of the last check. SIMRA_NO_UPDATE_CHECK=1 and pi's offline mode turn the check off.
  */
 export function updateNotice(version: string, stateFile: string) {
-	let done = false;
 	return (pi: ExtensionAPI) => {
-		// Once per process: a new session (/new) starts the event again.
 		pi.on("session_start", (_event, ctx) => {
-			if (done || !ctx.hasUI || process.env.SIMRA_NO_UPDATE_CHECK === "1" || process.env.PI_OFFLINE) return;
-			done = true;
-			let state: { checked_at?: string; latest?: string } = {};
+			if (!ctx.hasUI || process.env.SIMRA_NO_UPDATE_CHECK === "1" || process.env.PI_OFFLINE) return;
+			let checked = Number.NaN;
 			try {
-				state = JSON.parse(readFileSync(stateFile, "utf8"));
+				checked = Date.parse(readFileSync(stateFile, "utf8"));
 			} catch {}
-			if (state.latest && newer(state.latest, version)) ctx.ui.notify(`simra ${state.latest} is available: run simra update`, "info");
-			if (Math.abs(Date.now() - Date.parse(state.checked_at ?? "")) < DAY_MS) return;
-			const save = (latest = state.latest) => writeFileSync(stateFile, `${JSON.stringify({ checked_at: new Date().toISOString(), latest })}\n`);
-			// The time of the check is saved first, so that a session that starts in the meantime does not check too.
+			if (Math.abs(Date.now() - checked) < DAY_MS) return;
 			try {
-				save();
+				writeFileSync(stateFile, new Date().toISOString());
 			} catch {}
-			latestRelease().then(save, () => {}).catch(() => {});
+			latestRelease()
+				.then((latest) => newer(latest, version) && ctx.ui.notify(`simra ${latest} is available: run simra update`, "info"))
+				.catch(() => {});
 		});
 	};
 }
 
-/**
- * simra update: download the install.sh of the latest release and run it. It installs the release next to this one:
- * SIMRA_HOME is the folder of this installation, unless the environment sets it.
- */
+/** simra update: run the latest install.sh, in the SIMRA_HOME of this installation. */
 export async function selfUpdate(args: string[]): Promise<number> {
 	if (args.length > 0) {
 		console.error("usage: simra update | simra update --extensions | simra update --models");

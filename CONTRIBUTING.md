@@ -19,16 +19,13 @@ Thank you for your interest. The project is at stage 1. The structure is still s
 
 ## Release
 
-A tag `v<version>` starts `.github/workflows/release.yml`. It runs `npm test`, builds and tests the `simra` binary
-on linux-x64, linux-arm64, darwin-x64 and darwin-arm64, and publishes one tarball per platform with `SHA256SUMS` and
-a build attestation.
+A tag `v<version>` starts `.github/workflows/release.yml`.
 
 1. Set the version in the root `package.json`. Commit the change.
 2. Run `git tag v<version>` and `git push origin v<version>`. The tag must be the version of `package.json`.
 3. Check the release on GitHub when the workflow ends.
 
-A tag with a suffix, for example `v0.2.0-rc.1` (and the same version in `package.json`), gives a pre-release. The
-install line and `simra update` do not use it, so it can test the release workflow on all four platforms.
+A tag with a suffix, for example `v0.2.0-rc.1`, gives a pre-release, which the install line does not use.
 
 Turn on release immutability in the repository settings once. Then the files of a published release cannot change.
 
@@ -40,9 +37,7 @@ pi is a pinned npm dependency: `@earendil-works/pi-coding-agent` at an exact ver
 The extension package follows the pi package rules: it declares pi as a peer dependency with the range `*`
 and does not bundle it. pi supplies its own copy at run time.
 
-Current pin: **1.5.0** (released 2026-11-02). It was the latest release before the work on the `simra` binary
-(#3). The pin is exact, so every install and every evaluation uses the same agent loop. The project started on
-1.4.0.
+Current pin: **1.5.0**. The pin is exact, so every install and every evaluation uses the same agent loop.
 
 To change the pin:
 
