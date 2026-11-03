@@ -283,6 +283,28 @@ class TechnologyPacks(unittest.TestCase):
         self.assertTrue(error.startswith("no technology pack 'sky130X' in "), error)
         self.assertIn("known packs: ihp-sg13 (ihp-sg13g2, ihp-sg13cmos5l), sky130 (sky130A, sky130B)", error)
 
+    def test_find_facts_in_each_entry_of_the_path_list(self):
+        # SIMRA_TECHNOLOGY_DIR is a list separated by ":". The first entry that has a matching pack wins.
+        extra = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, extra)
+        os.mkdir(os.path.join(extra, "test-pack"))
+        with open(os.path.join(extra, "test-pack", "technology.json"), "w") as f:
+            json.dump({"schema": "simra.technology/0", "name": "test-pack", "pdks": ["test-pdk"],
+                       "klayout": {"test-pdk": {"drc": {"rule_sets": {}}}}}, f)
+        saved = os.environ.get("SIMRA_TECHNOLOGY_DIR")
+        os.environ["SIMRA_TECHNOLOGY_DIR"] = extra + ":" + TECHNOLOGIES
+        self.addCleanup(lambda: os.environ.update({"SIMRA_TECHNOLOGY_DIR": saved}) if saved is not None
+                        else os.environ.pop("SIMRA_TECHNOLOGY_DIR", None))
+        path, _, error = ka.find_facts("test-pack", None)
+        self.assertIsNone(error)
+        self.assertEqual(path, os.path.join(extra, "test-pack", "technology.json"))
+        path, _, error = ka.find_facts(None, "sky130A")
+        self.assertIsNone(error)
+        self.assertEqual(path, os.path.join(TECHNOLOGIES, "sky130", "technology.json"))
+        _, _, error = ka.find_facts("nope", None)
+        self.assertIn("in {}:{};".format(extra, TECHNOLOGIES), error)
+        self.assertIn("test-pack (test-pdk)", error)
+
 
 FAKE_KLAYOUT = """#!/usr/bin/env python3
 import json, os, shutil, sys

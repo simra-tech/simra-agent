@@ -1,0 +1,22 @@
+{
+  "schema": "simra.technology/0",
+  "name": "test-pack",
+  "description": "Fixture pack of an invented PDK for the kernel tests of technology_dirs. It holds no facts of a real PDK.",
+  "pdks": ["test-pdk"],
+  "ngspice": {
+    "size_unit_m": 1e-06,
+    "size_unit_source": "invented",
+    "devices": {
+      "tn": {
+        "kind": "nmos",
+        "terminals": ["d", "g", "s", "b"],
+        "params": {
+          "w": { "role": "width", "required": true, "size": true, "source": "invented" },
+          "l": { "role": "length", "required": true, "size": true, "source": "invented" }
+        },
+        "width_total": true,
+        "source": "invented"
+      }
+    }
+  }
+}

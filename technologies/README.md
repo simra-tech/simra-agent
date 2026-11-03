@@ -74,8 +74,22 @@ The commands of `klayout` can have these placeholders:
 `report` and `extracted` can have only `{gds_stem}`, `{cell}` and `{run_dir}`. The pack gives no path of the
 KLayout binary.
 
-The kernel gives the directory to the adapter in `SIMRA_TECHNOLOGY_DIR`. A container environment mounts it
-read-only at the same path.
+The kernel gives the pack directories to the adapter in `SIMRA_TECHNOLOGY_DIR`, separated by `:`, in search
+order. A container environment mounts each directory read-only at the same path.
+
+## Packs outside the repository
+
+A pack can be in a directory outside this repository, for example in a separate repository of a project.
+
+1. Put the pack in `<dir>/<name>/technology.json`.
+2. Add the directory to `technology_dirs` in `simra.config.json` or `simra.local.json` of the design root:
+   `{ "technology_dirs": ["../my-packs"] }`. A relative path is resolved against the design root.
+3. Run the experiment. The adapter searches the configured directories first, in the given order, then the
+   directory of this repository.
+
+A pack name or a PDK name selects the first pack that has it. A pack of a configured directory can thus replace a
+built-in pack with the same name. A configured directory that does not exist stops the run with an error. A path
+with `:` is not supported.
 
 To add a PDK:
 

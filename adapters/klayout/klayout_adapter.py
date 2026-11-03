@@ -104,20 +104,24 @@ def file_entry(path, root, role=None):
     return entry
 
 
-def technology_dir():
-    return os.environ.get("SIMRA_TECHNOLOGY_DIR") or os.path.join(os.path.dirname(os.path.dirname(HERE)), "technologies")
+def technology_dirs():
+    """The directories of the technology packs, in search order: the entries of SIMRA_TECHNOLOGY_DIR (separated by
+    ":"), or else the technologies directory of the repository."""
+    entries = [d for d in (os.environ.get("SIMRA_TECHNOLOGY_DIR") or "").split(":") if d]
+    return entries or [os.path.join(os.path.dirname(os.path.dirname(HERE)), "technologies")]
 
 
 def find_facts(name, pdk):
     """(pack path, the klayout facts of one PDK, None), or (None, None, message). name is the name of a pack, or else
     a PDK name in the "pdks" of a pack; without name, the pack is the pack whose "pdks" has pdk."""
-    base = technology_dir()
+    dirs = technology_dirs()
     packs = []
-    for entry in sorted(os.listdir(base)) if os.path.isdir(base) else []:
-        path = os.path.join(base, entry, "technology.json")
-        if os.path.isfile(path):
-            with open(path) as f:
-                packs.append((path, json.load(f)))
+    for base in dirs:
+        for entry in sorted(os.listdir(base)) if os.path.isdir(base) else []:
+            path = os.path.join(base, entry, "technology.json")
+            if os.path.isfile(path):
+                with open(path) as f:
+                    packs.append((path, json.load(f)))
     if name:
         chosen = [p for p in packs if p[1].get("name") == name] or [p for p in packs if name in (p[1].get("pdks") or [])]
     else:
@@ -132,8 +136,8 @@ def find_facts(name, pdk):
     known = ", ".join("{} ({})".format(p.get("name"), ", ".join(p.get("pdks") or [])) for _, p in packs) or "none"
     wanted = "technology pack '{}'".format(name) if name else "technology pack for PDK '{}'".format(pdk)
     return None, None, ("no {} in {}; known packs: {}. Give input 'technology' (a pack name or a PDK name), add a pack "
-                        "there, or set SIMRA_TECHNOLOGY_DIR to the directory of a project pack (see technologies/README.md)").format(
-        wanted, base, known)
+                        "there, or add the directory of a project pack to technology_dirs (see technologies/README.md)").format(
+        wanted, ":".join(dirs), known)
 
 
 def klayout_version(binary):

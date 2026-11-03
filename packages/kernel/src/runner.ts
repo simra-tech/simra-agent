@@ -135,6 +135,20 @@ interface Job {
 const JOB_FILE = "job.json";
 const CLI_PATH = new URL("./cli.ts", import.meta.url).pathname;
 
+/**
+ * The directories of the technology packs that the adapter searches, in order: the configured ones (technology_dirs),
+ * then the built-in one. A configured directory that does not exist is an error. A path with ":" cannot be given,
+ * because SIMRA_TECHNOLOGY_DIR separates the entries with ":".
+ */
+export function technologySearchPath(configured: string[]): string[] {
+	for (const dir of configured) {
+		if (!existsSync(dir)) throw new Error(`technology_dirs: directory not found: ${dir}`);
+		if (dir.includes(":")) throw new Error(`technology_dirs: a path with ":" is not supported: ${dir}`);
+	}
+	const dirs = existsSync(BUILTIN_TECHNOLOGY_DIR) ? [...configured, BUILTIN_TECHNOLOGY_DIR] : [...configured];
+	return [...new Set(dirs)];
+}
+
 /** Check the options, make the experiment directory, and write experiment.json and request.json. */
 function prepareExperiment(opts: RunOptions): { job: Job; env: NodeJS.ProcessEnv; dir: string; experiment: ExperimentRecord } {
 	const root = resolve(opts.root);
@@ -160,8 +174,8 @@ function prepareExperiment(opts: RunOptions): { job: Job; env: NodeJS.ProcessEnv
 	const responsePath = join(dir, "response.json");
 	const adapterCommand = [...manifest.command.map((part) => part.replaceAll("{adapter_dir}", adapterDir)), requestPath];
 	// Build the invocation first: a configuration error must not leave an empty experiment behind.
-	const technologyDir = existsSync(BUILTIN_TECHNOLOGY_DIR) ? BUILTIN_TECHNOLOGY_DIR : undefined;
-	const invocation = buildInvocation({ name: envName, config: envConfig, root, adapterDir, adapterCommand, experimentId: id, technologyDir });
+	const technologyDirs = technologySearchPath(config.technology_dirs ?? []);
+	const invocation = buildInvocation({ name: envName, config: envConfig, root, adapterDir, adapterCommand, experimentId: id, technologyDirs });
 	createExperimentDir(root, id);
 
 	const experiment: ExperimentRecord = {

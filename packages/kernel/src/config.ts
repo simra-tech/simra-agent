@@ -25,6 +25,8 @@ export interface SimraConfig {
 	environments: Record<string, EnvironmentConfig>;
 	/** Extra directories that contain adapters (each adapter is a subdirectory with adapter.json). */
 	adapter_dirs?: string[];
+	/** Extra directories that contain technology packs (each pack is a subdirectory with technology.json). */
+	technology_dirs?: string[];
 }
 
 export const CONFIG_FILE = "simra.config.json";
@@ -52,6 +54,9 @@ export function loadConfig(root: string): SimraConfig {
 		}
 		if (part.adapter_dirs) {
 			config.adapter_dirs = [...(config.adapter_dirs ?? []), ...part.adapter_dirs.map((d) => resolve(root, d))];
+		}
+		if (part.technology_dirs) {
+			config.technology_dirs = [...(config.technology_dirs ?? []), ...part.technology_dirs.map((d) => resolve(root, d))];
 		}
 	}
 	return config;

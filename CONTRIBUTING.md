@@ -133,7 +133,8 @@ Rules:
   `"report": ["[1] bbox top all layers: (0.000,0.000;21.000,21.000)  w=21.000 h=21.000 (top cell)"]`.
 - The adapter writes logs to files in `work_dir` or to stderr. It does not write results to stdout.
 - The adapter does not contain PDK facts (for example the parameter names of a MOS model). It reads them from
-  a technology pack in the directory that `SIMRA_TECHNOLOGY_DIR` gives (see
-  [technologies/README.md](technologies/README.md)). The runner sets this variable, and a container
-  environment mounts the directory read-only. The adapter adds the pack file to `input_files` with the role
+  a technology pack in the directories that `SIMRA_TECHNOLOGY_DIR` gives, a list separated by `:` that the
+  adapter searches in order (see [technologies/README.md](technologies/README.md)). The runner sets this
+  variable from `technology_dirs` of the configuration and the built-in directory, and a container environment
+  mounts each directory read-only. The adapter adds the pack file to `input_files` with the role
   `technology`.

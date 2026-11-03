@@ -525,21 +525,31 @@ CONTROL_END = re.compile(r"^\s*\.endc\b", re.IGNORECASE)
 OP_QUANTITIES = ("vgs", "vth", "vds", "vdsat", "id", "gm", "gds")
 
 
-def technology_dir():
-    return os.environ.get("SIMRA_TECHNOLOGY_DIR") or os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))), "technologies")
+def technology_dirs():
+    """The directories of the technology packs, in search order: the entries of SIMRA_TECHNOLOGY_DIR (separated by
+    ":"), or else the technologies directory of the repository."""
+    entries = [d for d in (os.environ.get("SIMRA_TECHNOLOGY_DIR") or "").split(":") if d]
+    return entries or [os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))), "technologies")]
+
+
+def read_packs(dirs):
+    """[(path, pack)] of each <dir>/<name>/technology.json, the directories in order, the names sorted in each."""
+    packs = []
+    for base in dirs:
+        for entry in sorted(os.listdir(base)) if os.path.isdir(base) else []:
+            path = os.path.join(base, entry, "technology.json")
+            if os.path.isfile(path):
+                with open(path) as f:
+                    packs.append((path, json.load(f)))
+    return packs
 
 
 def find_technology(name, pdk, section="operating_point"):
     """(path, pack, None) for the pack with this name, or else the pack whose "pdks" has this name; without name, the
     pack for this PDK. Or (None, None, message). The pack must have ngspice.<section>."""
-    base = technology_dir()
-    packs = []
-    for entry in sorted(os.listdir(base)) if os.path.isdir(base) else []:
-        path = os.path.join(base, entry, "technology.json")
-        if os.path.isfile(path):
-            with open(path) as f:
-                packs.append((path, json.load(f)))
+    dirs = technology_dirs()
+    packs = read_packs(dirs)
     if name:
         chosen = [p for p in packs if p[1].get("name") == name] or [p for p in packs if name in (p[1].get("pdks") or [])]
     else:
@@ -551,7 +561,7 @@ def find_technology(name, pdk, section="operating_point"):
     known = ", ".join("{} ({})".format(p.get("name"), ", ".join(p.get("pdks") or [])) for _, p in packs) or "none"
     wanted = "technology pack '{}'".format(name) if name else "technology pack for PDK '{}'".format(pdk)
     return None, None, "no {} in {}; known packs: {}. Give input 'technology', or add a pack (see technologies/README.md)".format(
-        wanted, base, known)
+        wanted, ":".join(dirs), known)
 
 
 def circuit_lines(deck_path):
