@@ -1,0 +1,92 @@
+name: release
+
+# On a tag v<version> (the version of the root package.json):
+# 1. npm test on Node 22 (ci.yml).
+# 2. On each platform: build the simra binary with the pinned Bun, run the binary tests, pack a tarball.
+# 3. Write SHA256SUMS and a build attestation, and publish the release: first as a draft with all files, then
+#    published. With release immutability on in the repository settings, the published files cannot change.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  build:
+    strategy:
+      matrix:
+        include:
+          - { platform: linux-x64, runner: ubuntu-24.04 }
+          - { platform: linux-arm64, runner: ubuntu-24.04-arm }
+          - { platform: darwin-x64, runner: macos-15-intel }
+          - { platform: darwin-arm64, runner: macos-15 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22.x"
+          cache: npm
+      - name: The tag is the version of package.json
+        run: test "$GITHUB_REF_NAME" = "v$(node -p 'require("./package.json").version')"
+      # ngspice for the RC run of the binary tests.
+      - run: if [ "$RUNNER_OS" = Linux ]; then sudo apt-get update && sudo apt-get install -y --no-install-recommends ngspice; else brew install ngspice; fi
+      - run: npm ci
+      - run: sh packages/launcher/get-bun.sh "$RUNNER_TEMP/bun"
+      - run: node packages/launcher/build.ts --out dist/simra
+        env:
+          BUN: ${{ runner.temp }}/bun/bun
+      - run: node --test test/binary.test.mjs
+        env:
+          SIMRA_BINARY: dist/simra/simra
+      # COPYFILE_DISABLE: macOS tar adds no ._ files.
+      - run: tar -C dist -czf "simra-${{ matrix.platform }}.tar.gz" simra
+        env:
+          COPYFILE_DISABLE: "1"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: simra-${{ matrix.platform }}
+          path: simra-${{ matrix.platform }}.tar.gz
+          if-no-files-found: error
+
+  release:
+    needs: [test, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: simra-*
+          path: assets
+          merge-multiple: true
+      - run: sha256sum simra-*.tar.gz > SHA256SUMS && cat SHA256SUMS
+        working-directory: assets
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: assets/SHA256SUMS
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "simra $GITHUB_REF_NAME" --generate-notes assets/*
+          gh release edit "$GITHUB_REF_NAME" --draft=false
