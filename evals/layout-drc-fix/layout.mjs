@@ -38,8 +38,10 @@
 // GDS, the check rows with ran: false (not_run), the deck runtimes of the verification, the run metrics from
 // transcript.jsonl next to the workspace (tool_calls, inline_python_calls, result_bytes), deck_runs (the runs of
 // drc.sh and lvs.sh in the transcript, and in deck_runs.run_experiment the run_experiment calls of the klayout
-// adapter for each operation), wait_calls (shell commands that wait: sleep, a while or until loop, tail -f) and
-// errors.
+// adapter for each operation), wait_calls (shell commands that wait: sleep, a while or until loop, tail -f),
+// background_runs (commands that start a deck with &, nohup, setsid or disown, or calls of a job tool), log_reads
+// (tail, cat, grep or wc on a file under drc/, lvs/ or simra/experiments/), deck_wall_s (the sum of the run times of
+// the deck calls, from the transcript; null for a transcript without run times) and errors.
 //
 // A deck result is "not_run" when the deck did not complete: no report, a report that does not parse, or an exit
 // code that does not agree with the printed result (for example a deck that prints a match and then crashes).
@@ -146,9 +148,11 @@ export function transcriptMetrics(text) {
 }
 
 /**
- * The tool events of an agent transcript, in order: { format, call, command, tool, args, result_bytes }. call: true
- * for the start of a tool call (command: the shell command of the call, or undefined for another tool; tool and args:
- * the tool name and the arguments, pi only). pi gives the result of a call in a separate event (call: false).
+ * The tool events of an agent transcript, in order: { format, call, id, command, tool, args, result_bytes, duration_ms }.
+ * call: true for the start of a tool call (command: the shell command of the call, or undefined for another tool; tool
+ * and args: the tool name and the arguments, pi only). pi gives the result of a call in a separate event (call: false),
+ * with the same id. duration_ms: the run time of the call, from the transcript (pi: durationMs of the end event;
+ * OpenCode: the start and end times of the tool part), or null (Codex CLI: its events have no times).
  */
 function* transcriptCalls(text) {
 	const bytes = (s) => (typeof s === "string" ? Buffer.byteLength(s, "utf8") : 0);
@@ -159,21 +163,24 @@ function* transcriptCalls(text) {
 		} catch {
 			continue;
 		}
+		const ms = (v) => (Number.isFinite(v) && v >= 0 ? v : null);
 		if (e?.type === "tool_execution_start") {
-			// pi: the arguments at the start of the call, the result at the end.
-			yield { format: "pi", call: true, command: e.args?.command, tool: e.toolName, args: e.args, result_bytes: 0 };
+			// pi: the arguments at the start of the call, the result and the run time at the end.
+			yield { format: "pi", call: true, id: e.toolCallId, command: e.args?.command, tool: e.toolName, args: e.args, result_bytes: 0, duration_ms: null };
 		} else if (e?.type === "tool_execution_end") {
-			yield { format: "pi", call: false, command: undefined, result_bytes: (e.result?.content ?? []).reduce((n, c) => n + bytes(c?.text), 0) };
+			yield { format: "pi", call: false, id: e.toolCallId, command: undefined, result_bytes: (e.result?.content ?? []).reduce((n, c) => n + bytes(c?.text), 0), duration_ms: ms(e.durationMs) };
 		} else if (e?.type === "item.completed" && e.item && !["agent_message", "reasoning"].includes(e.item.type)) {
-			yield { format: "codex", call: true, command: e.item.command, result_bytes: bytes(e.item.aggregated_output) };
+			yield { format: "codex", call: true, id: e.item.id, command: e.item.command, result_bytes: bytes(e.item.aggregated_output), duration_ms: null };
 		} else if (e?.type === "tool_use" && e.part?.type === "tool") {
-			yield { format: "opencode", call: true, command: e.part.state?.input?.command, result_bytes: bytes(e.part.state?.output ?? e.part.state?.error) };
+			const t = e.part.state?.time;
+			const duration = ms(t?.end) !== null && ms(t?.start) !== null ? ms(t.end - t.start) : null;
+			yield { format: "opencode", call: true, id: e.part.callID ?? e.part.id, command: e.part.state?.input?.command, tool: e.part.tool, result_bytes: bytes(e.part.state?.output ?? e.part.state?.error), duration_ms: duration };
 		}
 	}
 }
 
 /** The words before a command that start another command (or are its options): skipped before the script name. */
-const PREFIX = new Set(["do", "then", "else", "time", "nohup", "exec", "env", "timeout", "sh", "bash", "dash", "command", "stdbuf", "!", "{"]);
+const PREFIX = new Set(["do", "then", "else", "time", "nohup", "setsid", "nice", "exec", "env", "timeout", "sh", "bash", "dash", "command", "stdbuf", "!", "{"]);
 
 /** The wrapper scripts that a shell command runs: a list of "drc" and "lvs", one entry for each run. */
 export function deckRuns(command) {
@@ -195,20 +202,78 @@ export const waits = (command) =>
 	typeof command === "string" &&
 	(/\bsleep\b/.test(command) || /\b(?:while|until)\b[\s\S]*\bdo\b/.test(command) || /\btail\b(?:\s+-\S+|\s+\d+)*\s+(?:-[A-Za-z]*[fF]\b|--follow\b)/.test(command));
 
+/** The simple commands of a shell command, with the separator after each: [{ words, next }]. Quotes go. */
+function simpleCommands(command) {
+	// The & of a redirection (2>&1, &>, >&) is not a separator.
+	const text = command.replace(/['"`]/g, " ").replace(/\d*>&\d*|&>>?/g, " ");
+	const parts = text.split(/(&&|\|\||[;|&\n()]|\$\()/);
+	const out = [];
+	for (let i = 0; i < parts.length; i += 2) {
+		// The separator after the command: the first one that is not a closing parenthesis.
+		let j = i + 1;
+		while (parts[j] === ")") j += 2;
+		out.push({ words: parts[i].trim().split(/\s+/).filter(Boolean), next: parts[j] ?? null });
+	}
+	return out;
+}
+
+/** The first word of a simple command that is not a prefix (see PREFIX), or undefined. */
+function commandName(words) {
+	let i = 0;
+	while (i < words.length && (PREFIX.has(words[i]) || /^\w+=/.test(words[i]) || /^-/.test(words[i]) || /^\d+[smh]?$/.test(words[i]) || /\/(?:ba|da)?sh$/.test(words[i]))) i++;
+	return words[i];
+}
+
+/** A shell command that starts a deck wrapper in the background: with &, nohup, setsid or disown. */
+export function backgroundRun(command) {
+	if (typeof command !== "string" || deckRuns(command).length === 0) return false;
+	if (/\b(?:nohup|setsid|disown)\b/.test(command)) return true;
+	return simpleCommands(command).some((c) => /(?:^|\/)(?:drc|lvs)\.sh$/.test(commandName(c.words) ?? "") && c.next === "&");
+}
+
+/** A tool of a job capability (a tool name with job, background or detach), not a shell tool. */
+const JOB_TOOL = /job|background|detach/i;
+
+/** A shell command that reads a log or a report of a deck run: tail, cat, grep or wc on a file under drc/, lvs/ or simra/experiments/. */
+export function logRead(command) {
+	if (typeof command !== "string") return false;
+	const file = /^(?:\.\/|\/work\/)?(?:drc|lvs|simra\/experiments)\/\S/;
+	return simpleCommands(command).some((c) => {
+		const name = commandName(c.words);
+		return ["tail", "cat", "grep", "wc"].includes(name?.replace(/^.*\//, "")) && c.words.slice(c.words.indexOf(name) + 1).some((w) => file.test(w));
+	});
+}
+
 /**
- * The deck runs and the wait calls of an agent transcript: { deck_runs: { drc, lvs, run_experiment: { drc, lvs } },
- * wait_calls }. drc and lvs: the wrapper runs of shell commands. run_experiment: the run_experiment calls of the
- * klayout adapter, for each operation.
+ * The deck runs, the wait calls and the job behaviour of an agent transcript: { deck_runs: { drc, lvs, run_experiment:
+ * { drc, lvs } }, wait_calls, background_runs, log_reads, deck_wall_s }. drc and lvs: the wrapper runs of shell
+ * commands. run_experiment: the run_experiment calls of the klayout adapter, for each operation. background_runs: the
+ * shell commands that start a deck in the background (backgroundRun), and the calls of a job tool that name drc.sh,
+ * lvs.sh or a drc or lvs operation. log_reads: the shell commands that read a deck log or report (logRead).
+ * deck_wall_s: the sum of the run times of the tool calls that run a deck (a wrapper or a klayout experiment), in
+ * seconds; null when the transcript has no run times (Codex CLI).
  */
 export function deckMetrics(text) {
-	const out = { deck_runs: { drc: 0, lvs: 0, run_experiment: { drc: 0, lvs: 0 } }, wait_calls: 0 };
+	const out = { deck_runs: { drc: 0, lvs: 0, run_experiment: { drc: 0, lvs: 0 } }, wait_calls: 0, background_runs: 0, log_reads: 0, deck_wall_s: null };
+	const deckCalls = new Map();
+	const durations = new Map();
+	let n = 0;
 	for (const c of transcriptCalls(text)) {
+		const key = c.id ?? `#${n++}`;
+		if (c.duration_ms !== null && c.duration_ms !== undefined) durations.set(key, c.duration_ms);
 		if (!c.call) continue;
 		const op = c.args?.operation;
-		if (c.tool === "run_experiment" && c.args?.adapter === "klayout" && (op === "drc" || op === "lvs")) out.deck_runs.run_experiment[op] += 1;
-		for (const d of deckRuns(c.command)) out.deck_runs[d] += 1;
+		const experiment = c.tool === "run_experiment" && c.args?.adapter === "klayout" && (op === "drc" || op === "lvs");
+		if (experiment) out.deck_runs.run_experiment[op] += 1;
+		const runs = deckRuns(c.command);
+		for (const d of runs) out.deck_runs[d] += 1;
 		if (waits(c.command)) out.wait_calls += 1;
+		if (backgroundRun(c.command)) out.background_runs += 1;
+		else if (c.tool && JOB_TOOL.test(c.tool) && /\b(?:drc|lvs)(?:\.sh)?\b/.test(JSON.stringify(c.args ?? {}))) out.background_runs += 1;
+		if (logRead(c.command)) out.log_reads += 1;
+		if (experiment || runs.length) deckCalls.set(key, true);
 	}
+	if (durations.size) out.deck_wall_s = Math.round([...deckCalls.keys()].reduce((s, k) => s + (durations.get(k) ?? 0), 0) / 100) / 10;
 	return out;
 }
 
@@ -461,6 +526,9 @@ export async function scoreLayout(ws, taskDir, { mode, verifyRoot = join(dirname
 		metrics: null,
 		deck_runs: null,
 		wait_calls: null,
+		background_runs: null,
+		log_reads: null,
+		deck_wall_s: null,
 		verification: null,
 		errors: [],
 	};
@@ -574,7 +642,7 @@ export async function scoreLayout(ws, taskDir, { mode, verifyRoot = join(dirname
 		const text = readFileSync(transcript, "utf8");
 		report.metrics = transcriptMetrics(text);
 		Object.assign(report, deckMetrics(text));
-	} else report.metrics = report.deck_runs = report.wait_calls = "not_run (no transcript.jsonl next to the workspace)";
+	} else report.metrics = report.deck_runs = report.wait_calls = report.background_runs = report.log_reads = report.deck_wall_s = "not_run (no transcript.jsonl next to the workspace)";
 	return report;
 }
 

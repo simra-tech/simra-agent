@@ -1,0 +1,22 @@
+{
+  "name": "layout-long-job-sky130",
+  "prompt": "task.md",
+  "score": "score.mjs",
+  "environment": "eda",
+  "files": {
+    "block.gds": "flat-seeded.gds",
+    "block.spice": "block.spice",
+    "spec.md": "spec.md",
+    "task.md": "task.md",
+    "drc.sh": "../../layout-block-fix/sky130/drc.sh",
+    "lvs.sh": "../../layout-block-fix/sky130/lvs.sh",
+    "simra.config.json": "../../layout-block-fix/sky130/simra.config.json",
+    "simra.local.json": "../../../examples/ota-sg13g2/simra.local.json"
+  },
+  "generated": {
+    "flat-seeded.gds": {
+      "sha256": "0d9d8c11fe97e31fce527e6aa63a356d2b21c796985b2592c5d800ea31cf12e8",
+      "command": "node evals/layout-long-job/reference.mjs sky130 --gds"
+    }
+  }
+}

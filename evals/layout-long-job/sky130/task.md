@@ -1,0 +1,44 @@
+This directory holds the layout of an analog block for the SkyWater SKY130 PDK:
+
+- `block.gds`: the layout. The top cell is `idac`. The layout is flat: 21487 devices, all in the top cell.
+- `block.spice`: the reference netlist of the block: one subcircuit `idac` with every device.
+- `spec.md`: the specification: the circuit, the layout, the pins and their order, the layers of the pins, and
+  the checks.
+- `drc.sh`: runs the stock KLayout DRC of the PDK with the main rule set. `./drc.sh block.gds idac` writes the results
+  to `drc/` and prints the report file and the marker count of each rule.
+- `lvs.sh`: runs the stock KLayout LVS of the PDK. `./lvs.sh block.gds idac` compares the layout with
+  `block.spice`, writes the results to `lvs/` and prints the report file and the LVS status.
+
+KLayout (`klayout -b`) and its Python module `klayout.db` are available. The PDK is at `$PDK_ROOT/sky130A`.
+
+The decks take a long time on this block, because the layout is flat. One run of `drc.sh` or `lvs.sh` can
+take several minutes. Do not change `drc.sh` or `lvs.sh` to make them faster.
+
+`block.gds` has DRC violations. Fix them in `block.gds`. After the fix, the DRC must report 0 markers, and LVS
+must still match `block.spice` with the same pins. Keep the circuit, the devices and the pins. Do not change
+`block.spice`, `drc.sh` or `lvs.sh`.
+
+When you are done, write `answer.json` in this directory, in the format below.
+
+```json
+{
+  "drc_clean": true,
+  "lvs_match": true,
+  "checks": [
+    { "check": "drc", "ran": true, "command": "./drc.sh block.gds idac", "report": "drc/idac.lyrdb", "markers": 0 },
+    { "check": "lvs", "ran": true, "command": "./lvs.sh block.gds idac", "report": "lvs/idac.lvsdb", "status": "MATCH" }
+  ],
+  "fixed": [
+    { "rule": "<rule name as the DRC report gives it>", "markers_before": 0 }
+  ]
+}
+```
+
+- `drc_clean`: true if the DRC of the final `block.gds` reports 0 markers.
+- `lvs_match`: true if the LVS of the final `block.gds` reports that the netlists match.
+- `checks`: one row for each check (drc and lvs) on the final `block.gds`. Give the command, the report file in
+  this directory, and the marker count (DRC) or the LVS status (LVS) as the script printed them. If a check did not
+  run, give `"ran": false` and the reason in `"note"`. Do not leave out a check.
+- `fixed`: each rule that had markers in the original `block.gds`, with its marker count before the fix.
+
+Use only numbers that a run of the scripts on the final `block.gds` gave. Do not estimate.

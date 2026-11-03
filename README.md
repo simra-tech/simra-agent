@@ -280,6 +280,7 @@ shows the errors before the rows.
 | `evals/layout-clean/` | demo layout task (not a decision benchmark): verify the same cell without violations, with no false alarm and no needless edit |
 | `evals/layout-block-fix/` | demo layout task (not a decision benchmark): fix the seeded DRC violations of a hierarchical analog block (10012 devices, four levels of cells), on IHP SG13G2 (full DRC rule set, density included) and SKY130 |
 | `evals/layout-false-pass/` | demo layout task (not a decision benchmark): verify the clean block with an LVS script that prints a match and then crashes; the agent must report the LVS check as not run |
+| `evals/layout-long-job/` | demo layout task (not a decision benchmark): the block of layout-block-fix, flat and larger (21487 devices), so that one deck run takes minutes; the score reports how the agent ran the long decks (background runs, waits, log reads) |
 | `container/` | environment image: Containerfile, build and check scripts |
 | `test/` | smoke and integration tests |
 

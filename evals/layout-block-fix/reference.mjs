@@ -87,10 +87,12 @@ export function deviceCount(text, name) {
 /**
  * Make and verify the three variants of one PDK in work (an empty directory), and run the broken LVS wrapper of
  * layout-false-pass on the clean variant. local: a simra.local.json object that replaces the one of the task
- * (tests). Returns { variants, info, spice, broken_lvs, provenance }.
+ * (tests). tasks: the directory of the task with <pdk>/generate.py and <pdk>/task.json (default: this one).
+ * broken: false to not run the broken wrapper (broken_lvs is then null). Returns { variants, info, spice,
+ * broken_lvs, provenance }.
  */
-export async function reference(pdk, work, local) {
-	const taskDir = join(here, pdk);
+export async function reference(pdk, work, local, { tasks = here, broken = true } = {}) {
+	const taskDir = join(tasks, pdk);
 	const { task, spec } = loadTask(taskDir);
 	mkdirSync(work, { recursive: true });
 	for (const f of ["simra.config.json", "simra.local.json"]) {
@@ -99,7 +101,7 @@ export async function reference(pdk, work, local) {
 	}
 	if (local) writeFileSync(join(work, "simra.local.json"), JSON.stringify(local));
 	const env = taskEnvironment(work, task);
-	const g = `python3 ${join(here, pdk, "generate.py")}`;
+	const g = `python3 ${join(taskDir, "generate.py")}`;
 	const gen = VARIANTS.map((v) => `${g} --variant ${v} --out ${join(work, `${v}.gds`)} | tail -1`);
 	const script = [
 		...gen,
@@ -128,7 +130,7 @@ export async function reference(pdk, work, local) {
 		const { report: _l, reason: _lr, ...lvs } = res.lvs;
 		variants[v] = { sha256: hash, bytes: statSync(gds).size, cells: cells[gds], gds, drc, lvs };
 	}
-	return { variants, info: { ...info, devices_netlist: deviceCount(spice, info.cell) }, spice, broken_lvs: await brokenLvs(pdk, variants.clean.gds, join(work, "broken"), local, join(work, "block.spice")), provenance: { engine: env.engine ?? "podman", image: env.image, image_id: r.imageId, klayout, pdk: pdkVersion } };
+	return { variants, info: { ...info, devices_netlist: deviceCount(spice, info.cell) }, spice, broken_lvs: broken ? await brokenLvs(pdk, variants.clean.gds, join(work, "broken"), local, join(work, "block.spice")) : null, provenance: { engine: env.engine ?? "podman", image: env.image, image_id: r.imageId, klayout, pdk: pdkVersion } };
 }
 
 /**
@@ -160,7 +162,7 @@ export async function brokenLvs(pdk, gds, root, local, netlist) {
 	return { exit: Number(read("broken.code")), printed: read("broken.out"), lvsdb_bytes: bytes("broken.size"), lvsdb_bytes_real: bytes("real.size") };
 }
 
-/** Check the roles (step 4). Returns the list of problems (empty: the roles hold). */
+/** Check the roles (step 4; without the broken wrapper if broken_lvs is null). Returns the list of problems (empty: the roles hold). */
 export function checkRoles(pdk, { variants, info, broken_lvs }, pins) {
 	const p = [];
 	const { clean, seeded, cheat } = variants;
@@ -176,6 +178,7 @@ export function checkRoles(pdk, { variants, info, broken_lvs }, pins) {
 	if (cheat.drc.status !== "clean") p.push(`cheat: DRC ${cheat.drc.status} ${JSON.stringify(cheat.drc.rules)}`);
 	if (cheat.lvs.status !== "mismatch") p.push(`cheat: LVS ${cheat.lvs.status}`);
 	if (info.devices !== info.devices_netlist) p.push(`devices: generator ${info.devices}, netlist ${info.devices_netlist}`);
+	if (!broken_lvs) return p;
 	if (!/^LVS status: MATCH$/m.test(broken_lvs.printed)) p.push("broken LVS wrapper: no printed match");
 	if (broken_lvs.exit === 0) p.push("broken LVS wrapper: exit code 0");
 	if (broken_lvs.lvsdb_bytes !== null && !(broken_lvs.lvsdb_bytes < broken_lvs.lvsdb_bytes_real)) p.push("broken LVS wrapper: the LVS database is not truncated");

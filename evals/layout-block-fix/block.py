@@ -25,6 +25,13 @@
 # Variants: clean, seeded and cheat. A seed draws a shape wrong without a change of the connectivity. The cheat
 # variant is the seeded variant without the seeded shapes (a seed that is a necessary connection then leaves an
 # open, and LVS fails). SEEDS lists the seeds: the cell, the kind and the count of seeded sites.
+#
+# Flat mode (pdk.FLAT, for layout-long-job): the generator builds the same hierarchy without the seeds of the
+# repeated cells, flattens it into the top cell, and then draws each seed of a repeated cell (unit, pair) on
+# pdk.FLAT_SITES[seed] copies of that cell only, at fixed positions. The seeds of the top cell are the same as in
+# the hierarchical block. The fill is flat in the top cell too. The reference netlist is flat (flat_spice): one
+# subcircuit, the top cell, with one M line for each device. pdk.SCALE scales the arrays (devices =
+# 255 * a * b + 832).
 
 import hashlib
 
@@ -62,6 +69,7 @@ class Block:
         if variant not in VARIANTS:
             raise ValueError(f"unknown variant {variant}")
         self.pdk, self.variant = pdk, variant
+        self.flat = getattr(pdk, "FLAT", False)
         self.ly = db.Layout()
         self.ly.dbu = 0.001
         self.L = {k: self.ly.layer(*v) for k, v in pdk.LAYERS.items()}
@@ -72,8 +80,17 @@ class Block:
     def b(self, cell, layer, *xy):
         box(cell, self.L[layer], *xy)
 
-    def seed(self, clean, seeded):
-        """Draw a seeded site: the clean drawing, the seeded drawing, or nothing (cheat)."""
+    def seed(self, clean, seeded, name=None):
+        """Draw a seeded site: the clean drawing, the seeded drawing, or nothing (cheat). In a flat block, a seed of a
+        repeated cell (name in pdk.FLAT_SITES) draws both drawings on layers of its own; flatten() then gives each
+        copy of the site its drawing."""
+        if self.flat and name in self.pdk.FLAT_SITES:
+            real = self.L
+            for kind, draw in (("clean", clean), ("seeded", seeded)):
+                self.L = {k: self.ly.layer(db.LayerInfo(f"{name}:{kind}:{k}")) for k in real}
+                draw()
+            self.L = real
+            return
         if self.variant == "clean":
             clean()
         elif self.variant == "seeded":
@@ -140,10 +157,10 @@ class Block:
         self.b(c, "m2", 0, p.D_Y - p.D_RAIL_H // 2, P, p.D_Y + p.D_RAIL_H // 2)
         # Seed unit_via1: the Via1 without its Metal1 pad (the drain strip is narrower than the via).
         self.seed(lambda: (self.pad(c, "m1", xd, p.D_Y, p.M1_PAD), self.pad(c, "via1", xd, p.D_Y, p.VIA)),
-                  lambda: (self.pad(c, "m1", xd, p.D_Y, p.VIA), self.pad(c, "via1", xd, p.D_Y, p.VIA)))
+                  lambda: (self.pad(c, "m1", xd, p.D_Y, p.VIA), self.pad(c, "via1", xd, p.D_Y, p.VIA)), "unit_via1")
         # Seed unit_m1_spur: a Metal1 spur down from the gate rail, too near the top of the drain strip.
         self.seed(lambda: None,
-                  lambda: self.b(c, "m1", xd - p.SPUR_W // 2, dr[3] + p.BAD_M1_S, xd + p.SPUR_W // 2, g[1]))
+                  lambda: self.b(c, "m1", xd - p.SPUR_W // 2, dr[3] + p.BAD_M1_S, xd + p.SPUR_W // 2, g[1]), "unit_m1_spur")
         self.cells["unit"] = c
         # The y ranges of the rails in the unit.
         self.rails = {"g": (g[1], g[3]), "s": p.S_RAIL, "b": p.B_RAIL}
@@ -173,7 +190,8 @@ class Block:
                 if k == "g" and r < neck_rows:
                     ym = y0 + (ry[0] + ry[1]) // 2
                     self.seed(lambda: self.b(c, "m1", st["g"], y0 + ry[0], 0, y0 + ry[1]),
-                              lambda: self.b(c, "m1", st["g"], ym - p.BAD_M1_W // 2, 0, ym + p.BAD_M1_W // 2))
+                              lambda: self.b(c, "m1", st["g"], ym - p.BAD_M1_W // 2, 0, ym + p.BAD_M1_W // 2),
+                              "pair_rail_neck")
                 else:
                     self.b(c, "m1", st[k], y0 + ry[0], 0, y0 + ry[1])
                 self.stack(c, st[k], y0 + (ry[0] + ry[1]) // 2)
@@ -331,7 +349,64 @@ class Block:
             self.pin(top, name, "m3", xs - w, bnd.top - p.PIN_H, xs + w, bnd.top)
         self.top, self.boundary = top, bnd
         self.devices = sum(r * c for r, c in branches) + p.BIAS[0] * p.BIAS[1] + 2 * p.PAIR[0] * p.PAIR[1] + p.TAIL[0] * p.TAIL[1]
+        if self.flat:
+            self.flatten()
         return self.ly, top
+
+    # The flat block ------------------------------------------------------------------------------------------------
+
+    def flatten(self):
+        """Flatten the block into the top cell, then draw the seeds of the repeated cells on a few of the copies: for
+        each seed of pdk.FLAT_SITES, the sites are the instances of its cell (in the order of their position, bottom to
+        top, left to right), and pick() chooses the seeded ones. The other copies get the clean drawing. The cheat
+        has neither drawing on the chosen copies."""
+        ly, top = self.ly, self.top
+        temp = {}
+        for li in ly.layer_indexes():
+            parts = ly.get_info(li).name.split(":")
+            if len(parts) == 3 and parts[0] in self.pdk.FLAT_SITES:
+                temp[li] = parts
+        self.sites = {}
+        local, chosen = {}, {}
+        for seed, n in self.pdk.FLAT_SITES.items():
+            lis = [li for li, (s, _, _) in temp.items() if s == seed]
+            cells = {c.cell_index() for c in ly.each_cell() for li in lis if not c.shapes(li).is_empty()}
+            assert len(cells) == 1, f"seed {seed}: drawn in {len(cells)} cells"
+            ci = cells.pop()
+            insts = []
+            it = top.begin_instances_rec()
+            it.targets = [ci]
+            while not it.at_end():
+                if it.inst_cell().cell_index() == ci:
+                    insts.append(it.trans() * it.inst_trans())
+                it.next()
+            insts.sort(key=lambda t: (t.disp.y, t.disp.x))
+            chosen[seed] = [insts[i] for i in self.pick(seed, len(insts), n)]
+            self.sites[seed] = {"cell": ly.cell(ci).name, "copies": len(insts), "sites": n,
+                                "at_um": [[round(t.disp.x * ly.dbu, 3), round(t.disp.y * ly.dbu, 3)] for t in chosen[seed]]}
+            for li in lis:
+                local[li] = [sh.polygon for sh in ly.cell(ci).shapes(li).each()]
+        top.flatten(-1, True)
+        for li, (seed, kind, name) in temp.items():
+            real = top.shapes(self.L[name])
+            if kind == "clean":
+                skip = set() if self.variant == "clean" else {str(p.transformed(t)) for t in chosen[seed] for p in local[li]}
+                for sh in top.shapes(li).each():
+                    if str(sh.polygon) not in skip:
+                        real.insert(sh)
+            elif self.variant == "seeded":
+                for t in chosen[seed]:
+                    for p in local[li]:
+                        q = p.transformed(t)
+                        real.insert(q.bbox() if q.is_box() else q)
+            ly.delete_layer(li)
+
+    def pick(self, seed, count, n):
+        """The indices of the n seeded copies among count copies: spread over the block, with an offset of its own
+        for each seed (so that two seeds of one cell are not on the same copy)."""
+        k = list(self.pdk.FLAT_SITES).index(seed)
+        off = (k + 1) / (len(self.pdk.FLAT_SITES) + 1)
+        return sorted({min(count - 1, int((i + off) * count / n)) for i in range(n)})
 
 
 def write(pdk, variant, path):
@@ -345,6 +420,8 @@ def write(pdk, variant, path):
         if src is not blk:
             src.build()
         pdk.fill(src, ly, top)
+        if blk.flat:
+            top.flatten(-1, True)
     opt = db.SaveLayoutOptions()
     opt.format = "GDS2"
     opt.gds2_write_timestamps = False
@@ -355,8 +432,29 @@ def write(pdk, variant, path):
         return hashlib.sha256(f.read()).hexdigest()
 
 
+def flat_spice(pdk):
+    """The flat reference netlist of a flat block: one subcircuit, the top cell, with every device."""
+    a, b = pdk.SCALE
+    parts = [(f"o{k}", "ibias", "vss", r * a * c * b) for k, (r, c) in enumerate(BASE_BRANCHES)]
+    parts += [("ibias", "ibias", "vss", pdk.BIAS[0] * pdk.BIAS[1]), ("outn", "inp", "tail", pdk.PAIR[0] * pdk.PAIR[1]),
+              ("outp", "inn", "tail", pdk.PAIR[0] * pdk.PAIR[1]), ("tail", "ibias", "vss", pdk.TAIL[0] * pdk.TAIL[1])]
+    n = sum(p[3] for p in parts)
+    out = [f"* {pdk.CELL}: binary-weighted NMOS current-source array (8 branches) with its bias diode and a",
+           "* differential input pair with a tail source. Flat: one subcircuit with every device.",
+           f"* Devices: {n}.", "", f".subckt {pdk.CELL} {' '.join(PINS)}"]
+    i = 0
+    for d, g, s, m in parts:
+        for _ in range(m):
+            i += 1
+            out.append(pdk.spice_device(f"M{i}", d, g, s, "vss"))
+    out += [f".ends {pdk.CELL}", ""]
+    return "\n".join(out)
+
+
 def spice(pdk):
-    """The hierarchical reference netlist: one subcircuit per cell of the layout."""
+    """The hierarchical reference netlist: one subcircuit per cell of the layout (flat block: flat_spice)."""
+    if getattr(pdk, "FLAT", False):
+        return flat_spice(pdk)
     blk = Block(pdk, "clean")
     blk.build()
     a, b = pdk.SCALE
@@ -390,18 +488,26 @@ PINS = ["o0", "o1", "o2", "o3", "o4", "o5", "o6", "o7", "inp", "inn", "outp", "o
 
 def info(pdk):
     """The facts of the block: the top cell, the pins, the device count, the levels of the hierarchy, the size of the
-    boundary (um) and the seeds (with the real cell names)."""
+    boundary (um) and the seeds (with the real cell names). In a flat block, each seed is in the top cell; a seed of
+    a repeated cell also gives the cell it was in before the flattening (from_cell), the count of copies of that cell
+    and the positions of the seeded copies (at_um, the origin of the cell copy)."""
     blk = Block(pdk, "clean")
     ly, top = blk.build()
     cell = {"pair": "arr{}x{}".format(*pdk.PAIR), "top": pdk.CELL}
     bnd = blk.boundary
+    seeds = {k: {"cell": cell.get(c, c), "kind": kind, "sites": n} for k, (c, kind, n) in SEEDS.items()}
+    if blk.flat:
+        for k, s in seeds.items():
+            site = blk.sites.get(k)
+            s.update({"cell": pdk.CELL, **({"from_cell": site["cell"], "copies": site["copies"], "sites": site["sites"], "at_um": site["at_um"]} if site else {})})
     return {
         "cell": pdk.CELL,
         "pins": PINS,
         "devices": blk.devices,
-        "levels": 4,
+        "scale": list(pdk.SCALE),
+        "levels": 1 if blk.flat else 4,
         "size_um": [round(bnd.width() * ly.dbu, 3), round(bnd.height() * ly.dbu, 3)],
-        "seeds": {k: {"cell": cell.get(c, c), "kind": kind, "sites": n} for k, (c, kind, n) in SEEDS.items()},
+        "seeds": seeds,
     }
 
 

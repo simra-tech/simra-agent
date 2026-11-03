@@ -1,0 +1,356 @@
+{
+  "task": "layout-long-job",
+  "input": "seeded",
+  "pdk": "sky130",
+  "cell": "idac",
+  "pins": [
+    "o0",
+    "o1",
+    "o2",
+    "o3",
+    "o4",
+    "o5",
+    "o6",
+    "o7",
+    "inp",
+    "inn",
+    "outp",
+    "outn",
+    "ibias",
+    "vss"
+  ],
+  "block": {
+    "devices": 21487,
+    "scale": [
+      9,
+      9
+    ],
+    "cells": {
+      "clean": 1,
+      "seeded": 1,
+      "cheat": 1
+    },
+    "levels": 1,
+    "size_um": [
+      1553.1,
+      275.98
+    ]
+  },
+  "seeds": [
+    {
+      "seed": "unit_via1",
+      "cell": "idac",
+      "kind": "Via1 on the drain without its Metal1 pad (enclosure 0)",
+      "sites": 4,
+      "from_cell": "unit",
+      "copies": 21487,
+      "at_um": [
+        [
+          1173.3,
+          7.2
+        ],
+        [
+          1323.3,
+          50.4
+        ],
+        [
+          1329.3,
+          108
+        ],
+        [
+          921.3,
+          190.8
+        ]
+      ],
+      "rules": {
+        "via.4a": 8
+      }
+    },
+    {
+      "seed": "unit_m1_spur",
+      "cell": "idac",
+      "kind": "Metal1 spur on the gate rail too near the drain strip (spacing)",
+      "sites": 4,
+      "from_cell": "unit",
+      "copies": 21487,
+      "at_um": [
+        [
+          831.8,
+          18
+        ],
+        [
+          900.8,
+          64.8
+        ],
+        [
+          487.3,
+          126
+        ],
+        [
+          1062.3,
+          212.4
+        ]
+      ],
+      "rules": {
+        "m1.2": 4
+      }
+    },
+    {
+      "seed": "pair_rail_neck",
+      "cell": "idac",
+      "kind": "narrow Metal1 rail from the gate strap to row r (width)",
+      "sites": 1,
+      "from_cell": "arr8x16",
+      "copies": 2,
+      "at_um": [
+        [
+          1413,
+          0
+        ]
+      ],
+      "rules": {
+        "m1.1": 4
+      }
+    },
+    {
+      "seed": "top_nbias_neck",
+      "cell": "idac",
+      "kind": "narrow Metal2 link of nbias between bias and csarray (width)",
+      "sites": 1,
+      "rules": {
+        "m2.1": 1
+      }
+    },
+    {
+      "seed": "top_vss_comb",
+      "cell": "idac",
+      "kind": "comb of Metal2 spurs on the vss link (spacing)",
+      "sites": 6,
+      "rules": {
+        "m2.2": 5
+      }
+    },
+    {
+      "seed": "top_nbias_offgrid",
+      "cell": "idac",
+      "kind": "Metal2 link of nbias between csarray and diffpair off the grid",
+      "sites": 1,
+      "rules": {
+        "m2_OFFGRID": 4
+      }
+    },
+    {
+      "seed": "top_jumper_via",
+      "cell": "idac",
+      "kind": "Via2 at the end of the Metal3 jumper of vss (enclosure)",
+      "sites": 2,
+      "rules": {
+        "m3.4": 2
+      }
+    },
+    {
+      "seed": "top_dangling_pads",
+      "cell": "idac",
+      "kind": "small Metal3 pads on Via2 on the vss stub (minimum area)",
+      "sites": 8,
+      "rules": {
+        "m3.6": 8
+      }
+    },
+    {
+      "seed": "top_pin_neck",
+      "cell": "idac",
+      "kind": "narrow Metal3 line to a pin (width)",
+      "sites": 2,
+      "rules": {
+        "m3.1": 2
+      }
+    },
+    {
+      "seed": "top_pin_comb",
+      "cell": "idac",
+      "kind": "comb of Metal3 spurs on a pin line (spacing)",
+      "sites": 5,
+      "rules": {
+        "m3.2": 4
+      }
+    }
+  ],
+  "variants": {
+    "clean": {
+      "sha256": "64d5282357826dfeeebea91b2db542c552b3ccde4297f6f236fed418d95e8f43",
+      "bytes": 47328588,
+      "cells": 1,
+      "drc": {
+        "status": "clean",
+        "markers": 0,
+        "rules": {},
+        "exit": 0,
+        "runtime_s": 76.419
+      },
+      "lvs": {
+        "status": "match",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "o0",
+          "o1",
+          "o2",
+          "o3",
+          "o4",
+          "o5",
+          "o6",
+          "o7",
+          "outn",
+          "outp",
+          "vss"
+        ],
+        "runtime_s": 704.225,
+        "status_text": "MATCH"
+      }
+    },
+    "seeded": {
+      "sha256": "0d9d8c11fe97e31fce527e6aa63a356d2b21c796985b2592c5d800ea31cf12e8",
+      "bytes": 47330572,
+      "cells": 1,
+      "drc": {
+        "status": "violations",
+        "markers": 42,
+        "rules": {
+          "m1.1": 4,
+          "m1.2": 4,
+          "via.4a": 8,
+          "m2.1": 1,
+          "m2.2": 5,
+          "m3.1": 2,
+          "m3.2": 4,
+          "m3.4": 2,
+          "m3.6": 8,
+          "m2_OFFGRID": 4
+        },
+        "exit": 0,
+        "runtime_s": 72.87
+      },
+      "lvs": {
+        "status": "match",
+        "exit": 0,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "o0",
+          "o1",
+          "o2",
+          "o3",
+          "o4",
+          "o5",
+          "o6",
+          "o7",
+          "outn",
+          "outp",
+          "vss"
+        ],
+        "runtime_s": 599.767,
+        "status_text": "MATCH"
+      }
+    },
+    "cheat": {
+      "sha256": "d5a75553420ab403601064d4a5ccb32dfd620248d882fb607f0978a71cbc26df",
+      "bytes": 47327564,
+      "cells": 1,
+      "drc": {
+        "status": "clean",
+        "markers": 0,
+        "rules": {},
+        "exit": 0,
+        "runtime_s": 68.163
+      },
+      "lvs": {
+        "status": "mismatch",
+        "exit": 1,
+        "pins": [
+          "ibias",
+          "inn",
+          "inp",
+          "o0",
+          "o1",
+          "o3",
+          "o4",
+          "o5",
+          "o6",
+          "o7",
+          "outn",
+          "vss"
+        ],
+        "runtime_s": 592.614,
+        "status_text": "MISMATCH"
+      }
+    }
+  },
+  "decks": {
+    "drc": "klayout -b -r \"$deck\" -rd input=\"$gds\" -rd top_cell=\"$top\" -rd report=\"$report\" -rd feol=true -rd beol=true -rd offgrid=true -rd thr=4 > drc/drc.log 2>&1",
+    "lvs": "klayout -b -r \"$deck\" -rd input=\"$gds\" -rd top_cell=\"$top\" -rd report=\"$report\" -rd schematic=block.spice -rd target_netlist=\"lvs/${top}_extracted.cir\" -rd thr=4 -rd run_mode=deep -rd spice_net_names=true -rd spice_comments=false -rd scale=false -rd verbose=false -rd schematic_simplify=true -rd net_only=false -rd top_lvl_pins=false -rd combine=false -rd purge=false -rd purge_nets=false > lvs/lvs.log 2>&1"
+  },
+  "runtime_target_s": {
+    "long_deck_min_s": 180,
+    "eval_deck_max_s": 720
+  },
+  "runtimes": {
+    "drc": {
+      "min": 68.163,
+      "max": 76.419
+    },
+    "lvs": {
+      "min": 592.614,
+      "max": 704.225
+    },
+    "long_deck_s": 592.614,
+    "eval_deck_s": 857.063,
+    "in_target": false,
+    "measured": "measured under load (load average 55.75)"
+  },
+  "adapter": {
+    "input": "seeded",
+    "drc": {
+      "status": "violations",
+      "markers": 42,
+      "rules": {
+        "m3.6": 8,
+        "via.4a": 8,
+        "m2.2": 5,
+        "m1.1": 4,
+        "m1.2": 4,
+        "m2_OFFGRID": 4,
+        "m3.2": 4,
+        "m3.1": 2,
+        "m3.4": 2,
+        "m2.1": 1
+      },
+      "runtime_s": 59.368,
+      "command": "/foss/tools/klayout/klayout -b -r /foss/pdks/sky130A/libs.tech/klayout/drc/sky130A_mr.drc -rd input=./block.gds -rd top_cell=idac -rd report=./simra/experiments/20261102-230953-f4553a/work/drc/idac.lyrdb -rd feol=true -rd beol=true -rd offgrid=true -rd thr=4"
+    },
+    "lvs": {
+      "status": "match",
+      "match": 1,
+      "runtime_s": 591.315,
+      "command": "/foss/tools/klayout/klayout -b -r /foss/pdks/sky130A/libs.tech/klayout/lvs/sky130.lvs -rd input=./block.gds -rd top_cell=idac -rd report=./simra/experiments/20261102-231054-5013e1/work/lvs/idac.lvsdb -rd schematic=./block.spice -rd target_netlist=./simra/experiments/20261102-231054-5013e1/work/lvs/idac_extracted.cir -rd thr=4 -rd run_mode=deep -rd spice_net_names=true -rd spice_comments=false -rd scale=false -rd verbose=false -rd schematic_simplify=true -rd net_only=false -rd top_lvl_pins=false -rd combine=false -rd purge=false -rd purge_nets=false"
+    },
+    "measured": "measured under load (load average 55.75)"
+  },
+  "host_load_1min": {
+    "start": 55.75,
+    "end": 28.76,
+    "idle_below": 10,
+    "idle": false
+  },
+  "provenance": {
+    "engine": "docker",
+    "image": "simra-agent-env:5254dc8",
+    "image_id": "sha256:42856c1f6977129497717900ca67e22cc70fc7b0276bb7fe84ebe0fabb14395f",
+    "klayout": "KLayout 0.30.12",
+    "pdk": "sky130A open_pdks 1689ac3f2dc763876eaf967227c7dfe831b031ae",
+    "made_at": "2026-11-02T22:33:34.215Z"
+  }
+}

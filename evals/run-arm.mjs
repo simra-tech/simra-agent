@@ -3,8 +3,10 @@
 // A task is a directory with task.json:
 //   { "name", "prompt": "task.md", "score": "score.mjs", "environment": "eda",
 //     "files": { "<name in the workspace>": "<path relative to the task directory>" } }
-// A file that does not exist is not copied (for example simra.local.json). score.mjs exports score(ws), which
-// returns (or resolves to) the points of each part and "max": { part: maximum points }.
+// A file that does not exist is not copied (for example simra.local.json). A task file that is too large to commit
+// is in "generated": { "<path>": { "sha256", "command" } }; the run stops if it is missing or has another hash.
+// score.mjs exports score(ws), which returns (or resolves to) the points of each part and "max": { part: maximum
+// points }.
 //
 // Arms (all use the same model, chosen with --model, and the same thinking level):
 //   simra     pi with the Simra Agent extension (tool run_experiment)
@@ -41,7 +43,7 @@
 
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync, chmodSync } from "node:fs";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { connect, createServer as createNetServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -133,8 +135,22 @@ exec env ${vars} ${pin}ngspice -b "$@"
 `;
 }
 
+/**
+ * Check the generated task files (the "generated" map of task.json: a task file that is too large to commit, with its
+ * SHA-256 and the command that makes it). Throws if a file is missing or has another hash.
+ */
+export function checkGenerated(taskDir, task) {
+	for (const [src, g] of Object.entries(task.generated ?? {})) {
+		const from = resolve(taskDir, src);
+		if (!existsSync(from)) throw new Error(`${from} not found: make it with ${g.command}`);
+		const hash = createHash("sha256").update(readFileSync(from)).digest("hex");
+		if (hash !== g.sha256) throw new Error(`${from} has SHA-256 ${hash}, expected ${g.sha256}: make it again with ${g.command}`);
+	}
+}
+
 /** Fill ws with the task files. Returns the task environment as the host sees it (engine, image). */
 export function makeWorkspace(taskDir, task, ws) {
+	checkGenerated(taskDir, task);
 	mkdirSync(ws, { recursive: true });
 	for (const [name, src] of Object.entries(task.files)) {
 		const from = resolve(taskDir, src);
@@ -471,7 +487,7 @@ async function main() {
 	// The sandbox prevents access to host files. These checks remain as a second line.
 	const transcript = readFileSync(join(run, "transcript.jsonl"), "utf8");
 	const contamination = [
-		["task directory", new RegExp(`${escape(taskDir)}|expected\\.json|target\\.json|cross_check|layout-(?:drc-fix|block-fix|false-pass)/|(?:cell|block)-(?:seeded|clean|cheat)\\.gds`)],
+		["task directory", new RegExp(`${escape(taskDir)}|expected\\.json|target\\.json|cross_check|layout-(?:drc-fix|block-fix|false-pass|long-job)/|(?:cell|block|flat)-(?:seeded|clean|cheat)\\.gds`)],
 		["this repository", new RegExp(escape(repo))],
 		["another run", new RegExp(`${escape(dirname(runs))}/(?!${escape(`${basename(runs)}/${runName}`)})`)],
 	]

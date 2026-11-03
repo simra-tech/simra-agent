@@ -94,11 +94,11 @@ test("deckRuns and waits: the wrapper runs and the wait calls of shell commands"
 		{ type: "tool_execution_start", toolName: "bash", args: { command: "./drc.sh block.gds idac && ./lvs.sh block.gds idac" } },
 		{ type: "tool_execution_start", toolName: "read", args: { path: "drc.sh" } },
 	]);
-	assert.deepEqual(deckMetrics(pi), { deck_runs: { drc: 2, lvs: 1, run_experiment: { drc: 0, lvs: 0 } }, wait_calls: 1 });
+	assert.deepEqual(deckMetrics(pi), { deck_runs: { drc: 2, lvs: 1, run_experiment: { drc: 0, lvs: 0 } }, wait_calls: 1, background_runs: 1, log_reads: 0, deck_wall_s: null });
 	const codex = lines([{ type: "item.completed", item: { type: "command_execution", command: "bash -lc 'while pgrep klayout; do sleep 10; done; ./lvs.sh block.gds idac'" } }]);
-	assert.deepEqual(deckMetrics(codex), { deck_runs: { drc: 0, lvs: 1, run_experiment: { drc: 0, lvs: 0 } }, wait_calls: 1 });
+	assert.deepEqual(deckMetrics(codex), { deck_runs: { drc: 0, lvs: 1, run_experiment: { drc: 0, lvs: 0 } }, wait_calls: 1, background_runs: 0, log_reads: 0, deck_wall_s: null });
 	const opencode = lines([{ type: "tool_use", part: { type: "tool", tool: "bash", state: { input: { command: "./lvs.sh block.gds idac" }, output: "" } } }]);
-	assert.deepEqual(deckMetrics(opencode), { deck_runs: { drc: 0, lvs: 1, run_experiment: { drc: 0, lvs: 0 } }, wait_calls: 0 });
+	assert.deepEqual(deckMetrics(opencode), { deck_runs: { drc: 0, lvs: 1, run_experiment: { drc: 0, lvs: 0 } }, wait_calls: 0, background_runs: 0, log_reads: 0, deck_wall_s: null });
 	// The run_experiment calls of the klayout adapter, for each operation.
 	const experiments = lines([
 		{ type: "tool_execution_start", toolName: "run_experiment", args: { adapter: "klayout", operation: "drc", inputs: {} } },
@@ -107,7 +107,7 @@ test("deckRuns and waits: the wrapper runs and the wait calls of shell commands"
 		{ type: "tool_execution_start", toolName: "run_experiment", args: { adapter: "ngspice", operation: "simulate", inputs: {} } },
 		{ type: "tool_execution_start", toolName: "bash", args: { command: "./lvs.sh block.gds idac" } },
 	]);
-	assert.deepEqual(deckMetrics(experiments), { deck_runs: { drc: 0, lvs: 1, run_experiment: { drc: 2, lvs: 1 } }, wait_calls: 0 });
+	assert.deepEqual(deckMetrics(experiments), { deck_runs: { drc: 0, lvs: 1, run_experiment: { drc: 2, lvs: 1 } }, wait_calls: 0, background_runs: 0, log_reads: 0, deck_wall_s: null });
 });
 
 /** A fake verifier: the recorded result of a variant (expected.json), for the GDS that the workspace holds. */

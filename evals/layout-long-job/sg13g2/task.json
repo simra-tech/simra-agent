@@ -1,0 +1,22 @@
+{
+  "name": "layout-long-job-sg13g2",
+  "prompt": "task.md",
+  "score": "score.mjs",
+  "environment": "eda",
+  "files": {
+    "block.gds": "flat-seeded.gds",
+    "block.spice": "block.spice",
+    "spec.md": "spec.md",
+    "task.md": "task.md",
+    "drc.sh": "../../layout-block-fix/sg13g2/drc.sh",
+    "lvs.sh": "../../layout-block-fix/sg13g2/lvs.sh",
+    "simra.config.json": "../../layout-block-fix/sg13g2/simra.config.json",
+    "simra.local.json": "../../../examples/ota-sg13g2/simra.local.json"
+  },
+  "generated": {
+    "flat-seeded.gds": {
+      "sha256": "fa714ad96f8cfa1fe807d816c070c5c171e1376d0edf36d4d3168423b0bd1281",
+      "command": "node evals/layout-long-job/reference.mjs sg13g2 --gds"
+    }
+  }
+}
