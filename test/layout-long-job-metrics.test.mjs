@@ -63,10 +63,13 @@ test("deckMetrics: background runs, log reads and the deck wall time of a pi tra
 		{ type: "tool_execution_end", toolCallId: "e", result: { content: [] }, durationMs: 15 },
 		{ type: "tool_execution_start", toolCallId: "f", toolName: "job_status", args: { id: "1" } },
 		{ type: "tool_execution_end", toolCallId: "f", result: { content: [] }, durationMs: 5 },
+		{ type: "tool_execution_start", toolCallId: "g", toolName: "run_experiment", args: { adapter: "klayout", operation: "query", inputs: {} } },
+		{ type: "tool_execution_end", toolCallId: "g", result: { content: [] }, durationMs: 1_000 },
 	]);
 	// The deck calls: a (0.04 s), c (95.25 s), d (200 s) and the job tool call e (0.015 s: it starts the deck and returns).
+	// The query call g is counted in run_experiment, but it is not a deck call.
 	assert.deepEqual(deckMetrics(pi), {
-		deck_runs: { drc: 2, lvs: 1, run_experiment: { drc: 1, lvs: 0 } },
+		deck_runs: { drc: 2, lvs: 1, run_experiment: { drc: 1, lvs: 0, query: 1, diff: 0 } },
 		wait_calls: 1,
 		background_runs: 2,
 		log_reads: 1,
@@ -80,12 +83,12 @@ test("deckMetrics: Codex CLI has no run times (deck_wall_s null); OpenCode has t
 		{ type: "item.completed", item: { id: "item_2", type: "command_execution", command: "/usr/bin/bash -lc 'tail -n 5 drc/drc.log'", aggregated_output: "" } },
 		{ type: "item.completed", item: { id: "item_3", type: "command_execution", command: "/usr/bin/bash -lc './lvs.sh block.gds idac'", aggregated_output: "" } },
 	]);
-	assert.deepEqual(deckMetrics(codex), { deck_runs: { drc: 1, lvs: 1, run_experiment: { drc: 0, lvs: 0 } }, wait_calls: 0, background_runs: 1, log_reads: 1, deck_wall_s: null });
+	assert.deepEqual(deckMetrics(codex), { deck_runs: { drc: 1, lvs: 1, run_experiment: { drc: 0, lvs: 0, query: 0, diff: 0 } }, wait_calls: 0, background_runs: 1, log_reads: 1, deck_wall_s: null });
 	const opencode = lines([
 		{ type: "tool_use", part: { type: "tool", tool: "bash", callID: "x", state: { input: { command: "./drc.sh block.gds idac" }, output: "", time: { start: 1000, end: 191_000 } } } },
 		{ type: "tool_use", part: { type: "tool", tool: "bash", callID: "y", state: { input: { command: "cat lvs/lvs.log" }, output: "", time: { start: 191_500, end: 191_600 } } } },
 	]);
-	assert.deepEqual(deckMetrics(opencode), { deck_runs: { drc: 1, lvs: 0, run_experiment: { drc: 0, lvs: 0 } }, wait_calls: 0, background_runs: 0, log_reads: 1, deck_wall_s: 190 });
+	assert.deepEqual(deckMetrics(opencode), { deck_runs: { drc: 1, lvs: 0, run_experiment: { drc: 0, lvs: 0, query: 0, diff: 0 } }, wait_calls: 0, background_runs: 0, log_reads: 1, deck_wall_s: 190 });
 	// A transcript with run times but no deck call: 0 s.
 	const none = lines([
 		{ type: "tool_execution_start", toolCallId: "a", toolName: "bash", args: { command: "ls" } },

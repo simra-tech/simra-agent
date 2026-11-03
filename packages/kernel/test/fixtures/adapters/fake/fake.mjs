@@ -3,6 +3,7 @@
 // "values": inputs.values {name: number | null} become the measurements, with units from inputs.units.
 // "values" also takes inputs.at {name: {sweep: value}}: the "at" of that measurement (a sweep point).
 // "values" and "failed" also take inputs.diagnostics, the diagnostics of the response.
+// "values" also takes inputs.report: the lines of the response field "report".
 import { writeFileSync } from "node:fs";
 
 const request = JSON.parse((await import("node:fs")).readFileSync(process.argv[2], "utf8"));
@@ -26,7 +27,8 @@ else if (mode === "values") {
 		measurements[name] = value === null ? { value: null, unit, status: "missing" } : { value, unit, status: "measured" };
 		if (request.inputs.at?.[name]) measurements[name].at = request.inputs.at[name];
 	}
-	respond({ ...ok, measurements, diagnostics: request.inputs.diagnostics ?? [] });
+	const report = request.inputs.report ? { report: request.inputs.report } : {};
+	respond({ ...ok, measurements, diagnostics: request.inputs.diagnostics ?? [], ...report });
 }
 else if (mode === "failed") respond({ ...ok, status: "failed", measurements: {}, diagnostics: request.inputs.diagnostics ?? [] });
 else if (mode === "crash") {

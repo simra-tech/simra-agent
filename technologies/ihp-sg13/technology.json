@@ -215,6 +215,11 @@
         "netlist_format": "SPICE (.spice, .cdl or .cir) with one .subckt per cell; MOS devices as M lines with the device name of the PDK as the model, for example 'M1 d g s b sg13_lv_nmos w=1u l=0.5u ng=1 m=1'. The deck reads it with its own reader (rule_decks/custom_reader.lvs).",
         "description": "the stock LVS of the PDK script run_lvs.py (sg13g2.lvs), with schematic simplification on (the default)",
         "source": "ihp-sg13g2/libs.tech/klayout/tech/lvs/run_lvs.py (the database <layout>.lvsdb and the extracted netlist <layout>_extracted.cir in --run_dir); ihp-sg13g2/libs.tech/klayout/tech/lvs/sg13g2.lvs (it logs 'ERROR : Netlists don't match' or 'INFO : Congratulations! Netlists match.'; the script exits with 0 in both cases); ihp-sg13g2/libs.tech/klayout/tech/lvs/README.md (Usage)"
+      },
+      "layer_properties": {
+        "path": "{pdk_root}/ihp-sg13g2/libs.tech/klayout/tech/sg13g2.lyp",
+        "description": "the KLayout layer properties file of the PDK: the layer names and their layer/datatype (operations query and diff)",
+        "source": "ihp-sg13g2/libs.tech/klayout/tech/sg13g2.lyp (one <properties> entry per layer: <name> in the form Metal1.drawing, <source> in the form 8/0)"
       }
     }
   }

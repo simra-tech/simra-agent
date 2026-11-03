@@ -89,14 +89,14 @@ for (const pdk of PDKS) {
 			{ type: "tool_execution_end", toolCallId: "4", result: { content: [] }, durationMs: 75_000 },
 		]);
 		const p = await score(workspace(t, pdk, { answer, transcript: pi }), "clean");
-		assert.deepEqual([p.deck_runs, p.wait_calls, p.background_runs, p.log_reads, p.deck_wall_s], [{ drc: 1, lvs: 1, run_experiment: { drc: 0, lvs: 0 } }, 1, 1, 2, 75]);
+		assert.deepEqual([p.deck_runs, p.wait_calls, p.background_runs, p.log_reads, p.deck_wall_s], [{ drc: 1, lvs: 1, run_experiment: { drc: 0, lvs: 0, query: 0, diff: 0 } }, 1, 1, 2, 75]);
 		// Codex CLI: no run times in the event stream, so deck_wall_s is null.
 		const codex = lines([
 			{ type: "item.completed", item: { id: "item_0", type: "command_execution", command: "/usr/bin/bash -lc './drc.sh block.gds idac'", aggregated_output: "" } },
 			{ type: "item.completed", item: { id: "item_1", type: "command_execution", command: "/usr/bin/bash -lc './lvs.sh block.gds idac'", aggregated_output: "" } },
 		]);
 		const x = await score(workspace(t, pdk, { answer, transcript: codex }), "clean");
-		assert.deepEqual([x.deck_runs, x.background_runs, x.log_reads, x.deck_wall_s], [{ drc: 1, lvs: 1, run_experiment: { drc: 0, lvs: 0 } }, 0, 0, null]);
+		assert.deepEqual([x.deck_runs, x.background_runs, x.log_reads, x.deck_wall_s], [{ drc: 1, lvs: 1, run_experiment: { drc: 0, lvs: 0, query: 0, diff: 0 } }, 0, 0, null]);
 	});
 
 	test(`layout-long-job ${pdk}: spec.md, the netlist, task.json, expected.json and the prompt agree`, () => {

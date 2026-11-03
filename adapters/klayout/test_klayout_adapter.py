@@ -1,5 +1,7 @@
-"""Tests of the klayout adapter on committed fixtures. They need no KLayout: a fake binary and a fake deck stand in
-for KLayout and the PDK. Run: python3 -m unittest discover -s adapters/klayout -p "test_*.py"."""
+"""Tests of the klayout adapter on committed fixtures. The tests of drc and lvs need no KLayout: a fake binary and a
+fake deck stand in for KLayout and the PDK. The tests of query build small layouts with the KLayout Python module
+klayout.db; without the module they are skipped (reported as skipped, so they did not run).
+Run: python3 -m unittest discover -s adapters/klayout -p "test_*.py"."""
 
 import json
 import os
@@ -14,6 +16,10 @@ HERE = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, HERE)
 
 import klayout_adapter as ka  # noqa: E402
+import layout_read as lr  # noqa: E402
+
+DB = lr.klayout_db()
+NO_DB = "the KLayout Python module klayout.db is not installed (pip package klayout)"
 
 FIXTURES = os.path.join(HERE, "fixtures")
 TECHNOLOGIES = os.path.join(os.path.dirname(os.path.dirname(HERE)), "technologies")
@@ -501,6 +507,282 @@ class EndToEnd(unittest.TestCase):
             r, _ = self.run_op("drc", {"gds": "block.gds", "cell": "idac", "technology": name},
                                FAKE_REPORT=fixture("drc-sky130-clean.lyrdb"))
             self.assertEqual((r["status"], r["measurements"]["markers"]["value"]), ("completed", 0), name)
+
+
+# ---------------------------------------------------------------- query
+
+def um_box(db, x1, y1, x2, y2):
+    return db.DBox(x1, y1, x2, y2)
+
+
+def build_layout(path, variant="base"):
+    """The fixture layout: top -> branch (two instances, one rotated by 90°) -> unit (an array of 2 x 1).
+    Layers: Metal1 8/0 (named), Metal1.text 8/25 (a label "vdd"), Via1 19/0 (named), 99/0 (no name).
+
+    unit:   Metal1 (0,0;1,1), Via1 (0.4,0.4;0.6,0.6)
+    branch: unit array at (0,0), pitch 2 µm in x, 2 x 1; Metal1 rail (0,1.5;3,2)
+    top:    branch at (0,0); branch at (10,0) r90; Metal1 (5,0;6,1); label vdd at (5.5,0.5); 99/0 (20,20;21,21)
+
+    Variants for diff: "added" (a Metal1 box (30,0;32,1) in top), "removed" (no Metal1 box (5,0;6,1) in top),
+    "moved" (the rotated branch at (10,1) instead of (10,0)), "extra_cell" (a cell "spare" with a Metal1 box,
+    placed at (40,0)), "unit_changed" (the Metal1 of unit is (0,0;1,1.2))."""
+    db = DB
+    ly = db.Layout()
+    ly.dbu = 0.001
+    m1, txt, v1, x = (ly.layer(db.LayerInfo(*ld)) for ld in ((8, 0), (8, 25), (19, 0), (99, 0)))
+    unit, branch, top = ly.create_cell("unit"), ly.create_cell("branch"), ly.create_cell("top")
+    unit.shapes(m1).insert(um_box(db, 0, 0, 1, 1.2 if variant == "unit_changed" else 1))
+    unit.shapes(v1).insert(um_box(db, 0.4, 0.4, 0.6, 0.6))
+    branch.insert(db.DCellInstArray(unit.cell_index(), db.DTrans(), db.DVector(2, 0), db.DVector(0, 2), 2, 1))
+    branch.shapes(m1).insert(um_box(db, 0, 1.5, 3, 2))
+    top.insert(db.DCellInstArray(branch.cell_index(), db.DTrans()))
+    top.insert(db.DCellInstArray(branch.cell_index(), db.DTrans(db.DTrans.R90, db.DVector(10, 1 if variant == "moved" else 0))))
+    if variant != "removed":
+        top.shapes(m1).insert(um_box(db, 5, 0, 6, 1))
+    if variant == "added":
+        top.shapes(m1).insert(um_box(db, 30, 0, 32, 1))
+    if variant == "extra_cell":
+        spare = ly.create_cell("spare")
+        spare.shapes(m1).insert(um_box(db, 0, 0, 1, 1))
+        top.insert(db.DCellInstArray(spare.cell_index(), db.DTrans(db.DVector(40, 0))))
+    top.shapes(txt).insert(db.DText("vdd", db.DTrans(db.DVector(5.5, 0.5))))
+    top.shapes(x).insert(um_box(db, 20, 20, 21, 21))
+    ly.write(path)
+
+
+def build_array(path, nx, ny):
+    """A top cell with an nx x ny array of a cell with one Metal1 box of 1 µm x 1 µm, pitch 2 µm."""
+    db = DB
+    ly = db.Layout()
+    m1 = ly.layer(db.LayerInfo(8, 0))
+    unit, top = ly.create_cell("unit"), ly.create_cell("top")
+    unit.shapes(m1).insert(um_box(db, 0, 0, 1, 1))
+    top.insert(db.DCellInstArray(unit.cell_index(), db.DTrans(), db.DVector(2, 0), db.DVector(0, 2), nx, ny))
+    ly.write(path)
+
+
+class LayerNamesTest(unittest.TestCase):
+    def test_normalise_and_resolve(self):
+        names = lr.LayerNames(lr.read_layer_properties(fixture("query.lyp")))
+        self.assertEqual(names.names, {(8, 0): "Metal1", (8, 25): "Metal1.text", (19, 0): "Via1", (10, 0): "Metal2"})
+        for text in ("Metal1", "Metal1.drawing", "metal1", "8/0", " 8 / 0 "):
+            self.assertEqual(names.resolve(text), (8, 0), text)
+        self.assertEqual(names.resolve("Via1.drawing"), (19, 0))
+        self.assertEqual(names.resolve("99/0"), (99, 0))
+        self.assertEqual((names.label((8, 0)), names.label((99, 0))), ("Metal1 8/0", "99/0"))
+        with self.assertRaises(lr.QueryError) as e:
+            names.resolve("Metl1")
+        self.assertIn("unknown layer 'Metl1' (close names: Metal1", str(e.exception))
+        with self.assertRaises(lr.QueryError):
+            lr.LayerNames().resolve("Metal1")
+
+    def test_pdk_files_name_forms(self):
+        self.assertEqual(lr.normalise_name("met1.drawing - 68/20"), "met1")
+        self.assertEqual(lr.normalise_name("met1.pin - 68/16"), "met1.pin")
+        self.assertEqual(lr.normalise_name("Metal1.drawing"), "Metal1")
+        self.assertEqual(lr.normalise_name("Metal1.filler"), "Metal1.filler")
+
+    def test_packs_name_the_layer_properties_file(self):
+        for name in ("ihp-sg13", "sky130"):
+            with open(os.path.join(TECHNOLOGIES, name, "technology.json")) as f:
+                pack = json.load(f)
+            for pdk, facts in pack["klayout"].items():
+                entry = facts["layer_properties"]
+                self.assertTrue(entry["path"].startswith("{pdk_root}/" + pdk + "/") and entry["path"].endswith(".lyp"), entry)
+                self.assertTrue(entry["source"])
+
+
+@unittest.skipIf(DB is None, NO_DB)
+class QueryTest(unittest.TestCase):
+    """query through main(), on the fixture layout, with the layer names of fixtures/query.lyp."""
+
+    def setUp(self):
+        self.tmp = os.path.realpath(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.pdk_root = os.path.join(self.tmp, "pdks")
+        os.makedirs(os.path.join(self.pdk_root, "fake"))
+        shutil.copy(fixture("query.lyp"), os.path.join(self.pdk_root, "fake", "layers.lyp"))
+        tech = os.path.join(self.tmp, "tech", "fake")
+        os.makedirs(tech)
+        with open(os.path.join(tech, "technology.json"), "w") as f:
+            json.dump({"schema": "simra.technology/0", "name": "fake", "pdks": ["fakepdk"], "klayout": {"fakepdk": {
+                "layer_properties": {"path": "{pdk_root}/fake/layers.lyp", "source": "test"}}}}, f)
+        self.root = os.path.join(self.tmp, "design")
+        os.makedirs(self.root)
+        build_layout(os.path.join(self.root, "block.gds"))
+        self.env = {"SIMRA_TECHNOLOGY_DIR": os.path.join(self.tmp, "tech"), "PDK": "fakepdk", "PDK_ROOT": self.pdk_root}
+        self.count = 0
+
+    def run_op(self, operation, inputs, env=None):
+        self.count += 1
+        exp = os.path.join(self.root, "simra", "experiments", "e{}".format(self.count))
+        os.makedirs(os.path.join(exp, "work"))
+        request = {"contract": ka.CONTRACT, "experiment": "e", "adapter": "klayout", "operation": operation,
+                   "inputs": inputs, "root": self.root, "work_dir": os.path.join(exp, "work"),
+                   "response_path": os.path.join(exp, "response.json")}
+        with open(os.path.join(exp, "request.json"), "w") as f:
+            json.dump(request, f)
+        saved = dict(os.environ)
+        os.environ.update(self.env if env is None else env)
+        try:
+            self.assertEqual(ka.main(["klayout_adapter.py", os.path.join(exp, "request.json")]), 0)
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
+        with open(request["response_path"]) as f:
+            return json.load(f), exp
+
+    def query(self, *questions, gds="block.gds"):
+        r, exp = self.run_op("query", {"gds": gds, "cell": "top", "queries": list(questions)})
+        return r, exp
+
+    def answer(self, *questions):
+        r, _ = self.query(*questions)
+        self.assertEqual(r["status"], "completed", r["diagnostics"])
+        return r["report"]
+
+    def test_response(self):
+        r, exp = self.query({"kind": "bbox"}, {"kind": "layers"})
+        self.assertEqual(r["status"], "completed")
+        self.assertNotIn("commands", r)
+        m = {k: v["value"] for k, v in r["measurements"].items()}
+        self.assertEqual((m["queries"], m["rows"]), (2, 4))
+        self.assertIsInstance(m["runtime_s"], float)
+        roles = [(f["role"], f["path"]) for f in r["input_files"]["files"]]
+        self.assertEqual([x[0] for x in roles], ["layout", "layer_properties", "technology"])
+        self.assertEqual(roles[0][1], "block.gds")
+        self.assertTrue(r["input_files"]["complete"])
+        self.assertEqual([o["path"] for o in r["outputs"]], ["simra/experiments/e1/work/query.json"])
+        with open(os.path.join(exp, "work", "query.json")) as f:
+            full = json.load(f)
+        self.assertEqual([q["status"] for q in full["questions"]], ["answered", "answered"])
+        self.assertEqual(full["questions"][1]["answer"]["layers"][0],
+                         {"layer": "Metal1 8/0", "layer_datatype": "8/0", "name": "Metal1", "shapes": 7, "area_um2": 8.0})
+
+    def test_layers(self):
+        self.assertEqual(self.answer({"kind": "layers"}), [
+            "[1] layers: 4 layers with shapes, 13 shapes (flat)",
+            "  Metal1 8/0  shapes=7  area=8.000",
+            "  Metal1.text 8/25  shapes=1  area=0.000",
+            "  Via1 19/0  shapes=4  area=0.160",
+            "  99/0  shapes=1  area=1.000"])
+
+    def test_cells(self):
+        self.assertEqual(self.answer({"kind": "cells"}), [
+            "[1] cells: 3 cells in the tree of top, 3 listed (depth 2; bbox in the coordinates of each cell)",
+            "  top  flat=1  bbox=(0.000,0.000;21.000,21.000)  own_shapes=3",
+            "    branch  flat=2  bbox=(0.000,0.000;3.000,2.000)  own_shapes=1",
+            "      unit  flat=4  bbox=(0.000,0.000;1.000,1.000)  own_shapes=2"])
+        self.assertEqual(self.answer({"kind": "cells", "depth": 1})[-1], "  ... 1 more cells below depth 1 (4 flat instances)")
+
+    def test_shapes(self):
+        self.assertEqual(self.answer({"kind": "shapes", "layer": "Metal1", "box": [0, 0, 3, 1]}), [
+            "[1] shapes Metal1 8/0 touching (0.000,0.000;3.000,1.000): 2 shapes, merged area in box 2.000",
+            "  box (0.000,0.000;1.000,1.000)  overlap=1.000  cell=branch/unit[0,0]",
+            # The GDS reader stores a 2 x 1 array as 1 x 2: the index is the index of the array in the file.
+            "  box (2.000,0.000;3.000,1.000)  overlap=1.000  cell=branch/unit[0,1]"])
+        rows = self.answer({"kind": "shapes", "layer": "8/0", "box": [5.5, 0.5, 9.5, 2.5], "max": 2})
+        self.assertEqual(rows[0], "[1] shapes Metal1 8/0 touching (5.500,0.500;9.500,2.500): 4 shapes, merged area in box 1.750")
+        self.assertEqual(rows[1:], ["  box (8.000,0.000;8.500,3.000)  overlap=1.000  cell=branch",
+                                    "  box (5.000,0.000;6.000,1.000)  overlap=0.250  cell=top",
+                                    "  ... 2 more shapes"])
+
+    def test_instances(self):
+        self.assertEqual(self.answer({"kind": "instances", "box": [9, 0, 10, 1]}), [
+            "[1] instances touching (9.000,0.000;10.000,1.000): 2 instances (cell, path, placement in the top cell, bbox)",
+            "  branch  branch  (10.000,0.000) r90  bbox=(8.000,0.000;10.000,3.000)",
+            "  unit  branch/unit[0,0]  (10.000,0.000) r90  bbox=(9.000,0.000;10.000,1.000)"])
+
+    def test_at(self):
+        self.assertEqual(self.answer({"kind": "at", "box": [9.5, 0.5]}), [
+            "[1] at (9.500,0.500;9.500,0.500): 2 layers, 1 instances (deepest), 0 texts (area: merged, in the box)",
+            "  layer Metal1 8/0  shapes=1  area=0.000",
+            "  layer Via1 19/0  shapes=1  area=0.000",
+            "  inst unit  branch/unit[0,0]  (10.000,0.000) r90  bbox=(9.000,0.000;10.000,1.000)"])
+        self.assertEqual(self.answer({"kind": "at", "box": [5, 0, 6, 1]}), [
+            "[1] at (5.000,0.000;6.000,1.000): 1 layers, 0 instances (deepest), 1 texts (area: merged, in the box)",
+            "  layer Metal1 8/0  shapes=1  area=1.000",
+            '  text "vdd"  Metal1.text 8/25  (5.500,0.500)  cell=top'])
+
+    def test_bbox(self):
+        self.assertEqual(self.answer({"kind": "bbox"}, {"kind": "bbox", "layer": "Metal1"}, {"kind": "bbox", "cell": "unit"}), [
+            "[1] bbox top all layers: (0.000,0.000;21.000,21.000)  w=21.000 h=21.000 (top cell)",
+            "[2] bbox top Metal1 8/0: (0.000,0.000;10.000,3.000)  w=10.000 h=3.000 (top cell)",
+            "[3] bbox unit all layers: (0.000,0.000;1.000,1.000)  w=1.000 h=1.000 (own coordinates of unit, 4 flat instances)"])
+
+    def test_texts(self):
+        self.assertEqual(self.answer({"kind": "texts"}, {"kind": "texts", "layer": "Metal1.text", "box": [0, 0, 1, 1]}), [
+            "[1] texts: 1 texts", '  "vdd"  Metal1.text 8/25  (5.500,0.500)  cell=top',
+            "[2] texts Metal1.text 8/25 in (0.000,0.000;1.000,1.000): 0 texts"])
+
+    def test_distance(self):
+        self.assertEqual(self.answer({"kind": "distance", "layer": "Metal1", "box_a": [0, 0, 1, 1], "box_b": [2, 0, 3, 1]}), [
+            "[1] distance Metal1 8/0 between (0.000,0.000;1.000,1.000) and (2.000,0.000;3.000,1.000): 1.000",
+            "  edge a (1.000,1.000;1.000,0.000)", "  edge b (2.000,0.000;2.000,1.000)"])
+        rows = self.answer({"kind": "distance", "layer": "Metal1", "box_a": [0, 0, 1, 1], "box_b": [0.5, 0.5, 2, 2]})
+        self.assertEqual(rows, ["[1] distance Metal1 8/0 between (0.000,0.000;1.000,1.000) and (0.500,0.500;2.000,2.000): "
+                                "0.000 (the shapes overlap)"])
+        # Corner to corner: the rail of the first branch (0,1.5;3,2) and the box of top (5,0;6,1).
+        rows = self.answer({"kind": "distance", "layer": "Metal1", "box_a": [0, 1.5, 3, 2], "box_b": [5, 0, 6, 1]})
+        self.assertEqual(rows[0].rsplit(": ", 1)[1], "2.062")
+
+    def test_bad_questions(self):
+        r, exp = self.query({"kind": "shapes", "layer": "Metal9", "box": [0, 0, 1, 1]}, {"kind": "bbox", "cell": "nope"},
+                            {"kind": "layers"}, {"kind": "where"}, {"kind": "shapes", "layer": "Metal1"},
+                            {"kind": "at", "box": [0, 0, 1]}, {"kind": "bbox", "colour": "red"})
+        self.assertEqual(r["status"], "completed")
+        errors = [d["message"] for d in r["diagnostics"] if d["severity"] == "error"]
+        self.assertEqual(len(errors), 6, errors)
+        self.assertTrue(errors[0].startswith("question 1 (shapes): unknown layer 'Metal9' (close names: Metal2, Metal1, Metal1.text)"), errors[0])
+        self.assertEqual(errors[1], "question 2 (bbox): no cell 'nope' in the tree of top")
+        self.assertTrue(errors[2].startswith("question 4 (where): unknown kind 'where'; the kinds are: layers, cells"), errors[2])
+        self.assertEqual(errors[3], "question 5 (shapes): 'box' is required")
+        self.assertIn("'box' must be [x1, y1, x2, y2] or a point [x, y]", errors[4])
+        self.assertIn("unknown argument colour", errors[5])
+        self.assertEqual(r["report"][0][:30], "[1] shapes: error: unknown lay")
+        self.assertTrue(r["report"][2].startswith("[3] layers: 4 layers"))
+        self.assertEqual(r["measurements"]["queries"]["value"], 7)
+        with open(os.path.join(exp, "work", "query.json")) as f:
+            self.assertEqual([q["status"] for q in json.load(f)["questions"]], ["error", "error", "answered"] + ["error"] * 4)
+
+    def test_all_questions_bad_or_no_cell(self):
+        r, _ = self.query({"kind": "bbox", "cell": "nope"})
+        self.assertEqual(r["status"], "failed")
+        r, _ = self.run_op("query", {"gds": "block.gds", "cell": "nope", "queries": [{"kind": "layers"}]})
+        self.assertEqual(r["status"], "failed")
+        self.assertEqual(r["diagnostics"][0]["message"], "the layout has no cell 'nope' (its top cells: top)")
+        for inputs, message in (({"gds": "block.gds", "cell": "top"}, "input 'queries' is required"),
+                                ({"gds": "block.gds", "cell": "top", "queries": []}, "input 'queries' is required"),
+                                ({"gds": "absent.gds", "cell": "top", "queries": [{"kind": "layers"}]}, "file not found"),
+                                ({"cell": "top", "queries": [{"kind": "layers"}]}, "input 'gds' is required")):
+            r, _ = self.run_op("query", inputs)
+            self.assertEqual(r["status"], "failed")
+            self.assertIn(message, r["diagnostics"][0]["message"])
+            self.assertEqual({k: (m["value"], m["status"]) for k, m in r["measurements"].items()},
+                             {"queries": (None, "failed"), "rows": (None, "failed"), "runtime_s": (None, "failed")})
+
+    def test_truncation(self):
+        build_array(os.path.join(self.root, "array.gds"), 30, 10)
+        r, exp = self.query({"kind": "shapes", "layer": "Metal1", "box": [0, 0, 60, 20], "max": 300}, gds="array.gds")
+        self.assertEqual(len(r["report"]), 200)
+        self.assertEqual(r["report"][-1], "... 102 more rows in work/query.json")
+        self.assertEqual(r["measurements"]["rows"]["value"], 300)
+        with open(os.path.join(exp, "work", "query.json")) as f:
+            full = json.load(f)
+        self.assertEqual(len(full["questions"][0]["rows"]), 300)
+        self.assertEqual(len(full["questions"][0]["answer"]["shapes"]), 300)
+        self.assertEqual(lr.truncate(["x"] * 200, "work/q.json"), ["x"] * 200)
+
+    def test_without_layer_names(self):
+        env = dict(self.env)
+        del env["PDK_ROOT"]
+        r, _ = self.run_op("query", {"gds": "block.gds", "cell": "top", "queries": [{"kind": "layers"},
+                                                                                    {"kind": "bbox", "layer": "Metal1"}]}, env)
+        self.assertEqual(r["status"], "completed")
+        self.assertEqual(r["diagnostics"][0]["severity"], "warning")
+        self.assertIn("PDK_ROOT is not set", r["diagnostics"][0]["message"])
+        self.assertEqual(r["report"][1], "  8/0  shapes=7  area=8.000")
+        self.assertIn("the layer names are not known", r["report"][-1])
 
 
 if __name__ == "__main__":

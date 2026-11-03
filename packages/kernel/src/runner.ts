@@ -357,7 +357,7 @@ export async function queryAdapter(opts: Omit<RunOptions, "environment" | "purpo
 	}
 }
 
-type ResponseFields = Pick<ResultRecord, "status" | "errors" | "tool" | "commands" | "input_files" | "outputs" | "measurements" | "diagnostics">;
+type ResponseFields = Pick<ResultRecord, "status" | "errors" | "tool" | "commands" | "input_files" | "outputs" | "measurements" | "diagnostics" | "report">;
 
 /** Copy a valid adapter response into the result. An invalid response makes the status "error". */
 function applyResponse(result: ResponseFields, responsePath: string, exitCode: number | null): void {
@@ -387,6 +387,7 @@ function applyResponse(result: ResponseFields, responsePath: string, exitCode: n
 	result.outputs = (response.outputs as FileHash[]) ?? [];
 	result.measurements = (response.measurements as ResultRecord["measurements"]) ?? {};
 	result.diagnostics = (response.diagnostics as ResultRecord["diagnostics"]) ?? [];
+	if (Array.isArray(response.report)) result.report = response.report.map((line) => String(line));
 }
 
 interface SpawnResult {

@@ -51,7 +51,7 @@
 // GDS, the check rows with ran: false (not_run), the deck runtimes of the verification, the run metrics from
 // transcript.jsonl next to the workspace (tool_calls, inline_python_calls, result_bytes), deck_runs (the runs of
 // drc.sh and lvs.sh in the transcript, and in deck_runs.run_experiment the run_experiment calls of the klayout
-// adapter for each operation), wait_calls (shell commands that wait: sleep, a while or until loop, tail -f),
+// adapter for each operation: drc, lvs, query and diff), wait_calls (shell commands that wait: sleep, a while or until loop, tail -f),
 // background_runs (commands that start a deck with &, nohup, setsid or disown, or calls of a job tool), log_reads
 // (tail, cat, grep or wc on a file under drc/, lvs/ or simra/experiments/), deck_wall_s (the sum of the run times of
 // the deck calls, from the transcript; null for a transcript without run times) and errors. stale-state also gives
@@ -273,14 +273,15 @@ export function logRead(command) {
 /**
  * The deck runs, the wait calls and the job behaviour of an agent transcript: { deck_runs: { drc, lvs, run_experiment:
  * { drc, lvs } }, wait_calls, background_runs, log_reads, deck_wall_s }. drc and lvs: the wrapper runs of shell
- * commands. run_experiment: the run_experiment calls of the klayout adapter, for each operation. background_runs: the
+ * commands. run_experiment: the run_experiment calls of the klayout adapter, for each operation (drc, lvs, and the
+ * read operations query and diff, which are not deck runs). background_runs: the
  * shell commands that start a deck in the background (backgroundRun), and the calls of a job tool that name drc.sh,
  * lvs.sh or a drc or lvs operation. log_reads: the shell commands that read a deck log or report (logRead).
  * deck_wall_s: the sum of the run times of the tool calls that run a deck (a wrapper or a klayout experiment), in
  * seconds; null when the transcript has no run times (Codex CLI).
  */
 export function deckMetrics(text) {
-	const out = { deck_runs: { drc: 0, lvs: 0, run_experiment: { drc: 0, lvs: 0 } }, wait_calls: 0, background_runs: 0, log_reads: 0, deck_wall_s: null };
+	const out = { deck_runs: { drc: 0, lvs: 0, run_experiment: { drc: 0, lvs: 0, query: 0, diff: 0 } }, wait_calls: 0, background_runs: 0, log_reads: 0, deck_wall_s: null };
 	const deckCalls = new Map();
 	const durations = new Map();
 	let n = 0;
@@ -289,8 +290,9 @@ export function deckMetrics(text) {
 		if (c.duration_ms !== null && c.duration_ms !== undefined) durations.set(key, c.duration_ms);
 		if (!c.call) continue;
 		const op = c.args?.operation;
-		const experiment = c.tool === "run_experiment" && c.args?.adapter === "klayout" && (op === "drc" || op === "lvs");
-		if (experiment) out.deck_runs.run_experiment[op] += 1;
+		const klayout = c.tool === "run_experiment" && c.args?.adapter === "klayout";
+		const experiment = klayout && (op === "drc" || op === "lvs");
+		if (klayout && Object.hasOwn(out.deck_runs.run_experiment, op)) out.deck_runs.run_experiment[op] += 1;
 		const runs = deckRuns(c.command);
 		for (const d of runs) out.deck_runs[d] += 1;
 		if (waits(c.command)) out.wait_calls += 1;

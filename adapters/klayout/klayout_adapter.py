@@ -30,6 +30,14 @@ database exists and loads, and its compare status is a match (lvsdb_probe.py rea
 binary). Else the result is not run. work/lvs.json has all unmatched items and the pin check.
 
 The response of drc and lvs has "commands": the deck command as it was run, with its exit code and runtime.
+
+Operation "query" (see layout_read.py). Inputs:
+  gds, cell, technology   as for drc
+  queries       a list of questions, each {"kind": ..., arguments}: layers, cells, shapes, instances, at, bbox,
+                texts, distance
+It reads the layout with the KLayout Python module klayout.db in this process (no external command). The layer
+names come from the file of klayout.<pdk>.layer_properties. Measurements: queries, rows, runtime_s. The answer is
+in "report" (at most 200 lines) and in work/query.json.
 """
 
 import hashlib
@@ -41,6 +49,8 @@ import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
+
+import layout_read
 
 CONTRACT = "simra.adapter/0"
 HERE = os.path.dirname(os.path.realpath(__file__))
@@ -620,6 +630,105 @@ def lvs_result(ctx, verdict, reason, probe, pins, runtime, values, log_path, cod
     return {"status": "completed", "measurements": {k: m[k] for k in LVS_ORDER}, "diagnostics": diagnostics}
 
 
+# ---------------------------------------------------------------- query
+
+def technology_facts(name):
+    """(pack path, klayout facts, None) or (None, None, message), as find_facts; a PDK name in input 'technology'
+    also selects the facts of that PDK."""
+    pack_path, facts, error = find_facts(name, os.environ.get("PDK"))
+    if error and name:
+        pack_path, facts, error = find_facts(name, name)
+    return pack_path, facts, error
+
+
+def read_setup(request, layout_keys):
+    """Common steps of query and diff: inputs, klayout.db, the pack and the layer names.
+    Returns (context, None) or (None, failed response)."""
+    root = request["root"]
+    inputs = request.get("inputs") or {}
+    tool = {"name": "klayout", "version": None, "module": "klayout.db", "pdk": pdk_facts()}
+    for key in layout_keys + ("cell",):
+        if not isinstance(inputs.get(key), str) or not inputs.get(key):
+            return None, failure(tool, "input '{}' is required (a string)".format(key))
+    db = layout_read.klayout_db()
+    if db is None:
+        return None, failure(tool, "the KLayout Python module klayout.db is not installed for {} (pip package klayout)".format(
+            sys.executable))
+    tool["version"] = getattr(db, "__version__", None)
+    diagnostics, files = [], []
+    pack_path, facts, error = technology_facts(inputs.get("technology"))
+    if error:
+        diagnostics.append({"severity": "warning", "source": "adapter",
+                            "message": "layer names not known: {}. Layers are given as layer/datatype".format(error)})
+        names, lyp = layout_read.LayerNames(), None
+    else:
+        names, lyp, warning = layout_read.layer_names(facts, os.environ.get("PDK_ROOT"), expand)
+        if warning:
+            diagnostics.append({"severity": "warning", "source": "adapter", "message": warning})
+    complete = True
+    if lyp and os.path.isfile(lyp):
+        files.append(file_entry(lyp, root, "layer_properties"))
+    elif lyp:
+        complete = False
+    if pack_path:
+        files.append(file_entry(pack_path, root, "technology"))
+    return {"root": root, "inputs": inputs, "tool": tool, "db": db, "names": names, "diagnostics": diagnostics,
+            "files": files, "complete": complete, "work_dir": request["work_dir"],
+            "exp_dir": os.path.dirname(os.path.realpath(request["work_dir"]))}, None
+
+
+def read_response(ctx, status, measurements, report, table_name, layouts):
+    """The response of query and diff."""
+    files = [file_entry(path, ctx["root"], "layout") for path in layouts] + ctx["files"]
+    return {"contract": CONTRACT, "status": status, "tool": ctx["tool"],
+            "input_files": {"complete": ctx["complete"], "files": files},
+            "outputs": outputs_of(ctx["work_dir"], ctx["root"]), "measurements": measurements,
+            "diagnostics": ctx["diagnostics"], "report": layout_read.truncate(report, "work/" + table_name)}
+
+
+QUERY_UNITS = (("queries", None), ("rows", None), ("runtime_s", "s"))
+
+
+def none_measured(units):
+    """The measurements of a read operation that gave no answer: each one failed, none omitted."""
+    return {key: failed(unit, "adapter") for key, unit in units}
+
+
+def query(request):
+    ctx, error = read_setup(request, ("gds",))
+    if error:
+        error["measurements"] = none_measured(QUERY_UNITS)
+        return error
+    inputs, tool = ctx["inputs"], ctx["tool"]
+
+    def fail(message):
+        return failure(tool, message, none_measured(QUERY_UNITS))
+
+    queries = inputs.get("queries")
+    if not isinstance(queries, list) or not queries:
+        return fail("input 'queries' is required: a list of questions, each with a 'kind' ({})".format(
+            ", ".join(layout_read.KINDS)))
+    gds = os.path.join(ctx["root"], inputs["gds"])
+    if not os.path.isfile(gds):
+        return fail("input 'gds': file not found: {}".format(inputs["gds"]))
+    start = time.monotonic()
+    try:
+        report, full, diagnostics, answered, rows = layout_read.run_queries(ctx["db"], gds, inputs["cell"], queries, ctx["names"])
+    except layout_read.QueryError as e:
+        return fail(str(e))
+    except RuntimeError as e:
+        return fail("klayout.db could not read {}: {}".format(inputs["gds"], str(e).splitlines()[0] if str(e) else e))
+    runtime = round(time.monotonic() - start, 3)
+    full.update({"gds": inputs["gds"], "runtime_s": runtime})
+    table = os.path.join(ctx["work_dir"], "query.json")
+    write_json(table, full)
+    src = rel(ctx, table)
+    ctx["diagnostics"].extend(diagnostics)
+    measurements = {"queries": measured(len(queries), None, src), "rows": measured(rows, None, src),
+                    "runtime_s": measured(runtime, "s", "adapter")}
+    return read_response(ctx, "completed" if answered else "failed", measurements, report, "query.json", [gds])
+
+
 # ---------------------------------------------------------------- main
 
 def main(argv):
@@ -631,7 +740,7 @@ def main(argv):
     if request.get("contract") != CONTRACT:
         sys.stderr.write("unsupported contract: {}\n".format(request.get("contract")))
         return 2
-    operation = {"drc": drc, "lvs": lvs}.get(request.get("operation"))
+    operation = {"drc": drc, "lvs": lvs, "query": query}.get(request.get("operation"))
     if operation is None:
         response = failure(None, "unknown operation: {}".format(request.get("operation")))
     else:

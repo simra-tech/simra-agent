@@ -40,6 +40,16 @@ test("a completed run writes both records", async (t) => {
 	assert.equal(request.work_dir, join(dir, "work"));
 });
 
+test("the report of a response goes into result.json; a response without it has no report", async (t) => {
+	const root = designRoot(t);
+	const report = ["[1] layers: 2 layers with shapes, 5 shapes (flat)", "  Metal1 8/0  shapes=3  area=1.500"];
+	const inputs = { mode: "values", values: { rows: 1 }, report };
+	const { id, result } = await runExperiment({ root, adapter: "fake", operation: "run", inputs, purpose: "report" });
+	assert.deepEqual(result.report, report);
+	assert.deepEqual(loadExperiment(root, id).result?.report, report);
+	assert.equal((await run(root, "ok")).result.report, undefined);
+});
+
 test("execution status is separate from runner errors", async (t) => {
 	const root = designRoot(t);
 	const cases: [string, string, RegExp | null][] = [

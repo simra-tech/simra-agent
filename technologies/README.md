@@ -30,7 +30,7 @@ contain PDK facts. Each directory has one `technology.json` (schema `simra.techn
 | `...params.<p>.source` | the PDK file (relative to `$PDK_ROOT`) and the fact in it that gives the value |
 | `ngspice.devices.<name>.width_total` | `true` when the width parameter is the total width of all fingers; when `false`, the gate area is multiplied by the number of fingers |
 | `ngspice.devices.<name>.source` | the PDK file that defines the device subcircuit |
-| `klayout.<pdk>` | the KLayout decks of one value of `$PDK` (operations `drc` and `lvs` of the klayout adapter) |
+| `klayout.<pdk>` | the KLayout facts of one value of `$PDK`: the decks (operations `drc` and `lvs` of the klayout adapter) and the layer names (operation `query`) |
 | `klayout.<pdk>.drc.rule_sets.<set>` | one DRC rule set: the deck command and its report |
 | `...<set>.command` | the deck command, one word per item; placeholders are listed below |
 | `...<set>.report` | the path of the marker database (`.lyrdb`) that the command writes |
@@ -46,6 +46,8 @@ contain PDK facts. Each directory has one `technology.json` (schema `simra.techn
 | `klayout.<pdk>.lvs.exit_codes.match`, `.mismatch` | the exit codes of a completed run with a match, and with a mismatch |
 | `klayout.<pdk>.lvs.netlist_format` | the form of the reference netlist that the deck reads |
 | `klayout.<pdk>.lvs.description`, `.source` | the LVS that the command runs, and the PDK files that give the facts |
+| `klayout.<pdk>.layer_properties.path` | the KLayout layer properties file (`.lyp`) of the PDK; it gives the layer names and their layer/datatype; the placeholder is `{pdk_root}` |
+| `klayout.<pdk>.layer_properties.description`, `.source` | what the file gives, and the form of its `<name>` and `<source>` entries |
 
 | Pack | PDKs | MOS model |
 | --- | --- | --- |

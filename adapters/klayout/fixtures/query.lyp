@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Test fixture for the operations query and diff: three named layers in the two name forms of the PDK files
+     (IHP: Metal1.drawing; SKY130: "Via1 - 19/0"). The layer 99/0 has no name. -->
+<layer-properties>
+ <properties>
+  <name>Metal1.drawing</name>
+  <source>8/0</source>
+ </properties>
+ <properties>
+  <name>Metal1.text</name>
+  <source>8/25</source>
+ </properties>
+ <properties>
+  <name>Via1 - 19/0</name>
+  <source>19/0@1</source>
+ </properties>
+ <properties>
+  <name>Metal2.drawing</name>
+  <source>10/0</source>
+ </properties>
+</layer-properties>

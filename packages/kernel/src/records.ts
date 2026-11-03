@@ -78,6 +78,8 @@ export interface ResultRecord {
 	outputs: FileHash[];
 	measurements: Record<string, Measurement>;
 	diagnostics: Diagnostic[];
+	/** Optional: lines of a short answer that the summary prints as they are (contract field "report"). */
+	report?: string[];
 	logs: { adapter_stdout: string; adapter_stderr: string };
 }
 

@@ -94,20 +94,25 @@ test("deckRuns and waits: the wrapper runs and the wait calls of shell commands"
 		{ type: "tool_execution_start", toolName: "bash", args: { command: "./drc.sh block.gds idac && ./lvs.sh block.gds idac" } },
 		{ type: "tool_execution_start", toolName: "read", args: { path: "drc.sh" } },
 	]);
-	assert.deepEqual(deckMetrics(pi), { deck_runs: { drc: 2, lvs: 1, run_experiment: { drc: 0, lvs: 0 } }, wait_calls: 1, background_runs: 1, log_reads: 0, deck_wall_s: null });
+	assert.deepEqual(deckMetrics(pi), { deck_runs: { drc: 2, lvs: 1, run_experiment: { drc: 0, lvs: 0, query: 0, diff: 0 } }, wait_calls: 1, background_runs: 1, log_reads: 0, deck_wall_s: null });
 	const codex = lines([{ type: "item.completed", item: { type: "command_execution", command: "bash -lc 'while pgrep klayout; do sleep 10; done; ./lvs.sh block.gds idac'" } }]);
-	assert.deepEqual(deckMetrics(codex), { deck_runs: { drc: 0, lvs: 1, run_experiment: { drc: 0, lvs: 0 } }, wait_calls: 1, background_runs: 0, log_reads: 0, deck_wall_s: null });
+	assert.deepEqual(deckMetrics(codex), { deck_runs: { drc: 0, lvs: 1, run_experiment: { drc: 0, lvs: 0, query: 0, diff: 0 } }, wait_calls: 1, background_runs: 0, log_reads: 0, deck_wall_s: null });
 	const opencode = lines([{ type: "tool_use", part: { type: "tool", tool: "bash", state: { input: { command: "./lvs.sh block.gds idac" }, output: "" } } }]);
-	assert.deepEqual(deckMetrics(opencode), { deck_runs: { drc: 0, lvs: 1, run_experiment: { drc: 0, lvs: 0 } }, wait_calls: 0, background_runs: 0, log_reads: 0, deck_wall_s: null });
+	assert.deepEqual(deckMetrics(opencode), { deck_runs: { drc: 0, lvs: 1, run_experiment: { drc: 0, lvs: 0, query: 0, diff: 0 } }, wait_calls: 0, background_runs: 0, log_reads: 0, deck_wall_s: null });
 	// The run_experiment calls of the klayout adapter, for each operation.
 	const experiments = lines([
 		{ type: "tool_execution_start", toolName: "run_experiment", args: { adapter: "klayout", operation: "drc", inputs: {} } },
 		{ type: "tool_execution_start", toolName: "run_experiment", args: { adapter: "klayout", operation: "lvs", inputs: {} } },
 		{ type: "tool_execution_start", toolName: "run_experiment", args: { adapter: "klayout", operation: "drc", inputs: {} } },
 		{ type: "tool_execution_start", toolName: "run_experiment", args: { adapter: "ngspice", operation: "simulate", inputs: {} } },
+		{ type: "tool_execution_start", toolName: "run_experiment", args: { adapter: "klayout", operation: "query", inputs: {} } },
+		{ type: "tool_execution_start", toolName: "run_experiment", args: { adapter: "klayout", operation: "query", inputs: {} } },
+		{ type: "tool_execution_start", toolName: "run_experiment", args: { adapter: "klayout", operation: "diff", inputs: {} } },
+		{ type: "tool_execution_start", toolName: "run_experiment", args: { adapter: "klayout", operation: "other", inputs: {} } },
 		{ type: "tool_execution_start", toolName: "bash", args: { command: "./lvs.sh block.gds idac" } },
 	]);
-	assert.deepEqual(deckMetrics(experiments), { deck_runs: { drc: 0, lvs: 1, run_experiment: { drc: 2, lvs: 1 } }, wait_calls: 0, background_runs: 0, log_reads: 0, deck_wall_s: null });
+	// query and diff are counted, but they are not deck runs: they do not add to deck_wall_s or to the deck calls.
+	assert.deepEqual(deckMetrics(experiments), { deck_runs: { drc: 0, lvs: 1, run_experiment: { drc: 2, lvs: 1, query: 2, diff: 1 } }, wait_calls: 0, background_runs: 0, log_reads: 0, deck_wall_s: null });
 });
 
 /** A fake verifier: the recorded result of a variant (expected.json), for the GDS that the workspace holds. */
@@ -182,7 +187,7 @@ for (const pdk of PDKS) {
 		const r = await score(ws, "layout-block-fix", "block-fix", fakeVerifier(fix, "clean"));
 		assert.deepEqual([r.drc, r.lvs, r.claim, r.fixed], [MAX.drc, MAX.lvs, MAX.claim, MAX.fixed], JSON.stringify(r.errors));
 		assert.equal(r.fixed_seeded, `${seeded.length}/${seeded.length}`);
-		assert.deepEqual([r.deck_runs, r.wait_calls], [{ drc: 1, lvs: 0, run_experiment: { drc: 0, lvs: 0 } }, 1]);
+		assert.deepEqual([r.deck_runs, r.wait_calls], [{ drc: 1, lvs: 0, run_experiment: { drc: 0, lvs: 0, query: 0, diff: 0 } }, 1]);
 		assert.deepEqual(r.metrics, { format: "pi", tool_calls: 2, inline_python_calls: 0, result_bytes: 0 });
 		const need = Math.ceil(FIXED_SHARE * seeded.length);
 		const enough = workspace(t, "layout-block-fix", pdk, { answer: { drc_clean: true, lvs_match: true, checks: [drcRow(), lvsRow()], fixed: [...seeded.slice(0, need).map((f) => f.rule.toUpperCase()), "X.1"] } });

@@ -74,6 +74,8 @@ export function formatOutcome(root: string, experiment: ExperimentRecord, result
 			lines.push(`  ${name} = ${value}`);
 		}
 	}
+	// The short answer of the adapter (for example the rows of a layout query), line by line as the adapter wrote it.
+	if (result.report?.length) lines.push("report:", ...result.report);
 	for (const d of result.diagnostics.filter((d) => d.severity !== "info")) lines.push(formatDiagnostic(d));
 	for (const e of result.errors) lines.push(`error: ${e}`);
 	return lines.join("\n");

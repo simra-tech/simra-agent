@@ -238,6 +238,11 @@
         "netlist_format": "SPICE with one .subckt per cell; MOS devices as M lines with the device name of the PDK as the model, for example 'M1 d g s b sky130_fd_pr__nfet_01v8 L=0.5u W=1u'.",
         "description": "the stock LVS deck sky130.lvs, with the switches of the PDK script run_lvs.py and schematic simplification on (run_lvs.py itself is not used: with PDK_ROOT set it does not find the deck)",
         "source": "sky130A/libs.tech/klayout/lvs/run_lvs.py (the switches and their defaults); sky130A/libs.tech/klayout/lvs/README.md (Switches); sky130A/libs.tech/klayout/lvs/sky130.lvs (it logs 'ERROR : Netlists don't match' and exits with 1, or logs 'INFO : Congratulations! Netlists match.')"
+      },
+      "layer_properties": {
+        "path": "{pdk_root}/sky130A/libs.tech/klayout/tech/sky130A.lyp",
+        "description": "the KLayout layer properties file of the PDK: the layer names and their layer/datatype (operations query and diff)",
+        "source": "sky130A/libs.tech/klayout/tech/sky130A.lyp (one <properties> entry per layer: <name> in the form met1.drawing - 68/20, <source> in the form 68/20@1)"
       }
     }
   }
