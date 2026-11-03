@@ -10,7 +10,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -22,4 +22,12 @@ jobs:
       # The KLayout Python module for the tests of the klayout operations query and diff (they are skipped without it).
       - run: python3 -m pip install --user --break-system-packages klayout==0.30.12
       - run: npm ci
+      # The simra binary for test/binary.test.mjs, built with the pinned Bun.
+      - run: shellcheck packages/launcher/get-bun.sh
+      - run: sh packages/launcher/get-bun.sh "$RUNNER_TEMP/bun"
+      - run: node packages/launcher/build.ts
+        env:
+          BUN: ${{ runner.temp }}/bun/bun
       - run: npm test
+        env:
+          SIMRA_BINARY: dist/simra-linux-x64/simra

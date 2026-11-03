@@ -7,9 +7,10 @@
 
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, createWriteStream, existsSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { closeSync, createWriteStream, existsSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
+import kernelPackage from "../package.json" with { type: "json" };
 import { loadConfig } from "./config.ts";
 import { buildInvocation } from "./environments.ts";
 import {
@@ -33,12 +34,14 @@ import {
 import { runtimeEstimate, type RuntimeEstimate } from "./estimate.ts";
 
 export const CONTRACT = "simra.adapter/0";
-export const KERNEL_VERSION: string = readJson<{ version: string }>(
-	new URL("../package.json", import.meta.url).pathname,
-).version;
-export const BUILTIN_ADAPTER_DIR = new URL("../../../adapters", import.meta.url).pathname;
+export const KERNEL_VERSION: string = kernelPackage.version;
+/** true in the simra binary: Bun embeds its modules in the virtual folder /$bunfs. */
+const IN_BINARY = import.meta.url.includes("$bunfs");
+/** The folder with adapters/ and technologies/: the release folder of the binary (the real path), or the repository. */
+const INSTALL_DIR = IN_BINARY ? dirname(realpathSync(process.execPath)) : new URL("../../..", import.meta.url).pathname;
+export const BUILTIN_ADAPTER_DIR = join(INSTALL_DIR, "adapters");
 /** The technology packs (PDK data for adapters, see technologies/README.md). */
-export const BUILTIN_TECHNOLOGY_DIR = new URL("../../../technologies", import.meta.url).pathname;
+export const BUILTIN_TECHNOLOGY_DIR = join(INSTALL_DIR, "technologies");
 
 export interface AdapterManifest {
 	contract: string;
@@ -133,7 +136,8 @@ interface Job {
 }
 
 const JOB_FILE = "job.json";
-const CLI_PATH = new URL("./cli.ts", import.meta.url).pathname;
+/** The arguments before a CLI command: none for the simra binary, the path of cli.ts for Node. */
+const CLI_ARGS = IN_BINARY ? [] : [new URL("./cli.ts", import.meta.url).pathname];
 
 /**
  * The directories of the technology packs that the adapter searches, in order: the configured ones (technology_dirs),
@@ -277,7 +281,7 @@ export async function runExperiment(opts: RunOptions): Promise<RunOutcome | Deta
 		const out = openSync(join(dir, "supervisor.stdout.log"), "w");
 		const err = openSync(join(dir, "supervisor.stderr.log"), "w");
 		try {
-			const child = spawn(process.execPath, [CLI_PATH, "run", "--detached-worker", dir], {
+			const child = spawn(process.execPath, [...CLI_ARGS, "run", "--detached-worker", dir], {
 				cwd: root,
 				env,
 				detached: true,
