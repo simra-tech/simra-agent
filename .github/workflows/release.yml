@@ -98,5 +98,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+        # A tag with a suffix (v0.2.0-rc.1) is a pre-release: releases/latest and simra update do not point to it.
         run: |
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title "simra $GITHUB_REF_NAME" --generate-notes assets/*
+          case $GITHUB_REF_NAME in *-*) prerelease=--prerelease ;; *) prerelease= ;; esac
+          gh release create "$GITHUB_REF_NAME" --verify-tag $prerelease --title "simra $GITHUB_REF_NAME" --generate-notes assets/*

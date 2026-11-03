@@ -27,6 +27,9 @@ a build attestation.
 2. Run `git tag v<version>` and `git push origin v<version>`. The tag must be the version of `package.json`.
 3. Check the release on GitHub when the workflow ends.
 
+A tag with a suffix, for example `v0.2.0-rc.1` (and the same version in `package.json`), gives a pre-release. The
+install line and `simra update` do not use it, so it can test the release workflow on all four platforms.
+
 Turn on release immutability in the repository settings once. Then the files of a published release cannot change.
 
 ## The pi dependency

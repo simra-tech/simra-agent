@@ -142,7 +142,7 @@ test("the kernel commands go to the kernel, the other arguments to pi", { skip }
 	assert.match(extra.stderr, /simra remove <source>/);
 	const uninstall = simra(t, dir, ["uninstall"]);
 	assert.equal(uninstall.status, 1);
-	assert.match(uninstall.stderr, /has no receipt\.json/);
+	assert.match(uninstall.stderr, /install\.sh did not install .* \(no receipt\.json\)/);
 	assert.ok(existsSync(binary));
 });
 
