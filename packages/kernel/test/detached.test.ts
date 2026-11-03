@@ -180,6 +180,7 @@ test("the estimate: no line without an earlier run", (t) => {
 	// Runs of another kind do not count: another operation, another rule set, a failed run, a run that ended later.
 	record(root, "20261101-100000-000001", { operation: "lvs", duration_s: 80 });
 	record(root, "20261101-100000-000002", { inputs: { gds: "block.gds", rule_set: "full" }, duration_s: 900 });
+	record(root, "20261101-100000-000005", { inputs: { gds: "block.gds", technology: "sky130" }, duration_s: 300 });
 	record(root, "20261101-100000-000003", { status: "failed", duration_s: 5 });
 	record(root, "20261101-100000-000004", { duration_s: 7, finished_at: "2026-11-02T12:00:01.000Z" });
 	assert.equal(runtimeEstimate(root, now()), null);
@@ -189,7 +190,7 @@ test("the estimate: one earlier run", (t) => {
 	const root = designRoot(t);
 	record(root, "20261101-100000-000001", { duration_s: 391.84 });
 	const e = runtimeEstimate(root, now());
-	assert.deepEqual(e, { adapter: "klayout", operation: "drc", rule_set: null, min_s: 391.84, max_s: 391.84, runs: 1 });
+	assert.deepEqual(e, { adapter: "klayout", operation: "drc", rule_set: null, technology: null, min_s: 391.84, max_s: 391.84, runs: 1 });
 	assert.equal(formatEstimate(e!), "estimate: earlier runs of klayout drc on this design took 391.8 s (1 run)");
 });
 
@@ -200,8 +201,11 @@ test("the estimate: several earlier runs, of the same rule set", (t) => {
 	record(root, "20261101-100000-000003", { duration_s: 400 });
 	record(root, "20261101-100000-000004", { inputs: { rule_set: "full" }, duration_s: 900 });
 	record(root, "20261101-100000-000005", { inputs: { rule_set: "full" }, duration_s: 950 });
+	record(root, "20261101-100000-000006", { inputs: { rule_set: "full", technology: "sky130" }, duration_s: 120 });
 	assert.equal(formatEstimate(runtimeEstimate(root, now())!), "estimate: earlier runs of klayout drc on this design took 391.8 to 427.7 s (3 runs)");
 	assert.equal(formatEstimate(runtimeEstimate(root, now({ rule_set: "full" }))!), "estimate: earlier runs of klayout drc (rule set full) on this design took 900.0 to 950.0 s (2 runs)");
+	// Two PDKs in one design root do not mix: the technology input is part of the kind.
+	assert.equal(formatEstimate(runtimeEstimate(root, now({ rule_set: "full", technology: "sky130" }))!), "estimate: earlier runs of klayout drc (rule set full, technology sky130) on this design took 120.0 s (1 run)");
 });
 
 test("a run gives the estimate of the earlier runs, after the adapter line of the summary", async (t) => {

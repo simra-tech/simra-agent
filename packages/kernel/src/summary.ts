@@ -21,7 +21,8 @@ function headLines(root: string, experiment: ExperimentRecord, estimate: Runtime
 
 /** `estimate: earlier runs of <adapter> <operation> on this design took <min> to <max> s (<n> runs)`. */
 export function formatEstimate(e: RuntimeEstimate): string {
-	const kind = `${e.adapter} ${e.operation}${e.rule_set === null ? "" : ` (rule set ${e.rule_set})`}`;
+	const detail = [e.rule_set === null ? null : `rule set ${e.rule_set}`, e.technology === null ? null : `technology ${e.technology}`].filter((x) => x !== null);
+	const kind = `${e.adapter} ${e.operation}${detail.length ? ` (${detail.join(", ")})` : ""}`;
 	const took = e.runs === 1 ? `${e.min_s.toFixed(1)} s (1 run)` : `${e.min_s.toFixed(1)} to ${e.max_s.toFixed(1)} s (${e.runs} runs)`;
 	return `estimate: earlier runs of ${kind} on this design took ${took}`;
 }
