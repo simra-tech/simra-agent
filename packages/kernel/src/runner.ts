@@ -5,6 +5,7 @@
 // Contract with the adapter (simra.adapter/0): the runner writes request.json and starts the adapter with its
 // path as the only argument. The adapter writes response.json. See CONTRIBUTING.md.
 
+import { telemetry } from "./telemetry.ts";
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { closeSync, createWriteStream, existsSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
@@ -26,6 +27,7 @@ import {
 	type ExperimentRecord,
 	type FileHash,
 	newExperimentId,
+	loadExperiment,
 	RESULT_SCHEMA,
 	type ResultRecord,
 	readJson,
@@ -273,6 +275,20 @@ export function runExperiment(opts: RunOptions): Promise<RunOutcome | DetachedOu
  * blocking run does; waitExperiments waits for it.
  */
 export async function runExperiment(opts: RunOptions): Promise<RunOutcome | DetachedOutcome> {
+	const start = Date.now();
+	const properties = { adapter: opts.adapter, operation: opts.operation, execution_mode: opts.detached ? "detached" : "blocking" };
+	telemetry.capture("experiment_started", properties);
+	try {
+		const outcome = await runExperimentImpl(opts);
+		if ("result" in outcome) telemetry.capture("experiment_completed", { ...properties, status: outcome.result.status, duration_ms: Date.now() - start });
+		return outcome;
+	} catch (error) {
+		telemetry.capture("experiment_completed", { ...properties, status: "error", duration_ms: Date.now() - start });
+		throw error;
+	}
+}
+
+async function runExperimentImpl(opts: RunOptions): Promise<RunOutcome | DetachedOutcome> {
 	const { job, env, dir, experiment } = prepareExperiment(opts);
 	const { root, id } = job;
 	const estimate = runtimeEstimate(root, experiment);
@@ -317,7 +333,17 @@ export async function runDetachedWorker(dir: string): Promise<ResultRecord> {
 	process.once("SIGTERM", stop);
 	process.once("SIGINT", stop);
 	try {
-		return await executeJob(job, process.env, controller.signal);
+		const start = Date.now();
+		const result = await executeJob(job, process.env, controller.signal);
+		if (telemetry.enabled()) {
+			try {
+				const { experiment } = loadExperiment(job.root, job.id);
+				telemetry.capture("experiment_completed", { adapter: experiment.adapter.name, operation: experiment.operation, execution_mode: "detached", status: result.status, duration_ms: Date.now() - start });
+			} catch {
+				// Optional analytics metadata must never prevent or fail the actual job.
+			}
+		}
+		return result;
 	} finally {
 		process.off("SIGTERM", stop);
 		process.off("SIGINT", stop);

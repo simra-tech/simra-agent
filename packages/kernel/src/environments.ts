@@ -6,6 +6,7 @@
 
 import { execFileSync } from "node:child_process";
 import type { ContainerEngine, EnvironmentConfig } from "./config.ts";
+import { analyticsDisabled } from "./telemetry.ts";
 
 export interface Invocation {
 	command: string;
@@ -49,13 +50,15 @@ export function buildInvocation(req: InvocationRequest): Invocation {
 	const env = config.env ?? {};
 	const technologyDirs = req.technologyDirs ?? [];
 	const technology = technologyDirs.length ? { SIMRA_TECHNOLOGY_DIR: technologyDirs.join(":") } : {};
+	// A project environment must not override the user's opt-out, including in detached supervisors.
+	const analyticsPolicy = analyticsDisabled() ? { SIMRA_NO_ANALYTICS: "1" } : {};
 
 	if (config.kind === "local") {
 		const argv = [...pin, ...req.adapterCommand];
 		return {
 			command: argv[0],
 			args: argv.slice(1),
-			env: { ...process.env, ...env, ...technology },
+			env: { ...process.env, ...env, ...technology, ...analyticsPolicy },
 			record: { name: req.name, kind: "local", cpus: config.cpus ?? null, env },
 		};
 	}
@@ -79,7 +82,7 @@ export function buildInvocation(req: InvocationRequest): Invocation {
 			containerUser(engine),
 			"--label",
 			`simra.experiment=${req.experimentId}`,
-			...Object.entries({ ...env, ...technology }).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
+			...Object.entries({ ...env, ...technology, ...analyticsPolicy }).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
 			"-v",
 			`${req.root}:${req.root}`,
 			"-v",

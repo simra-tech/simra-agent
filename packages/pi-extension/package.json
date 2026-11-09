@@ -18,7 +18,8 @@
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
-    "typebox": "*"
+    "typebox": "*",
+    "@earendil-works/pi-ai": "*"
   },
   "dependencies": {
     "@simra-tech/kernel": "0.1.0"

@@ -63,9 +63,60 @@ It changes nothing else. Then run `simra` in a design folder.
 
 The machine also needs the EDA tools that the adapters run (for example ngspice, KLayout and Python 3).
 
+## Analytics and privacy
+
+Analytics is off until you explicitly opt in. When you first start `simra` without arguments in a terminal,
+it explains what sharing includes and asks for your choice. The default is **Keep analytics off**. Enter or
+Escape keeps it off. Existing settings, API credentials and an old analytics identifier do not imply consent.
+Headless runs never prompt and remain off unless you already saved an opt-in.
+
+You can inspect or change your preference at any time:
+
+1. Run `simra analytics status` to see your saved preference and whether analytics is active.
+2. Run `simra analytics on` to opt in to the metadata described below.
+3. Run `simra analytics off` to opt out. This also stops queued events in other running Simra processes from
+   being sent once they observe the saved change. Requests already in progress may finish.
+
+Your choice is saved in `analytics.json` in the Simra settings directory. Missing, unreadable or invalid
+preferences mean off. Changing a preference sends no analytics event. To force analytics off for one command,
+use `SIMRA_NO_ANALYTICS=1 simra`, or set it for your shell:
+
+```sh
+export SIMRA_NO_ANALYTICS=1
+```
+
+Add that line to `~/.zshrc` or `~/.bashrc` to keep it across terminal sessions. Simra also honors
+`DO_NOT_TRACK=1`. Both variables override a saved opt-in without changing it. When analytics is off, Simra
+creates no analytics identifier and starts no analytics client.
+
+Analytics includes setup steps, CLI commands, session mode, public model/provider identifiers, token counts,
+estimated or provider-reported costs, tool categories, adapter operations, durations and execution error flags.
+Events also include the Simra version, OS, CPU architecture, run outcomes, exit codes and experiment wait counts.
+Simra sends native PostHog AI traces, generations and tool spans. It excludes prompts, responses, thinking,
+tool arguments and results, shell commands, file names, paths, file contents, circuit measurements, requirement
+verdicts, PDK names, credentials and exception text. Custom model, provider, tool and adapter names are grouped
+as `custom`.
+
+A random installation identifier links usage across launches. It is stored in `analytics-id` in the Simra
+settings directory (`~/.config/simra` by default, or `SIMRA_CODING_AGENT_DIR`). Session and trace identifiers are
+also random. They are independent of pi's session files and design records. No PostHog person profile is
+created. GeoIP enrichment is disabled. The receiving service still receives the network connection's IP address.
+
+This repository's CI, Node tests, `NODE_ENV=test` runs and eval runner disable analytics. Headless CLI, print,
+JSON and RPC sessions use the saved preference outside those runs, including in a user's own CI. Set either
+opt-out variable before starting Simra to exclude your own benchmarks or automation. Delivery failures do not interrupt design work; delivery
+is batched and shutdown waits at most two seconds. Events can be lost if a process is killed abruptly.
+
+Source installs read `SIMRA_POSTHOG_PROJECT_TOKEN` and `SIMRA_POSTHOG_HOST` from the process environment.
+An `.env` file is not loaded automatically. Release builds can embed public ingestion settings. A complete
+runtime token/host pair overrides the bundled pair; an incomplete pair is ignored. Generic `POSTHOG_*`
+environment variables are reserved for release builds. Ingestion settings alone do not enable analytics; saved opt-in is also required.
+Without both ingestion settings, analytics is inactive. See [CONTRIBUTING.md](CONTRIBUTING.md#analytics)
+for release configuration and the event API.
+
 ## Development
 
-Requirements: Node.js 22.19 or later, and npm.
+Requirements: Node.js 22.22 or later, and npm.
 
 1. Clone the repository.
 2. Run `npm ci`.

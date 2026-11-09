@@ -46,6 +46,8 @@ import {
 	type AdapterManifest,
 } from "@simra-tech/kernel";
 import pkg from "./package.json" with { type: "json" };
+import { telemetry } from "@simra-tech/kernel/telemetry";
+import { registerAnalytics } from "./src/analytics.ts";
 
 /** The versions that /simra-version and the header show. */
 const versions = { simra: pkg.version, pi: PI_VERSION };
@@ -53,6 +55,7 @@ const versions = { simra: pkg.version, pi: PI_VERSION };
 export function setVersions(simra: string, pi: string): void {
 	versions.simra = simra;
 	versions.pi = pi;
+	telemetry.configure({ version: simra });
 }
 
 /** The images that an experiment may add to a tool result: at most MAX_IMAGES PNG outputs of role "image", MAX_IMAGE_BYTES in all. */
@@ -204,6 +207,7 @@ export function chipDesignPrompt(options: BeforeAgentStartEvent["systemPromptOpt
 }
 
 export default function (pi: ExtensionAPI) {
+	registerAnalytics(pi);
 	// A finding is added once per session, at the first call that shows it.
 	const reported = new Set<string>();
 	const deadline = Date.parse(process.env.SIMRA_SESSION_DEADLINE ?? "");
@@ -355,6 +359,11 @@ export default function (pi: ExtensionAPI) {
 			const root = findRoot(ctx.cwd) ?? ctx.cwd;
 			const start = Date.now();
 			const outcomes = await waitExperiments(root, params.ids, { timeoutS: params.timeout_s ?? 3600, signal });
+			telemetry.capture("experiments_wait_completed", {
+				requested_experiment_count: params.ids.length,
+				completed_experiment_count: outcomes.filter((outcome) => outcome.status === "completed").length,
+				unfinished_experiment_count: outcomes.filter((outcome) => outcome.status !== "completed").length,
+			});
 			const text = formatWait(root, outcomes, (Date.now() - start) / 1000, (e) => runtimeEstimate(root, e));
 			return {
 				content: [{ type: "text", text }, ...outcomes.flatMap((o) => (o.result ? imageParts(root, o.result) : []))],

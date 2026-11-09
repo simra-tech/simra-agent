@@ -9,7 +9,7 @@
     "packages/*"
   ],
   "engines": {
-    "node": ">=22.19.0"
+    "node": ">=22.22.0"
   },
   "scripts": {
     "test": "node --test \"test/**/*.test.mjs\" \"packages/*/test/**/*.test.ts\" && python3 -m unittest discover -s adapters/ngspice -p \"test_*.py\" && python3 -m unittest discover -s adapters/klayout -p \"test_*.py\""
