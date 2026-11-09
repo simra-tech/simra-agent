@@ -25,6 +25,7 @@
 //
 // Option: --root <dir> (default: the nearest directory upward with simra.config.json, else the current directory)
 
+import { getAnalyticsConsent, setAnalyticsConsent, telemetry } from "./telemetry.ts";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { findRoot } from "./config.ts";
@@ -39,11 +40,13 @@ import { runDetachedWorker, runExperiment } from "./runner.ts";
 import { formatOutcome, formatStarted, formatVerdict, formatWait } from "./summary.ts";
 import { waitExperiments } from "./wait.ts";
 
+class CliUsageError extends Error {}
+
 function usage(): never {
 	console.error(
-		"usage: simra run [--detach] <spec.json> | simra wait <id> [<id>...] [--timeout-s <n>] | simra show <id> [--json] | simra record [<path>...] | simra list | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>] | simra pdf <file> [--pages <a-b> | --render <N>] | simra pack init --pdk <name> [--adapter <name>] [--pdk-root <dir>] [--dir <dir>] [--inputs <json>] [--write] | simra pack check --pdk <name> [--adapter <name>] [--inputs <json>]   [--root <dir>]",
+		"usage: simra run [--detach] <spec.json> | simra wait <id> [<id>...] [--timeout-s <n>] | simra show <id> [--json] | simra record [<path>...] | simra list | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>] | simra pdf <file> [--pages <a-b> | --render <N>] | simra pack init --pdk <name> [--adapter <name>] [--pdk-root <dir>] [--dir <dir>] [--inputs <json>] [--write] | simra pack check --pdk <name> [--adapter <name>] [--inputs <json>] | simra analytics <on|off|status>   [--root <dir>]",
 	);
-	process.exit(2);
+	throw new CliUsageError();
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -69,6 +72,16 @@ async function main(argv: string[]): Promise<number> {
 	}
 	root ??= findRoot(process.cwd()) ?? process.cwd();
 	const [command, arg] = args;
+	cliCommand = command;
+	if (command === "analytics") {
+		if (args.length !== 2 || !["on", "off", "status"].includes(arg)) usage();
+		if (arg !== "status") setAnalyticsConsent(arg === "on");
+		const consent = getAnalyticsConsent();
+		console.log(`Analytics preference: ${consent === undefined ? "unset (off by default)" : consent ? "on" : "off"}.`);
+		console.log(`Analytics active: ${telemetry.enabled() ? "yes" : "no"}. Requires opt-in and PostHog settings; environment opt-outs take precedence.`);
+		return 0;
+	}
+	if (!internal) telemetry.capture("cli_started", { command, headless: !process.stdin.isTTY || !process.stdout.isTTY });
 
 	if (command === "run" && arg) {
 		const spec = JSON.parse(readFileSync(arg, "utf8"));
@@ -162,10 +175,18 @@ async function main(argv: string[]): Promise<number> {
 	usage();
 }
 
+let cliCommand: string | undefined;
+const internal = process.argv.includes("--detached-worker");
+const started = Date.now();
+async function finish(code: number): Promise<never> {
+	if (!internal && cliCommand !== "analytics") telemetry.capture("cli_completed", { command: cliCommand, duration_ms: Date.now() - started, exit_code: code });
+	await telemetry.shutdown();
+	process.exit(code);
+}
 main(process.argv.slice(2)).then(
-	(code) => process.exit(code),
+	(code) => finish(code),
 	(e) => {
-		console.error(`simra: ${(e as Error).message}`);
-		process.exit(1);
+		if (!(e instanceof CliUsageError)) console.error(`simra: ${(e as Error).message}`);
+		return finish(e instanceof CliUsageError ? 2 : 1);
 	},
 );

@@ -10,6 +10,14 @@ import { test } from "node:test";
 import { updateNotice } from "../update.ts";
 
 test("the update check: a notice for a newer release, once a day, none with SIMRA_NO_UPDATE_CHECK=1", async (t) => {
+	const saved = Object.fromEntries(["SIMRA_RELEASES_URL", "SIMRA_NO_UPDATE_CHECK", "PI_OFFLINE"].map((name) => [name, process.env[name]]));
+	t.after(() => {
+		for (const [name, value] of Object.entries(saved)) {
+			if (value === undefined) delete process.env[name];
+			else process.env[name] = value;
+		}
+	});
+	delete process.env.SIMRA_NO_UPDATE_CHECK;
 	const requests: string[] = [];
 	const server = createServer((req, res) => {
 		requests.push(req.url ?? "");

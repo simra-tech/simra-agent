@@ -5,8 +5,8 @@
 // releases. The RC run needs ngspice and python3, the first-run test python3 (for a terminal), the proxy test openssl.
 
 import assert from "node:assert/strict";
-import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { connect } from "node:net";
@@ -14,6 +14,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import { gunzipSync } from "node:zlib";
 import { makePdf } from "../packages/kernel/test/pdf-fixture.ts";
 import { SIMRA_PREAMBLE } from "../packages/pi-extension/index.ts";
 
@@ -330,11 +332,13 @@ function terminal(env, steps) {
 
 test("the first run: a welcome, a model, an API key, then pi with the Simra header", { skip: skip || (!has("python3") && "python3 not on PATH"), timeout: 180_000 }, (t) => {
 	const agentDir = tempDir(t, "agent");
-	terminal({ SIMRA_CODING_AGENT_DIR: agentDir }, [
+	terminal({ SIMRA_CODING_AGENT_DIR: agentDir, NODE_TEST_CONTEXT: "", NODE_ENV: "", SIMRA_NO_ANALYTICS: "", DO_NOT_TRACK: "" }, [
+		["Share usage metadata with Simra", "\r"],
 		["Welcome to Simra", "\r"],
 		["Paste an API key", "sk-simra-test\r"],
 		["a chip-design agent built on pi", ""],
 	]);
+	assert.equal(JSON.parse(readFileSync(join(agentDir, "analytics.json"), "utf8")).enabled, false);
 	assert.deepEqual(JSON.parse(readFileSync(join(agentDir, "auth.json"), "utf8")).deepseek, { type: "api_key", key: "sk-simra-test" });
 	const settings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8"));
 	assert.deepEqual([settings.defaultProvider, settings.defaultModel], ["deepseek", "deepseek-flash"]);
@@ -346,6 +350,47 @@ test("the first run: a welcome, a model, an API key, then pi with the Simra head
 	terminal({ SIMRA_CODING_AGENT_DIR: empty }, [["Welcome to Simra", ""]]);
 	// A provider key in the environment skips the welcome.
 	assert.doesNotMatch(terminal({ SIMRA_CODING_AGENT_DIR: tempDir(t, "agent"), DEEPSEEK_API_KEY: "sk-env" }, [["a chip-design agent built on pi", ""]]), /Welcome to Simra/);
+});
+
+test("failed first-run setup flushes its analytics outcome", { skip: skip || (!has("python3") && "python3 not on PATH"), timeout: 60_000 }, async (t) => {
+	const events = [];
+	const server = createServer(async (req, res) => {
+		const chunks = [];
+		for await (const chunk of req) chunks.push(chunk);
+		const body = Buffer.concat(chunks);
+		const payload = JSON.parse((req.headers["content-encoding"] === "gzip" ? gunzipSync(body) : body).toString());
+		events.push(...(payload.batch ?? []));
+		res.writeHead(200, { "Content-Type": "application/json" });
+		res.end('{"status":1}');
+	});
+	await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+	t.after(() => new Promise((resolve) => server.close(resolve)));
+	const agentDir = tempDir(t, "setup-error");
+	writeFileSync(join(agentDir, "analytics.json"), JSON.stringify({ schema: "simra.analytics/1", enabled: true }));
+	mkdirSync(join(agentDir, "auth.json"));
+	await promisify(execFile)("python3", ["-I", join(root, "test/fixtures/terminal.py"), JSON.stringify([
+		["Welcome to Simra", "\r"], ["Paste an API key", "sk-simra-test\r"], ["EISDIR", ""],
+	]), binary], { cwd: tmpdir(), timeout: 45_000, env: {
+		...cleanEnv, PI_OFFLINE: "1", SIMRA_CODING_AGENT_DIR: agentDir,
+		NODE_TEST_CONTEXT: "", NODE_ENV: "", SIMRA_NO_ANALYTICS: "", DO_NOT_TRACK: "",
+		SIMRA_POSTHOG_PROJECT_TOKEN: "phc_test", SIMRA_POSTHOG_HOST: `http://127.0.0.1:${server.address().port}`,
+	} });
+	assert.deepEqual(events.map((e) => [e.event, e.properties.outcome]), [["setup_started", undefined], ["setup_completed", "error"]]);
+});
+
+test("analytics consent defaults off in the terminal, accepts explicit opt-in, and remembers both choices", { skip: skip || (!has("python3") && "python3 not on PATH"), timeout: 180_000 }, (t) => {
+	for (const [keys, enabled] of [["\r", false], ["\u001b[B\r", true]]) {
+		const agentDir = tempDir(t, "consent");
+		const env = {
+			SIMRA_CODING_AGENT_DIR: agentDir, DEEPSEEK_API_KEY: "sk-env",
+			NODE_TEST_CONTEXT: "", NODE_ENV: "", SIMRA_NO_ANALYTICS: "", DO_NOT_TRACK: "",
+			SIMRA_POSTHOG_PROJECT_TOKEN: "phc_test", SIMRA_POSTHOG_HOST: "http://127.0.0.1:1",
+		};
+		terminal(env, [["Share usage metadata with Simra", keys], ["a chip-design agent built on pi", ""]]);
+		assert.equal(JSON.parse(readFileSync(join(agentDir, "analytics.json"), "utf8")).enabled, enabled);
+		if (!enabled) assert.equal(existsSync(join(agentDir, "analytics-id")), false);
+		assert.doesNotMatch(terminal(env, [["a chip-design agent built on pi", ""]]), /Share usage metadata with Simra/);
+	}
 });
 
 test("simra run of the RC example with ngspice", { skip: skip || (!(has("ngspice") && has("python3")) && "ngspice or python3 not on PATH"), timeout: 120_000 }, (t) => {

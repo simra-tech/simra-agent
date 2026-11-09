@@ -9,6 +9,9 @@ on:
 
 permissions: {}
 
+env:
+  SIMRA_NO_ANALYTICS: "1"
+
 jobs:
   test:
     uses: ./.github/workflows/ci.yml
@@ -46,6 +49,9 @@ jobs:
       - run: sh packages/launcher/get-bun.sh "$RUNNER_TEMP/bun"
       - run: node packages/launcher/build.ts --out dist/simra
         env:
+          # Public ingestion settings, embedded in the binary. Never use a personal API key.
+          POSTHOG_PROJECT_TOKEN: ${{ vars.POSTHOG_PROJECT_TOKEN }}
+          POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
           BUN: ${{ runner.temp }}/bun/bun
       - run: node --test test/binary.test.mjs test/install.test.mjs
         env:

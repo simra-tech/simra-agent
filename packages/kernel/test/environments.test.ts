@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { test } from "node:test";
 import { buildInvocation } from "../src/environments.ts";
+import { setAnalyticsConsent } from "../src/telemetry.ts";
 
 const IMAGE_ID = `sha256:${"a".repeat(64)}`;
 
@@ -29,6 +30,31 @@ const request = (config: object) => ({
 	adapterDir: "/adapters/ngspice",
 	adapterCommand: ["python3", "/adapters/ngspice/adapter.py", "request.json"],
 	experimentId: "e1",
+});
+
+test("project environment cannot re-enable analytics opted out by the parent", (t) => {
+	fakeEngines(t);
+	const dir = mkdtempSync(join(tmpdir(), "simra-env-consent-"));
+	const names = ["SIMRA_CODING_AGENT_DIR", "SIMRA_NO_ANALYTICS", "DO_NOT_TRACK", "NODE_TEST_CONTEXT", "NODE_ENV"];
+	const previous = names.map((name) => [name, process.env[name]] as const);
+	t.after(() => {
+		for (const [name, value] of previous) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
+		rmSync(dir, { recursive: true, force: true });
+	});
+	for (const name of names) delete process.env[name];
+	process.env.SIMRA_CODING_AGENT_DIR = dir;
+	setAnalyticsConsent(true);
+	assert.equal(buildInvocation(request({ kind: "local" })).env.SIMRA_NO_ANALYTICS, undefined);
+	assert.ok(!buildInvocation(request({})).args.includes("SIMRA_NO_ANALYTICS=1"));
+	for (const optout of ["SIMRA_NO_ANALYTICS", "DO_NOT_TRACK"]) {
+		process.env[optout] = "1";
+		const env = { SIMRA_NO_ANALYTICS: "0", DO_NOT_TRACK: "0" };
+		assert.equal(buildInvocation(request({ kind: "local", env })).env.SIMRA_NO_ANALYTICS, "1");
+		const container = buildInvocation(request({ env }));
+		assert.ok(container.args.includes("SIMRA_NO_ANALYTICS=1"));
+		assert.ok(!container.args.includes("SIMRA_NO_ANALYTICS=0"));
+		delete process.env[optout];
+	}
 });
 
 test("a container environment runs podman as container root by default", (t) => {

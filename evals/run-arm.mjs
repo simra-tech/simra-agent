@@ -237,7 +237,7 @@ export function sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar
 		...Object.entries(readOnly).flatMap(([from, to]) => ["-v", `${from}:${to}:ro`]),
 		"-w",
 		WORK,
-		...Object.entries({ HOME: `${STATE}/home`, [keyVar]: DUMMY_KEY, ...env }).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
+		...Object.entries({ HOME: `${STATE}/home`, [keyVar]: DUMMY_KEY, ...env, SIMRA_NO_ANALYTICS: "1" }).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
 		imageId,
 		"node",
 		"-e",
@@ -435,6 +435,8 @@ function waitExit(child, timeoutMs, onTimeout) {
 }
 
 async function main() {
+	// This also covers scorer imports and verification on the host, outside the agent container.
+	process.env.SIMRA_NO_ANALYTICS = "1";
 	const args = process.argv.slice(2);
 	const taskDir = resolve(args[0] ?? "");
 	const arm = args[1];
