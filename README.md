@@ -133,7 +133,7 @@ skipped. The tests of the klayout operations `query`, `diff` and `render` run on
 The `simra` binary has the kernel CLI and pi with the Simra extension in one file, compiled with
 [Bun](https://bun.com).
 
-- `simra run`, `check`, `list`, `show`, `wait`, `record` and `pdf` are the commands of the kernel CLI.
+- `simra run`, `check`, `list`, `show`, `wait`, `record`, `pdf`, `pack` and `analytics` are the commands of the kernel CLI.
 - `simra update --extensions` and `simra update --models` update pi packages and model catalogs.
 - All other arguments go to pi. `simra` without arguments starts the agent in the terminal.
 
@@ -538,7 +538,8 @@ boxes and the shapes do not tell which edge to move, and to write Python only to
 | Path | Contents |
 | --- | --- |
 | `packages/kernel/` | runner, experiment records, environments, PDF reader, `simra` CLI (no pi dependency) |
-| `packages/pi-extension/` | the pi extension (the only package that imports pi) |
+| `packages/pi-extension/` | the pi extension |
+| `packages/launcher/` | the `simra` binary: kernel CLI, pi and the extension in one Bun-compiled file |
 | `adapters/ngspice/` | ngspice adapter (Python) and its tests; `design_check.py` has the operation `check_design` |
 | `adapters/klayout/` | klayout adapter (Python) and its tests: DRC and LVS with the stock KLayout decks of the PDK, with typed verdicts, questions about a layout (`query`), the comparison of two layouts (`diff`) and pictures of a region or a marker (`render`) |
 | `technologies/` | technology packs: the PDK facts that adapters need |
