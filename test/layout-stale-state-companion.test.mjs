@@ -28,6 +28,8 @@ function setup(t) {
 	writeFileSync(join(dir, "v2-seeded.gds"), "v2");
 	writeFileSync(join(work, "block.gds"), "v1");
 	git(work, "init", "-q");
+	// The fixture and the companion's own commits must not use the developer's signing setup.
+	git(work, "config", "commit.gpgsign", "false");
 	git(work, "add", "block.gds");
 	git(work, "commit", "-q", "-m", "design");
 	return { work, dir };
@@ -141,6 +143,7 @@ test("the companion in the sandbox commits the new version during the run of the
 	for (const d of [ws, join(state, "home"), proxy, join(root, "task")]) mkdirSync(d, { recursive: true });
 	writeFileSync(join(ws, "block.gds"), "v1");
 	git(ws, "init", "-q");
+	git(ws, "config", "commit.gpgsign", "false");
 	git(ws, "add", ".");
 	git(ws, "commit", "-q", "-m", "design");
 	const task = join(root, "task");
