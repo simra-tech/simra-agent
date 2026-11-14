@@ -10,6 +10,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
+import type { TouchstoneSummary } from "./touchstone.ts";
 
 export const EXPERIMENT_SCHEMA = "simra.experiment/0";
 export const RESULT_SCHEMA = "simra.result/0";
@@ -23,6 +24,8 @@ export interface FileHash {
 	sha256: string;
 	bytes?: number;
 	role?: string;
+	/** Added by the runner for a Touchstone file (role "touchstone" or a name *.sNp): its summary, or why it cannot be read. */
+	touchstone?: TouchstoneSummary | { error: string };
 }
 
 export interface Measurement {

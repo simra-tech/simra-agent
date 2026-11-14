@@ -124,7 +124,10 @@ Rules:
 - `outputs` lists the files that the tool wrote, with their hashes. An entry may have a `role`. The summary
   prints the role before the path. A PNG with the role `image` is a picture for the agent: the pi extension
   adds it to the tool result as an image (at most 4 pictures and 1 MB per result). The klayout operation
-  `render` writes such outputs.
+  `render` writes such outputs. An output with the role `touchstone` is a Touchstone file (`.sNp`). The kernel
+  reads it after the run and adds the field `touchstone` to its entry: ports, points, band, DC point, passivity and
+  reciprocity numbers, or `{"error": ...}` when the file does not parse or changed after the adapter hashed it. The
+  adapter does not write this field. The requirement kinds `s_db` and `mu` read these files.
 - A measurement that the tool did not give has status `failed` or `missing` and the value `null`. It is never
   omitted.
 - A measurement can have the optional field `at`: the sweep point where a reduced value (for example a minimum

@@ -33,6 +33,7 @@ import {
 	writeJsonAtomic,
 } from "./records.ts";
 import { runtimeEstimate, type RuntimeEstimate } from "./estimate.ts";
+import { describeTouchstone, isTouchstoneEntry } from "./touchstone.ts";
 
 export const CONTRACT = "simra.adapter/0";
 export const KERNEL_VERSION: string = kernelPackage.version;
@@ -257,6 +258,7 @@ async function executeJob(job: Job, env: NodeJS.ProcessEnv, signal?: AbortSignal
 		result.errors.push(`the adapter wrote no response (exit code ${exit.code}); see ${result.logs.adapter_stderr}`);
 	} else {
 		applyResponse(result, responsePath, exit.code);
+		annotateTouchstone(root, result);
 	}
 
 	writeJsonAtomic(join(dir, "result.json"), result);
@@ -407,6 +409,27 @@ function applyResponse(result: ResponseFields, responsePath: string, exitCode: n
 	result.measurements = (response.measurements as ResultRecord["measurements"]) ?? {};
 	result.diagnostics = (response.diagnostics as ResultRecord["diagnostics"]) ?? [];
 	if (Array.isArray(response.report)) result.report = response.report.map((line) => String(line));
+}
+
+/**
+ * Add the summary of each Touchstone file (input or output) to its entry. The kernel reads the file itself, and only
+ * when its hash is still the hash that the adapter recorded.
+ */
+export function annotateTouchstone(root: string, result: Pick<ResultRecord, "input_files" | "outputs">): void {
+	for (const f of [...(result.input_files?.files ?? []), ...result.outputs]) {
+		if (!f || typeof f.path !== "string" || !isTouchstoneEntry(f)) continue;
+		const path = resolve(root, f.path);
+		try {
+			if (sha256File(path) !== f.sha256) {
+				f.touchstone = { error: "the file changed after the adapter hashed it" };
+				continue;
+			}
+		} catch {
+			f.touchstone = { error: "file not found" };
+			continue;
+		}
+		f.touchstone = describeTouchstone(path);
+	}
 }
 
 interface SpawnResult {

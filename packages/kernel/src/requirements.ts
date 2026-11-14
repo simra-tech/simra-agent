@@ -29,6 +29,7 @@ import {
 	writeJsonAtomic,
 } from "./records.ts";
 import { gitState, KERNEL_VERSION, runExperiment, sha256File } from "./runner.ts";
+import { isTouchstoneEntry, readTouchstone, sDb, stabilityMu } from "./touchstone.ts";
 
 export const REQUIREMENTS_SCHEMA = "simra.requirements/0";
 export const VERDICT_SCHEMA = "simra.verdict/0";
@@ -39,13 +40,30 @@ export const NOT_SELECTED = "not selected in this check";
 /** One limit. "between" takes [low, high]; "<=" and ">=" take one number. */
 export type Limit = number | [number, number];
 
+/**
+ * "measurement" (the default): a measurement of the experiment. "s_db" and "mu": a value that the kernel computes from
+ * a Touchstone file of the experiment (an output, or an input file) at each data point in band_hz; the row uses the
+ * worst point. s_db is 20 log10 |S_ij| (entry [i, j], ports from 1); mu is the stability factor of a 2-port
+ * (Edwards and Sinsky), > 1 for an unconditionally stable 2-port.
+ */
+export type RequirementKind = "measurement" | "s_db" | "mu";
+export const REQUIREMENT_KINDS: RequirementKind[] = ["measurement", "s_db", "mu"];
+
 export interface Requirement {
 	id: string;
 	description?: string;
 	/** Name of an entry in "experiments". */
 	experiment: string;
-	/** Measurement name in the result of that experiment. */
-	measurement: string;
+	/** Default "measurement". */
+	kind?: RequirementKind;
+	/** Measurement name in the result of that experiment (kind "measurement" only). */
+	measurement?: string;
+	/** s_db and mu: the Touchstone file, by its path or the end of its path; optional when the experiment has one. */
+	touchstone?: string;
+	/** s_db: [i, j], the entry S_ij, ports from 1. */
+	entry?: [number, number];
+	/** s_db and mu: the band [f_lo, f_hi] in Hz. Each data point in it is checked; [f, f] checks one data point. */
+	band_hz?: [number, number];
 	/** Expected unit. A measurement with a different unit is not compared. */
 	unit?: string;
 	op: "<=" | ">=" | "between";
@@ -168,7 +186,26 @@ export function validateRequirements(file: RequirementsFile): string[] {
 		if (ids.has(r.id)) errors.push(`${where}: the id is used more than once`);
 		ids.add(r.id);
 		if (!experiments[r.experiment]) errors.push(`${where}: experiment "${r.experiment}" is not defined`);
-		if (!r.measurement) errors.push(`${where}: measurement is required`);
+		const kind = r.kind ?? "measurement";
+		if (!REQUIREMENT_KINDS.includes(kind)) errors.push(`${where}: kind is ${String(kind)}, expected ${REQUIREMENT_KINDS.join(", ")}`);
+		if (kind === "measurement" && !r.measurement) errors.push(`${where}: measurement is required`);
+		if (kind !== "measurement") {
+			if (r.measurement !== undefined) errors.push(`${where}: kind ${kind} computes its value from a Touchstone file; remove measurement`);
+			const band = r.band_hz;
+			if (!(Array.isArray(band) && band.length === 2 && band.every(isNumber) && band[0] >= 0 && band[0] <= band[1])) {
+				errors.push(`${where}: kind ${kind} needs band_hz [f_lo, f_hi] in Hz with 0 <= f_lo <= f_hi`);
+			}
+			if (r.touchstone !== undefined && typeof r.touchstone !== "string") errors.push(`${where}: touchstone must be a path`);
+		}
+		if (kind === "s_db") {
+			const e = r.entry;
+			if (!(Array.isArray(e) && e.length === 2 && e.every((x) => Number.isInteger(x) && x >= 1))) errors.push(`${where}: kind s_db needs entry [i, j] (ports from 1)`);
+			if (r.unit !== undefined && r.unit !== "dB") errors.push(`${where}: the unit of kind s_db is dB`);
+		} else if (r.entry !== undefined) errors.push(`${where}: entry is only for kind s_db`);
+		if (kind === "mu" && r.unit !== undefined) errors.push(`${where}: kind mu has no unit`);
+		if (kind === "measurement" && (r.band_hz !== undefined || r.touchstone !== undefined)) {
+			errors.push(`${where}: band_hz and touchstone are for the kinds s_db and mu`);
+		}
 		if (!["<=", ">=", "between"].includes(r.op)) errors.push(`${where}: op is ${String(r.op)}, expected <=, >= or between`);
 		if (r.conditions === undefined) {
 			if (!validLimit(r.op, r.limit)) errors.push(`${where}: no valid limit for op ${r.op}`);
@@ -222,18 +259,63 @@ function compare(op: Requirement["op"], limit: Limit, value: number): { margin: 
 	return { margin, margin_rel: l !== 0 ? margin / Math.abs(l) : null };
 }
 
-/** One row from the result of the experiment that measured it (null: not run). */
+/** The name of the value of a row: the measurement, or for a Touchstone kind, for example "S21 dB" or "mu". */
+export function rowMeasurement(r: Requirement): string {
+	if (r.kind === "s_db") return `S${r.entry?.join("") ?? ""} dB`;
+	if (r.kind === "mu") return "mu";
+	return r.measurement ?? "";
+}
+
+/**
+ * The values of a Touchstone kind at the data points in band_hz, from the Touchstone file of the run, or the reason why
+ * there are none. The file must still have the hash of the record, and the data must cover the band.
+ */
+function touchstoneValues(r: Requirement, run: { id: string; result: ResultRecord }, root: string | undefined): { values: { value: number; f: number }[] } | { reason: string } {
+	const files = [...run.result.outputs, ...(run.result.input_files?.files ?? [])].filter(isTouchstoneEntry);
+	const chosen = r.touchstone ? files.filter((f) => f.path === r.touchstone || f.path.endsWith(`/${r.touchstone}`)) : files;
+	if (chosen.length === 0) return { reason: `experiment ${run.id} has no Touchstone file${r.touchstone ? ` ${r.touchstone}` : ""}` };
+	if (chosen.length > 1) return { reason: `experiment ${run.id} has ${chosen.length} Touchstone files; name one in touchstone` };
+	if (root === undefined) return { reason: "the design root is not known" };
+	const file = chosen[0];
+	const path = resolve(root, file.path);
+	let data: ReturnType<typeof readTouchstone>;
+	try {
+		if (sha256File(path) !== file.sha256) return { reason: `${file.path} changed after experiment ${run.id}` };
+		data = readTouchstone(path);
+	} catch (e) {
+		return { reason: `${file.path}: ${(e as Error).message}` };
+	}
+	const [lo, hi] = r.band_hz as [number, number];
+	const fmin = data.f[0];
+	const fmax = data.f[data.f.length - 1];
+	if (lo < fmin * (1 - 1e-9) || hi > fmax * (1 + 1e-9)) {
+		return { reason: `${file.path} covers ${fmin} to ${fmax} Hz; the band ${lo} to ${hi} Hz is not inside it` };
+	}
+	const ks = data.f.map((f, k) => [f, k]).filter(([f]) => f >= lo * (1 - 1e-9) && f <= hi * (1 + 1e-9));
+	if (!ks.length) return { reason: `${file.path} has no data point in ${lo} to ${hi} Hz` };
+	if (r.kind === "mu") {
+		if (data.nports !== 2) return { reason: `mu needs a 2-port; ${file.path} has ${data.nports} ports` };
+		return { values: ks.map(([f, k]) => ({ value: stabilityMu(data, k), f })) };
+	}
+	const [i, j] = r.entry as [number, number];
+	if (i > data.nports || j > data.nports) return { reason: `${file.path} has ${data.nports} ports; there is no S${i}${j}` };
+	return { values: ks.map(([f, k]) => ({ value: sDb(data, k, i, j), f })) };
+}
+
+/** One row from the result of the experiment that measured it (null: not run). root: the design root, for the kinds
+ * that read a Touchstone file. */
 export function evaluateRow(
 	r: Requirement,
 	condition: string | null,
 	run: { id: string; result: ResultRecord } | null,
 	notRunReason: string,
+	root?: string,
 ): VerdictRow {
 	const limit = limitFor(r, condition) as Limit;
 	const row: VerdictRow = {
 		requirement: r.id,
 		condition,
-		measurement: r.measurement,
+		measurement: rowMeasurement(r),
 		op: r.op,
 		limit,
 		value: null,
@@ -249,13 +331,33 @@ export function evaluateRow(
 	if (run.result.status !== "completed") {
 		return { ...row, reason: `experiment ${run.id} ended with status ${run.result.status}` };
 	}
+	if (r.kind === "s_db" || r.kind === "mu") {
+		const got = touchstoneValues(r, run, root);
+		if ("reason" in got) return { ...row, status: "not_measured", reason: got.reason };
+		// The worst data point decides: the smallest value for >=, the largest for <=, the nearer side for between.
+		const lowest = got.values.reduce((a, b) => (b.value < a.value ? b : a));
+		const highest = got.values.reduce((a, b) => (b.value > a.value ? b : a));
+		const picks = r.op === ">=" ? [lowest] : r.op === "<=" ? [highest] : [lowest, highest];
+		const scored = picks.map((p) => ({ p, ...compare(r.op, limit, p.value) }));
+		const worst = scored.reduce((a, b) => (b.margin < a.margin ? b : a));
+		return {
+			...row,
+			value: worst.p.value,
+			unit: r.kind === "s_db" ? "dB" : null,
+			margin: worst.margin,
+			margin_rel: worst.margin_rel,
+			status: worst.margin >= 0 ? "pass" : "fail",
+			at: { f_hz: worst.p.f },
+		};
+	}
 	const measurements = run.result.measurements;
 	const valid = (m: Measurement | undefined): m is Measurement & { value: number } =>
 		!!m && m.status === "measured" && isNumber(m.value);
 	// A sweep gives <measurement>.min and .max. The row uses the worst point: .min for >=, .max for <=, both for
 	// between. The sweep comes before a scalar of the same name, which a bench can print at each point (the last wins).
-	const sweep = `${r.measurement}.min` in measurements || `${r.measurement}.max` in measurements;
-	const names = !sweep ? [r.measurement] : r.op === ">=" ? [`${r.measurement}.min`] : r.op === "<=" ? [`${r.measurement}.max`] : [`${r.measurement}.min`, `${r.measurement}.max`];
+	const meas = r.measurement as string;
+	const sweep = `${meas}.min` in measurements || `${meas}.max` in measurements;
+	const names = !sweep ? [meas] : r.op === ">=" ? [`${meas}.min`] : r.op === "<=" ? [`${meas}.max`] : [`${meas}.min`, `${meas}.max`];
 	for (const name of names) {
 		const m = measurements[name];
 		if (!valid(m)) return { ...row, status: "not_measured", reason: `experiment ${run.id} gave no value for ${name}` };
@@ -341,7 +443,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 		for (const c of conditionsOf(r)) {
 			// A row that is not selected stays not run, also when a selected row shares its experiment.
 			const run = selected(r, c) ? (runs.get(key(r.experiment, c)) ?? null) : null;
-			rows.push(evaluateRow(r, c, run, selected(r, c) ? "the check was cancelled before this experiment" : NOT_SELECTED));
+			rows.push(evaluateRow(r, c, run, selected(r, c) ? "the check was cancelled before this experiment" : NOT_SELECTED, root));
 		}
 	}
 	const counts: Record<RowStatus, number> = { pass: 0, fail: 0, not_measured: 0, not_run: 0 };

@@ -6,6 +6,7 @@
 // "values" also takes inputs.report: the lines of the response field "report".
 // "image": the response of "ok" with inputs.count (default 1) PNG outputs work/render-<n>.png of role "image"
 // (a 1 x 1 pixel PNG each, or inputs.bytes zero bytes each), and a work/render.json output without a role.
+// "touchstone": inputs.files {name: text} become files of the work directory and outputs of role "touchstone".
 // Operation pack_propose: an invented pack for inputs.pdk (no file read); inputs.mode "nopack" proposes nothing.
 // Operation pack_check: one item per corner of the section "fake" of the pack file inputs.pack; a corner named
 // "bad" fails with class simulator; the item reference_build is not run.
@@ -57,6 +58,15 @@ else if (mode === "values") {
 	}
 	const report = request.inputs.report ? { report: request.inputs.report } : {};
 	respond({ ...ok, measurements, diagnostics: request.inputs.diagnostics ?? [], ...report });
+}
+else if (mode === "touchstone") {
+	const { createHash } = await import("node:crypto");
+	const outputs = Object.entries(request.inputs.files ?? {}).map(([name, text]) => {
+		const path = join(request.work_dir, name);
+		writeFileSync(path, text);
+		return { path, sha256: createHash("sha256").update(text).digest("hex"), bytes: Buffer.byteLength(text), role: "touchstone" };
+	});
+	respond({ ...ok, outputs });
 }
 else if (mode === "image") {
 	const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");

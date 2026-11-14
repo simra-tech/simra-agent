@@ -336,3 +336,82 @@ test("a design check that does not complete or is not selected is not run, never
 		assert.deepEqual([verdict.status, verdict.counts.pass], ["incomplete", 6]);
 	}
 });
+
+// Touchstone kinds: an amplifier 2-port, unconditionally stable at tt (S12 = 0.01) and not at ss (S12 = 0.5).
+const amp = (s12: number) =>
+	["# GHZ S RI R 50", ...[10, 20, 30, 40].map((f) => `${f} 0.5 0 ${(4 - f / 20).toFixed(2)} 0 ${s12} 0 0.4 0`)].join("\n") + "\n";
+
+const sparams = {
+	schema: "simra.requirements/0",
+	conditions: {
+		tt: { inputs: { files: { "amp.s2p": amp(0.01) } } },
+		ss: { inputs: { files: { "amp.s2p": amp(0.5) } } },
+	},
+	experiments: {
+		sp: { adapter: "fake", operation: "run", inputs: { mode: "touchstone", tag: "sp_{condition}" } },
+		two: { adapter: "fake", operation: "run", inputs: { mode: "touchstone", files: { "a.s2p": amp(0.01), "b.s2p": amp(0.01) } } },
+	},
+	requirements: [
+		{ id: "gain", experiment: "sp", kind: "s_db", entry: [2, 1], band_hz: [10e9, 30e9], op: ">=", limit: 7, unit: "dB", conditions: ["tt", "ss"] },
+		{ id: "gain_at_f0", experiment: "sp", kind: "s_db", entry: [2, 1], band_hz: [20e9, 20e9], op: "between", limit: [9, 10], conditions: ["tt"] },
+		{ id: "stable", experiment: "sp", kind: "mu", band_hz: [10e9, 40e9], op: ">=", limit: 1, conditions: ["tt", "ss"] },
+		{ id: "outside", experiment: "sp", kind: "mu", band_hz: [1e9, 40e9], op: ">=", limit: 1, conditions: ["tt"] },
+		{ id: "which", experiment: "two", kind: "s_db", entry: [1, 1], band_hz: [10e9, 40e9], op: "<=", limit: -3 },
+		{ id: "named", experiment: "two", kind: "s_db", entry: [1, 1], band_hz: [10e9, 40e9], op: "<=", limit: -3, touchstone: "b.s2p" },
+	],
+};
+
+test("Touchstone kinds: |S21| in dB and mu over a band, from the Touchstone output of the experiment", async (t) => {
+	const root = designRoot(t, sparams);
+	const { verdict } = await runCheck({ root });
+	const gainTt = row(verdict.rows, "gain", "tt");
+	// The worst point in 10 to 30 GHz is 30 GHz: |S21| = 4 - 1.5 = 2.5.
+	assert.equal(gainTt.status, "pass");
+	assert.ok(Math.abs((gainTt.value as number) - 20 * Math.log10(2.5)) < 1e-12);
+	assert.deepEqual(gainTt.at, { f_hz: 30e9 });
+	assert.equal(gainTt.measurement, "S21 dB");
+	assert.equal(gainTt.unit, "dB");
+	const f0 = row(verdict.rows, "gain_at_f0", "tt");
+	assert.ok(Math.abs((f0.value as number) - 20 * Math.log10(3)) < 1e-12);
+	assert.equal(f0.status, "pass");
+	// mu = (1 - |S11|^2) / (|S22 - conj(S11) Delta| + |S12 S21|), with S11 = 0.5 and S22 = 0.4 (real).
+	const stableTt = row(verdict.rows, "stable", "tt");
+	assert.equal(stableTt.status, "pass");
+	const stableSs = row(verdict.rows, "stable", "ss");
+	assert.equal(stableSs.status, "fail");
+	assert.deepEqual(stableSs.at, { f_hz: 10e9 }, "the largest S21 gives the smallest mu");
+	const s21 = 3.5;
+	const expected = 0.75 / (Math.abs(0.4 - 0.5 * (0.2 - 0.5 * s21)) + 0.5 * s21);
+	assert.ok(Math.abs((stableSs.value as number) - expected) < 1e-12, `${stableSs.value} != ${expected}`);
+	// A band outside the data, two files without a name, and a named file.
+	assert.equal(row(verdict.rows, "outside", "tt").status, "not_measured");
+	assert.match(row(verdict.rows, "outside", "tt").reason ?? "", /covers 10000000000 to 40000000000 Hz/);
+	assert.match(row(verdict.rows, "which", null).reason ?? "", /2 Touchstone files; name one/);
+	assert.equal(row(verdict.rows, "named", null).status, "pass");
+	assert.match(formatVerdict(root, verdict), /FAIL\s+stable @ ss: 0\.2564 @ f_hz=10000000000, limit >= 1/);
+});
+
+test("Touchstone kinds: a file that changed after the run is not measured, and the fields are checked", async (t) => {
+	const root = designRoot(t, { ...sparams, requirements: [sparams.requirements[0]] });
+	const first = await runCheck({ root, conditions: ["tt"] });
+	const id = row(first.verdict.rows, "gain", "tt").experiment as string;
+	const out = loadExperiment(root, id).result?.outputs[0].path as string;
+	writeFileSync(out, amp(0.02));
+	const { evaluateRow } = await import("../src/index.ts");
+	const again = evaluateRow(sparams.requirements[0] as never, "tt", { id, result: loadExperiment(root, id).result as never }, "", root);
+	assert.equal(again.status, "not_measured");
+	assert.match(again.reason ?? "", /changed after experiment/);
+
+	const bad = validateRequirements({
+		...sparams,
+		requirements: [
+			{ id: "a", experiment: "sp", kind: "s_db", band_hz: [2, 1], op: ">=", limit: 1, unit: "V", measurement: "x" },
+			{ id: "b", experiment: "sp", kind: "mu", entry: [1, 1], op: ">=", limit: 1 },
+			{ id: "c", experiment: "sp", kind: "nf" as never, op: ">=", limit: 1 },
+			{ id: "d", experiment: "sp", measurement: "x", band_hz: [1, 2], op: ">=", limit: 1 },
+		],
+	} as unknown as RequirementsFile);
+	for (const text of ["remove measurement", "needs band_hz", "needs entry", "unit of kind s_db is dB", "entry is only for kind s_db", "kind is nf", "band_hz and touchstone are for the kinds"]) {
+		assert.ok(bad.some((e) => e.includes(text)), `${text}: ${bad.join("; ")}`);
+	}
+});

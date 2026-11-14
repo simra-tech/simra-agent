@@ -1,0 +1,12 @@
+{
+  "name": "rf-passive-gain",
+  "prompt": "task.md",
+  "score": "score.mjs",
+  "environment": "eda",
+  "files": {
+    "match.s2p": "match.s2p",
+    "amp.cir": "amp.cir",
+    "simra.config.json": "../../examples/ota-sg13g2/simra.config.json",
+    "simra.local.json": "../../examples/ota-sg13g2/simra.local.json"
+  }
+}

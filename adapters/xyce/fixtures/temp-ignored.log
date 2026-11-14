@@ -1,0 +1,10 @@
+***** Reading and parsing netlist...
+Netlist warning in file tran.cir at or near line 2
+ Unrecognized dot line will be ignored
+Netlist error in file tran.cir at or near line 8
+ Illegal name in .MEASURE line.  Cannot be AC, DC, FFT, NOISE, TRAN/TR,
+ AC_CONT, DC_CONT, NOISE_CONT or TRAN_CONT
+Netlist warning in file tran.cir at or near line 8
+ Unrecognized dot line will be ignored
+Netlist warning: No print specified
+Simulation aborted due to error.  There are 0 MSG_FATAL errors and 1 MSG_ERROR

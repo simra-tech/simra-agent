@@ -5,6 +5,7 @@ import { join, relative } from "node:path";
 import type { RuntimeEstimate } from "./estimate.ts";
 import { formatStale, staleInputs } from "./record.ts";
 import { type CommandRun, experimentDir, type ExperimentRecord, type ResultRecord } from "./records.ts";
+import { formatTouchstone } from "./touchstone.ts";
 import { checksDir, type Limit, NOT_SELECTED, type VerdictRecord, type VerdictRow } from "./requirements.ts";
 import type { WaitOutcome } from "./wait.ts";
 
@@ -57,6 +58,7 @@ export function formatOutcome(root: string, experiment: ExperimentRecord, result
 		);
 		for (const f of result.input_files.files.filter((f) => f.role !== "model")) {
 			lines.push(`  ${f.role ?? "file"} ${f.path} sha256:${f.sha256.slice(0, 12)}`);
+			if (f.touchstone) lines.push(`    ${formatTouchstone(f.touchstone)}`);
 		}
 		// A file of record that changed after the run: the verdicts of this run are not about the current file.
 		for (const s of staleInputs(root, experiment, result)) lines.push(formatStale(s));
@@ -64,7 +66,10 @@ export function formatOutcome(root: string, experiment: ExperimentRecord, result
 	// The outputs that the adapter recorded, in its order, with paths relative to the design root (as in result.json).
 	if (result.outputs.length) {
 		lines.push("outputs:");
-		for (const f of result.outputs) lines.push(`  ${f.role ? `${f.role} ` : ""}${f.path}${f.bytes === undefined ? "" : ` (${f.bytes} bytes)`}`);
+		for (const f of result.outputs) {
+			lines.push(`  ${f.role ? `${f.role} ` : ""}${f.path}${f.bytes === undefined ? "" : ` (${f.bytes} bytes)`}`);
+			if (f.touchstone) lines.push(`    ${formatTouchstone(f.touchstone)}`);
+		}
 	}
 	const names = Object.keys(result.measurements);
 	if (names.length) {

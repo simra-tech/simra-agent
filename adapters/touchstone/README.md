@@ -1,0 +1,48 @@
+# touchstone adapter
+
+The touchstone adapter makes a SPICE subcircuit from a Touchstone file. Use it when a passive part (a matching
+network, a transmission line, a pad, a transformer) exists only as S-parameters, for example from an EM simulation,
+and a circuit simulation needs it.
+
+It has one operation: `fit_to_spice`. The inputs, measurements and outputs are in [adapter.json](adapter.json).
+The adapter needs Python 3.6 or later and numpy. ngspice and Xyce are necessary only for the re-simulation
+(`verify`).
+
+## Method
+
+1. Read the file (Touchstone version 1 or 2, S-parameters, any format and unit; version 2 matrix order and
+   reference impedances).
+2. Refuse the run before the fit when the data does not support the use (input `uses`):
+   - the data band does not cover the frequencies of the simulation (an extrapolation);
+   - the simulation solves a DC point (every SPICE analysis does) and the data has no 0 Hz point, unless
+     `dc_policy` is `"model"`.
+3. Fit a rational model with common poles (relaxed vector fitting, real arithmetic for complex pole pairs). The
+   order is the lowest even order that meets `limits.max_abs_ds`, unless `order` is given.
+4. Test passivity with the eigenvalues of the Hamiltonian matrix. When the test fails, limit D below 1, refit the
+   residues, and change the residues by the smallest amount that removes the violation (residue perturbation).
+   The change of the model at the data points is a measurement (`enforcement_max_abs_ds`).
+5. Write the subcircuit. Each port is a Norton network (Z0 and a controlled current source); each pole is a
+   state network of R, C and controlled sources. Only R, C, G, F and V elements occur, so one netlist works in ngspice
+   and in Xyce.
+6. Re-simulate the subcircuit with an AC run per port, in each simulator of `verify`. Compare with the model and
+   with the data. A difference to the model above 1e-4 is an error: the subcircuit is not the model.
+
+## Guards
+
+| Condition | Result |
+| --- | --- |
+| no `uses` | refused: the adapter cannot check the band |
+| data band does not cover `uses` | refused, with the band of the data and the missing frequencies |
+| `uses.dc` true, no 0 Hz point, no `dc_policy` | refused |
+| fit error above the limit at `max_order` | failed, with the best error |
+| model not passive after enforcement | failed |
+| subcircuit differs from the model in a simulator | error diagnostic for that simulator |
+
+## Tests
+
+- `test_touchstone_adapter.py` (8 tests, numpy only): parse and write, fit of a closed-form low-pass 2-port and a
+  3-port star, passivity enforcement, the refusals, and the subcircuit solved with a small nodal solver.
+- `test/touchstone-fit.test.mjs`: the adapter through the kernel runner, 2-port and 3-port, re-simulated in ngspice
+  and Xyce. The local case needs ngspice, Xyce and numpy on the host; the container case needs `SIMRA_TEST_IMAGE`.
+- `evals/rf-passive-gain`: a demo task that uses the subcircuit in a Xyce deck. In the reference run, the fit
+  has order 4 and a largest error of 5.9e-4; the re-simulation error is the same in ngspice and Xyce.

@@ -35,6 +35,15 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
   answers questions about a layout (layers, cells, shapes, instances, texts, distances) in one recorded run. `diff`
   compares two layouts (a file or a git ref), and optionally the DRC markers of two runs, in one recorded run. `render`
   draws a region or a DRC marker as a picture that the agent sees in the result.
+- The touchstone adapter has one operation: `fit_to_spice`. It fits a Touchstone file with a passive rational model and
+  writes a SPICE subcircuit that ngspice and Xyce both read. It re-simulates the subcircuit in each simulator and
+  gives the error against the data (see [adapters/touchstone](adapters/touchstone/README.md)).
+- The xyce adapter has three operations: `parse`, `simulate` and `hb`. `parse` reports model gaps of a deck and its
+  libraries. `hb` gives the power per harmonic, supply currents, gain and P1dB from harmonic balance (see
+  [adapters/xyce](adapters/xyce/README.md)).
+- An output file in Touchstone format (role `touchstone`) gets a summary from the kernel: ports, band, DC point,
+  passivity and reciprocity. The requirement kinds `s_db` and `mu` read such a file (see
+  [Frequency-domain requirements](#frequency-domain-requirements)).
 - The commands `simra pack init` and `simra pack check` add a PDK to a site: an adapter proposes a technology pack
   from the kit, the user confirms it, and the adapter checks it (see "Add a PDK").
 - One example design exists: a two-stage OTA for the open IHP SG13G2 PDK.
@@ -466,6 +475,24 @@ The rules of the design file:
 Each error is a diagnostic with file and line. When a row of the design experiment does not pass, the summary
 shows the errors before the rows.
 
+### Frequency-domain requirements
+
+A requirement with a `kind` reads the Touchstone output of its experiment, not a measurement:
+
+- `kind: "s_db"`: |Sij| in dB. It needs `entry` (`[i, j]`, ports from 1), `band_hz` (`[low, high]`) and the unit
+  `dB` (or no unit).
+- `kind: "mu"`: the stability factor mu of a 2-port (Edwards and Sinsky), with no unit. It needs `band_hz`.
+- `touchstone` (optional): the path, or the end of the path, of the file. It is necessary when the experiment wrote
+  more than one Touchstone file.
+
+The value is the worst point in the band, and the row gives its frequency in `at` (for example `{"f_hz": 3e10}`). A
+band that the data does not cover gives `not_measured`, never a value from outside the data. A kind requirement has
+no `measurement`.
+
+```json
+{ "id": "gain", "experiment": "sp", "kind": "s_db", "entry": [2, 1], "band_hz": [10e9, 30e9], "op": ">=", "limit": 7, "unit": "dB" }
+```
+
 ## Read a layout
 
 To read a layout, the agent calls `run_experiment` with the adapter `klayout`, the operation `query` and several
@@ -490,9 +517,12 @@ boxes and the shapes do not tell which edge to move, and to write Python only to
 | `packages/pi-extension/` | the pi extension (the only package that imports pi) |
 | `adapters/ngspice/` | ngspice adapter (Python) and its tests; `design_check.py` has the operation `check_design` |
 | `adapters/klayout/` | klayout adapter (Python) and its tests: DRC and LVS with the stock KLayout decks of the PDK, with typed verdicts, questions about a layout (`query`), the comparison of two layouts (`diff`) and pictures of a region or a marker (`render`) |
+| `adapters/touchstone/` | touchstone adapter (Python, numpy) and its tests: a passive rational model of a Touchstone file as a SPICE subcircuit (`fit_to_spice`) |
+| `adapters/xyce/` | xyce adapter (Python) and its tests: `parse` (model gaps), `simulate` and `hb` (harmonic balance) |
 | `technologies/` | technology packs: the PDK facts that adapters need |
 | `examples/ota-sg13g2/` | two-stage OTA for IHP SG13G2 |
 | `evals/` | demo evaluations for the inner development loop (not decision benchmarks): the OTA at 3 corners, the OTA against a PVT spec, OTA synthesis from a pin specification (`ota-synthesis`), comparator synthesis from a pin specification (`comparator-synthesis`), their scorers and an arm runner. `synthesis-family.mjs` makes variants of the two synthesis tasks with tighter limits, from a hidden target design and a difficulty factor |
+| `evals/rf-passive-gain/` | demo RF task (not a decision benchmark): the gain of an amplifier deck with a matching network that exists only as a Touchstone file; PDK-free |
 | `evals/layout-drc-fix/` | demo layout task (not a decision benchmark): fix the seeded DRC violations of a small analog cell, with the stock KLayout DRC and LVS decks, on IHP SG13G2 and SKY130 |
 | `evals/layout-clean/` | demo layout task (not a decision benchmark): verify the same cell without violations, with no false alarm and no needless edit |
 | `evals/layout-block-fix/` | demo layout task (not a decision benchmark): fix the seeded DRC violations of a hierarchical analog block (10012 devices, four levels of cells), on IHP SG13G2 (full DRC rule set, density included) and SKY130 |
