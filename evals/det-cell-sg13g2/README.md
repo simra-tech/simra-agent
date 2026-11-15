@@ -33,3 +33,22 @@ and 0.209 mA for two cells, so the bench and the reference agree.
 - values (30): each reported value is within the tolerance of the verified value (`TOLERANCE` in `score.mjs`).
 - Diagnostics, no points: the reference value of each row and the verified value over it, the rows closed and
   missed, `supported`, and the reported largest V<sub>CE</sub> (the bench does not check it).
+
+## Pilot run (one run, 2026-11-15)
+
+One run of the `simra` arm with the default model of the harness (`deepseek/deepseek-flash`), 4 CPUs, 180 min limit,
+image `simra-agent-env:db92a2b`. This is one sample, not a rate.
+
+| Item | Result |
+| --- | --- |
+| Score | design 2/2, requirements 30/30, claim 4/4, values 30/30; 30 of 30 values supported by a workspace file |
+| Wall time, model calls | 1037 s, 50 calls |
+| Tokens | 6.35 M prompt (6.29 M of them cached), 0.12 M completion (0.10 M reasoning) |
+| Design | two common-emitter HBTs (detector and replica) with a bypassed emitter resistor, a 2.9 fF capacitive tap, a diode bias from `iref`; outputs at the emitters |
+| Against the reference | at every corner: 0.54 to 0.70 of the reference current, 3.9 to 4.0 times the reference output at −10 dBm, 0.26 to 0.50 of the reference noise, 1.08 to 1.20 of the reference loss |
+| Rows the bench does not check | reported largest DC V<sub>CE</sub> 1.419 V (fast_cold), found in the run records; band edges 122 GHz and 123 GHz checked by the agent with its own deck |
+| Not checked by any gate | offset with device mismatch (the corner models have no mismatch, so `offset_v` is about 1e-14 V); HBT saturation (V<sub>CE</sub> 0.60 V at slow_hot); the tap and the line as a layout |
+
+The image of the run did not have the workaround registry (the runtime list of `container/build.sh` did not have
+`workarounds/`); the agent called the `workarounds` tool once and got no entries. Two of its jobs failed on an ngspice
+parse error that is now the registry entry `ngspice-bsource-pwl-bare-param`.

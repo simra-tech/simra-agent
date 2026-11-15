@@ -71,6 +71,19 @@
       "workaround": "Use a long transient, or the Xyce HB probe method.",
       "status": "open",
       "evidence": "stage 0 of a reference design"
+    },
+    {
+      "id": "ngspice-bsource-pwl-bare-param",
+      "applies_to": {
+        "analyses": [
+          "tran"
+        ]
+      },
+      "gap": "A B source whose expression holds pwl(time, ...) and a bare .param name (for example * sin(2*pi*rf_f*time)) is not accepted.",
+      "symptom": "\"The internal check of parse tree ... failed\", then \"incomplete or empty netlist\"; the run stops before the analysis.",
+      "workaround": "Put the parameter expression in braces (sin({2*3.14159265*rf_f}*time)) or write the number.",
+      "status": "worked_around",
+      "evidence": "det-cell pilot run (two failed jobs), reproduced with a three-line deck: bare name fails, braces and a literal give the same 0.2 V result"
     }
   ]
 }

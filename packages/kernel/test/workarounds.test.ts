@@ -23,7 +23,7 @@ test("the built-in registry loads, and each failed probe class has an entry for 
 	const xyce = workaroundsFor({ simulators: ["xyce"], pdk: "ihp-sg13g2" }, all).map((w) => w.id);
 	for (const id of ["xyce-sg13g2-psp103", "xyce-sg13g2-r3cmc", "xyce-sg13g2-varactor", "xyce-hb-autonomous"]) assert.ok(xyce.includes(id), id);
 	const ngspice = workaroundsFor({ simulators: ["ngspice"], pdk: "ihp-sg13g2" }, all).map((w) => w.id);
-	for (const id of ["ngspice-pulse-pw0", "ngspice-trnoise-round-step", "ngspice-sg13g2-klu-large-deck", "ngspice-sg13g2-mc-reltol"]) assert.ok(ngspice.includes(id), id);
+	for (const id of ["ngspice-pulse-pw0", "ngspice-trnoise-round-step", "ngspice-sg13g2-klu-large-deck", "ngspice-sg13g2-mc-reltol", "ngspice-bsource-pwl-bare-param"]) assert.ok(ngspice.includes(id), id);
 });
 
 test("selection: without a PDK only the PDK-independent entries; another PDK gets none of the IHP entries", () => {
