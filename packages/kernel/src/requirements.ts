@@ -75,9 +75,10 @@ export interface ConnectionsGate {
 }
 
 /**
- * The operating-limit gate: for each experiment (default: every ngspice simulate experiment that a requirement cites) and
- * each condition of its rows, the check runs the ngspice operation device_limits with the same deck, libs, params and
- * temperature. The limits come from the technology pack (each with its PDK source, or an assumption) and extra_limits.
+ * The operating-limit gate: for each experiment (default: every ngspice simulate and xyce hb experiment that a requirement
+ * cites) and each condition of its rows, the check runs the ngspice operation device_limits with the same deck, libs,
+ * params and temperature, or for an hb experiment the xyce operation hb_limits with all its inputs (cycle means and
+ * peak voltages under the drive). The limits come from the technology pack (each with its PDK source, or an assumption) and extra_limits.
  * tran gives a transient per experiment for the peak values. A run without a result makes its gate row not run.
  */
 export interface LimitsGate {
@@ -895,7 +896,8 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 
 	// The operating-limit gate: one device_limits run per (experiment, condition) pair of the gate.
 	const lg = file.gates?.limits;
-	const gateExperiments = lg ? (lg.experiments ?? [...new Set(file.requirements.map((r) => r.experiment))].filter((e) => file.experiments[e]?.adapter === "ngspice" && file.experiments[e]?.operation === "simulate")) : [];
+	const isHb = (e: string) => file.experiments[e]?.adapter === "xyce" && file.experiments[e]?.operation === "hb";
+	const gateExperiments = lg ? (lg.experiments ?? [...new Set(file.requirements.map((r) => r.experiment))].filter((e) => (file.experiments[e]?.adapter === "ngspice" && file.experiments[e]?.operation === "simulate") || isHb(e))) : [];
 	// An experiment of the gate runs at the conditions of its rows. An experiment that no selected row cites (for
 	// example a DC bench for the gate only) runs at every condition of the check; before, it gave no gate row at all.
 	// A row without a condition (for example an EM row) adds no condition: the DC point of a corner bench needs one.
@@ -930,16 +932,19 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 	for (const { experiment, condition } of limitPairs) {
 		jobs.push(async () => {
 			const all = experimentInputs(file, experiment, condition);
-			const inputs: Record<string, unknown> = {};
-			for (const k of ["deck", "libs", "params", "temp_c"]) if (all[k] !== undefined) inputs[k] = all[k];
-			if (lg?.tran?.[experiment]) inputs.tran = lg.tran[experiment];
+			// An xyce hb experiment: the operation hb_limits runs the same harmonic balance (all its inputs) and checks the
+			// cycle means and the peak voltages of each HBT under the drive. Otherwise ngspice device_limits at DC (and tran).
+			const hb = isHb(experiment);
+			const inputs: Record<string, unknown> = hb ? { ...all } : {};
+			if (!hb) for (const k of ["deck", "libs", "params", "temp_c"]) if (all[k] !== undefined) inputs[k] = all[k];
+			if (!hb && lg?.tran?.[experiment]) inputs.tran = lg.tran[experiment];
 			if (lg?.extra_limits) inputs.extra_limits = lg.extra_limits;
 			if (lg?.technology) inputs.technology = lg.technology;
 			const t = file.experiments[experiment];
 			const outcome = await runExperiment({
 				root,
-				adapter: "ngspice",
-				operation: "device_limits",
+				adapter: hb ? "xyce" : "ngspice",
+				operation: hb ? "hb_limits" : "device_limits",
 				inputs,
 				environment: t.environment,
 				timeoutS: t.timeout_s,

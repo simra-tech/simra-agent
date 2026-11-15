@@ -11,6 +11,8 @@ Operations (see adapter.json and README.md):
   hb        harmonic balance: tones, harmonics per tone, start-up periods, a wall-time limit per point, power per
             mixing product at named ports, DC currents, convergence state per point; an optional sweep with gain and
             P1dB. One Xyce process per sweep point, so that a failed point is never missing without a trace.
+  hb_limits the operating limits of each HBT under the drive of an hb experiment (hb_limits.py): cycle-mean values and
+            the peak terminal voltages from the harmonics of the terminal voltages and lead currents.
 
 Behaviour of Xyce 7.10 that the adapter guards against (each one gives a wrong number with no error from Xyce):
   - ".temp" is ignored with a warning ("Unrecognized dot line"): the run is at 27 C. The adapter refuses a deck with
@@ -603,7 +605,9 @@ def hb_inputs(inputs):
             "sweep": sweep, "wall": float(wall), "startup": startup, "parallel": parallel}, None
 
 
-def hb(request):
+def hb(request, extra_prints=None):
+    """Harmonic balance. extra_prints (for hb_limits): more quantities in the hb_fd output, after the ports and the DC
+    currents (the CSV columns of hb_point stay in place); each converged point gets "fd_csv", the path of its file."""
     inputs = request.get("inputs") or {}
     tool = {"name": "Xyce", "version": None}
     spec, error = hb_inputs(inputs)
@@ -636,6 +640,7 @@ def hb(request):
     values = sorted(sweep["values"]) if sweep else [None]
     prints = ["v({},{})".format(s["node"], s["ref"]) if s["ref"] != "0" else "v({})".format(s["node"]) for _, s in spec["ports"]]
     prints += ["i({})".format(src) for src in spec["dc"]]
+    prints += list(extra_prints or [])
     ctx["tool"]["hb"] = {"tones_hz": spec["tones"], "harmonics": spec["harmonics"], "startup_periods": spec["startup"]}
 
     def one(k, value):
@@ -666,6 +671,8 @@ def hb(request):
                 point.update(status="missing", reason=why)
             else:
                 point.update(status="converged", **data)
+                if extra_prints:
+                    point["fd_csv"] = os.path.basename(csv)
                 if gain:
                     point["gain"] = {port: point["p"][port][first] - value for port, _ in spec["ports"]}
         return point
@@ -774,7 +781,9 @@ def main(argv):
         sys.stderr.write("unsupported contract: {}\n".format(request.get("contract")))
         return 2
     import device_probe  # here, not at the top: device_probe imports the helpers of this module
-    operation = {"parse": parse, "simulate": simulate, "hb": hb, "probe_devices": device_probe.probe_devices}.get(request.get("operation"))
+    import hb_limits
+    operation = {"parse": parse, "simulate": simulate, "hb": hb, "probe_devices": device_probe.probe_devices,
+                 "hb_limits": hb_limits.hb_limits}.get(request.get("operation"))
     response = operation(request) if operation else failure(None, "unknown operation: {}".format(request.get("operation")))
     tmp = request["response_path"] + ".tmp"
     with open(tmp, "w") as f:

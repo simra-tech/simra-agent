@@ -65,6 +65,19 @@
       "workaround": "Set the global temperature (temp_c of the xyce adapter) to the corner. When a per-instance temperature is needed, scale vbic_tf in a copy of the corner section by ((T + 273) / 300)^0.7.",
       "status": "worked_around",
       "evidence": "PDK file sg13g2_hbt_mod.lib (tf expression); found in a detector block of a reference design"
+    },
+    {
+      "id": "xyce-sg13g2-hb-terminal-currents",
+      "applies_to": {
+        "analyses": [
+          "hb"
+        ]
+      },
+      "gap": "In harmonic balance at 122 GHz, the lead currents of npn13G2 (IC, IB of the Q element) include the charging currents of the junction capacitances. Their instantaneous minimum and maximum are not the conduction currents. Xyce HB gives no internal junction voltages of the VBIC model.",
+      "symptom": "The terminal base current of a large-signal PA stage swings by tens of mA (minimum -42 mA in a 122 GHz cascode driver), so a reversal of the instantaneous base current (avalanche) or a peak current per emitter cannot be read from it.",
+      "workaround": "Check the cycle means (exact: a charging current has zero mean over a period) and the peak terminal voltages (operation hb_limits, gate limits on an hb experiment). The instantaneous conduction current needs a DC table of the device at the internal junction voltages (as in the ngspice oscillator operation); for HB it is not run.",
+      "status": "open",
+      "evidence": "simulated, Xyce 7.10, IHP SG13G2: the terminal base current of the cascode driver of a public 122 GHz radar PA (minimum -42 mA, cycle mean +14 to +37 uA); the hb_limits container run of a 61 GHz CE stage"
     }
   ]
 }

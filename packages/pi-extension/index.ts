@@ -14,9 +14,13 @@
 // and after 80 % of the session time: the agent must write its output files before the session ends.
 // It replaces pi's coding-assistant preamble with a chip-design preamble (SIMRA_PREAMBLE) and leaves out pi's own
 // documentation section; the tool list and the rules stay, and a rule for PDFs is added (see chipDesignPrompt).
+// Context mode (SIMRA_CONTEXT, default "lean"): before each model call, the reasoning of every assistant message but
+// the last is left out, and the arguments of every state_note call but the last are shortened. The state_note tool
+// keeps a short running note that the agent writes itself (simra/state_note.md). SIMRA_CONTEXT=full sends the whole
+// transcript, as before.
 // All logic lives in @simra-tech/kernel, which works without pi.
 
-import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { Type } from "typebox";
 import {
@@ -41,7 +45,11 @@ import {
 	formatAssumptionUses,
 	formatDesignRecord,
 	formatQuery,
+	formatLog,
+	formatTable,
 	queryRecords,
+	queryTable,
+	readLog,
 	latestVerdict,
 	loadRequirements,
 	sha256File,
@@ -155,6 +163,23 @@ export function checkHints(id: string, rows: { requirement: string; status: stri
 	return out.join("\n");
 }
 
+const WORK_FILE = /(^|\/)simra\/experiments\/[^\s]*\/work\/[^\s]*\.(log|raw|dat|txt|csv|out|prn)$|(^|\/)[\w.-]+\.(log|raw)$/;
+
+/** True when a call reads a simulator log or table (a work file of an experiment, or a .log / .raw file). */
+export function readsOutputs(event: Pick<ToolResultEvent, "toolName" | "input">): boolean {
+	if (event.toolName === "read") return WORK_FILE.test(String(event.input.path ?? ""));
+	if (event.toolName !== "bash") return false;
+	const words = String(event.input.command ?? "").match(/[^\s"'<>|;&()=]+/g) ?? [];
+	return words.some((w) => WORK_FILE.test(w));
+}
+
+export const OUTPUT_READ_NOTE = [
+	"",
+	"Simra: this call reads a simulator log or table. read_output gives it in one call: kind \"log\" lists the measurement",
+	'lines, errors and warnings (and lines that match a pattern); kind "table" reads a raw file, wrdata or print output by',
+	"column and range, with the minimum and maximum of each column.",
+].join("\n");
+
 export const RECORD_READ_NOTE = [
 	"",
 	"Simra: this call reads record files. query_results gives the same values in one call, as a table:",
@@ -247,6 +272,44 @@ export function chipDesignPrompt(options: BeforeAgentStartEvent["systemPromptOpt
 	options.sections.rules = [...new Set(rules)].map((rule) => `- ${rule}`).join("\n");
 }
 
+type Block = { type: string; [k: string]: unknown };
+type Msg = { role?: string; content?: unknown; [k: string]: unknown };
+
+/**
+ * The lean context: the messages with the thinking blocks of every assistant message but the last removed, and the
+ * arguments of every state_note call but the last replaced by a short marker. The input is not changed.
+ */
+export function leanContext<T extends Msg>(messages: T[]): T[] {
+	let lastAssistant = -1;
+	let lastNote = -1;
+	messages.forEach((m, i) => {
+		if (m.role !== "assistant" || !Array.isArray(m.content)) return;
+		lastAssistant = i;
+		if ((m.content as Block[]).some((b) => b.type === "toolCall" && b.name === "state_note")) lastNote = i;
+	});
+	return messages.map((m, i) => {
+		if (m.role !== "assistant" || !Array.isArray(m.content) || i === lastAssistant && i === lastNote) return m;
+		const blocks = m.content as Block[];
+		let changed = false;
+		const out: Block[] = [];
+		for (const b of blocks) {
+			if (b.type === "thinking" && i !== lastAssistant) {
+				changed = true;
+				continue;
+			}
+			if (b.type === "toolCall" && b.name === "state_note" && i !== lastNote) {
+				changed = true;
+				out.push({ ...b, arguments: { note: "(an earlier state note; the latest state_note call holds the current one)" } });
+				continue;
+			}
+			out.push(b);
+		}
+		return changed ? { ...m, content: out } : m;
+	});
+}
+
+export const STATE_NOTE_MAX = 3000;
+
 export default function (pi: ExtensionAPI) {
 	// The known gaps of a simulator (workaround registry), shown with the first result of each adapter and PDK in a session.
 	const shownGaps = new Set<string>();
@@ -274,6 +337,7 @@ export default function (pi: ExtensionAPI) {
 	const clock = Number.isFinite(deadline) ? sessionClock(Date.now(), deadline) : null;
 
 	let recordReads = 0;
+	let outputReads = 0;
 	async function netlistNote(event: ToolResultEvent, cwd: string): Promise<string | null> {
 		const files = netlistsOf(event, cwd);
 		if (files.length === 0) return null;
@@ -333,11 +397,91 @@ export default function (pi: ExtensionAPI) {
 			// the first three reads, then every tenth: a reminder, not a block
 			if (recordReads <= 3 || recordReads % 10 === 0) recordNote = RECORD_READ_NOTE;
 		}
-		const notes = [await netlistNote(event, ctx.cwd), recordNote, clock?.(Date.now()) ?? null].filter((n): n is string => n !== null);
+		let outputNote: string | null = null;
+		if (readsOutputs(event)) {
+			outputReads++;
+			if (outputReads <= 3 || outputReads % 10 === 0) outputNote = OUTPUT_READ_NOTE;
+		}
+		const notes = [await netlistNote(event, ctx.cwd), recordNote, outputNote, clock?.(Date.now()) ?? null].filter((n): n is string => n !== null);
 		if (notes.length === 0) return;
 		return { content: [...event.content, ...notes.map((text) => ({ type: "text" as const, text }))], structuredContent: event.structuredContent };
 	});
 
+
+	const contextMode = (process.env.SIMRA_CONTEXT ?? "lean").toLowerCase();
+	if (contextMode !== "full") {
+		pi.on("context", (event) => ({ messages: leanContext(event.messages as Msg[]) as typeof event.messages }));
+	}
+
+	pi.registerTool({
+		name: "read_output",
+		label: "Read output",
+		description: [
+			"Read a simulator output file of the design root without a script. Use it instead of cat, grep, tail or Python on logs",
+			"and tables.",
+			"kind \"log\" (default for .log files): the measurement lines (name = value, for example .meas results and print of a",
+			"scalar), the error and warning lines (each message once, with its line number and the total count), and the lines",
+			"that match pattern (a regex).",
+			"kind \"table\": a SPICE raw file (ASCII or binary; complex values as <name>.re and <name>.im), wrdata output (with or",
+			"without vector names), print output in a log, or a whitespace or comma table. Give columns (names or /regex/; the",
+			"first column, the scale, always comes), from and to (a range of the column by, default the scale), and max_rows",
+			"(default 40, evenly spread). The result also gives the minimum and maximum of each column in the range, with the",
+			"scale value at each.",
+			"file: a path relative to the design root, or <experiment id>/<file> for a file in the work folder of an experiment.",
+		].join("\n"),
+		promptSnippet: "measurement lines, errors and warnings of a log; a raw or wrdata table by column and range",
+		promptGuidelines: [
+			"To read a simulator log or a result table, use read_output, not cat, tail, grep or a Python script.",
+		],
+		parameters: Type.Object({
+			file: Type.String({ description: "Path relative to the design root, or <experiment id>/<file in its work folder>" }),
+			kind: Type.Optional(Type.Union([Type.Literal("log"), Type.Literal("table")])),
+			pattern: Type.Optional(Type.String({ description: "log: also give the lines that match this regex" })),
+			columns: Type.Optional(Type.Array(Type.String())),
+			by: Type.Optional(Type.String({ description: "table: the column of the range (default the first)" })),
+			from: Type.Optional(Type.Number()),
+			to: Type.Optional(Type.Number()),
+			max_rows: Type.Optional(Type.Number()),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const root = findRoot(ctx.cwd) ?? ctx.cwd;
+			let file = params.file;
+			const m = /^(\d{8}-\d{6}-[0-9a-f]{6})\/(.+)$/.exec(file);
+			if (m && !existsSync(join(root, file))) file = join("simra", "experiments", m[1], "work", m[2]);
+			const kind = params.kind ?? (/\.(log|out|lis)$/i.test(file) ? "log" : "table");
+			try {
+				const text = kind === "log" ? formatLog(readLog(root, file, { pattern: params.pattern })) : formatTable(queryTable(root, file, params));
+				return { content: [{ type: "text", text }], details: { file, kind } };
+			} catch (e) {
+				return { content: [{ type: "text", text: `read_output: ${(e as Error).message}` }], details: { file, kind, error: true } };
+			}
+		},
+	});
+
+	pi.registerTool({
+		name: "state_note",
+		label: "State note",
+		description: [
+			"Write your running state note: the goal, the current design and its file, what passed and failed (with experiment or",
+			"check ids), what you tried that did not work, and the next step. Each call replaces the note; keep it under",
+			`${STATE_NOTE_MAX} characters. The note is written to simra/state_note.md.`,
+			"Your reasoning of earlier turns is not kept in the context: only the last state note and the tool results are. Update the",
+			"note after each result that changes the plan, and before a long run.",
+		].join("\n"),
+		promptSnippet: "write the running state note (goal, design state, results, next step)",
+		promptGuidelines: [
+			"Keep a state note with state_note: update it after each result that changes your plan. Your earlier reasoning is not kept; the note is.",
+		],
+		parameters: Type.Object({ note: Type.String({ description: `The whole note (at most ${STATE_NOTE_MAX} characters)` }) }),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const root = findRoot(ctx.cwd) ?? ctx.cwd;
+			const note = params.note.length > STATE_NOTE_MAX ? params.note.slice(0, STATE_NOTE_MAX) : params.note;
+			mkdirSync(join(root, "simra"), { recursive: true });
+			writeFileSync(join(root, "simra", "state_note.md"), `${note}\n`);
+			const cut = params.note.length > STATE_NOTE_MAX ? ` (cut to ${STATE_NOTE_MAX} of ${params.note.length} characters: keep it short)` : "";
+			return { content: [{ type: "text", text: `state note written, ${note.length} characters${cut}` }], details: { chars: note.length } };
+		},
+	});
 
 	pi.registerCommand("simra-version", {
 		description: "Show the Simra Agent and pi versions",

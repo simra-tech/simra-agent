@@ -8,6 +8,11 @@ The xyce adapter runs Xyce and gives typed results. It has three operations:
   `.LIN` analysis writes a Touchstone file with the role `touchstone`.
 - `hb`: harmonic balance, one Xyce process per sweep point. It gives the power per harmonic or mixing product,
   DC supply currents, and with a power sweep the gain and P1dB.
+- `hb_limits`: the hb run of an experiment with the terminal voltages and lead currents of each HBT, and the operating
+  limits of the technology pack on the cycle means and on the peak voltages over one period (the gate `limits` of a
+  check on an hb experiment). It reads the limits and the HBT cells from the pack section of the ngspice adapter
+  (`ngspice.limits.<pdk>`) and needs the ngspice adapter directory next to this one. Instantaneous conduction
+  currents are not checked (registry entry `xyce-sg13g2-hb-terminal-currents`).
 
 The inputs, measurements and outputs are in [adapter.json](adapter.json). The adapter needs Python 3.6 or later
 (standard library only) and Xyce 7.

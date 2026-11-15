@@ -30,31 +30,37 @@ network has S-parameters only.
 1. Both ports are 50 Ω (assumption `ports_50ohm`). The reference matches its input to a fitted antenna model.
 2. The gain row is the 13 dB to 15 dB row of revision 0.1 of the interface rows, at tt only. The later rows of the
    chip (a gain setting per corner) need the steering circuit of the later revisions.
-3. The reference value of the noise figure (4.99 dB) leaves out the loss noise of the EM passives: the reference
-   run used noiseless fits. The reference record uses port noise sources with the Twiss correlation and gives
-   5.13 dB to 5.22 dB. Since step 7, `fit_to_spice` writes these port noise sources when the fit has
-   `uses.noise_band_hz`, and the fit-band gate fails a noise bench whose fitted model has no port noise. The
-   reference circuit with such fits of its four EM networks gives 5.181 dB at tt (simulated, ngspice 46); the
-   reference value of `expected.json` was not computed again.
+3. The reference netlist is changed so that it passes the netlist gate of the task without a wrapper file (since step 8):
+   the resistors above 50 Ω are PDK `rppd` and `rhigh` devices (sized at tt, 27 °C; the design of record has ideal
+   resistors); the fitted networks are `fit_to_spice` outputs, copied unchanged, of the EM data with a 0 Hz point (the
+   DC tree of the design: a resistive star with the arm resistances of the design), in place of the design's 1 µH /
+   1 µF DC paths; the 0 V current monitors are removed. The fits have port noise (Twiss), so the noise figure includes
+   the loss noise of the EM passives.
 
 ## Reference
 
-`reference.mjs` runs the reference amplifier (not in this repository; the path is an argument) through both benches
-at the five corners. Every row passes (simulated, ngspice 46):
+`reference.mjs` makes a design root from the reference files (not in this repository; the directory is an argument):
+one `fit_to_spice` record per EM network, then `lna.spice` as the four fit outputs followed by the rest of the block.
+It runs the full requirements of the task, the netlist gate included, with one exception: `em_passives_min` is 0,
+because the EM data of the reference comes from the design and not from an openEMS record of the root. Every row
+passes (simulated, ngspice 46, step 8; step 6 values in brackets, with the design's own netlist and noiseless fits):
 
 | Row | Reference |
 | --- | --- |
-| gain (tt) | 13.62 dB (the reference record: 13.34 dB to 13.81 dB with the antenna source) |
-| noise figure (tt) | 4.99 dB |
-| S22 (tt) | −10.20 dB |
-| μ minimum, 1 GHz to 300 GHz | 1.087 (fast_cold) to 1.117 (the record: ≥ 1.079) |
-| current | 12.3 mA (slow_cold) to 21.0 mA (fast_hot), the 3.1 mA of reference currents included (the record: 12.71 mA without them) |
-| largest V<sub>CE</sub> | 1.376 V (fast_cold) |
-| largest current per emitter | 1.76 mA (fast_hot) |
+| gain (tt) | 13.31 dB (13.62 dB; the reference record: 13.34 dB to 13.81 dB with the antenna source) |
+| noise figure (tt) | 5.22 dB (4.99 dB noiseless; the record with Twiss port noise: 5.13 dB to 5.22 dB) |
+| S22 (tt) | −10.18 dB (−10.20 dB) |
+| μ minimum, 1 GHz to 300 GHz | 1.084 (fast_cold) to 1.115 (the record: ≥ 1.079) |
+| current | 12.1 mA (slow_cold) to 21.1 mA (fast_hot), the 3.1 mA of reference currents included |
+| largest V<sub>CE</sub> | 1.466 V (fast_cold; 1.376 V) |
+| largest current per emitter | 1.79 mA (fast_hot) |
+| gate netlist, gate fit_band (four networks) | 0 errors |
 
-The fitted EM networks of the reference had internal resistors. The reference run uses copies in which each such
-resistor is a self-controlled G source (the same subcircuit as the `fit_to_spice` output now writes); with the
-resistors, the noise bench gave 275 dB.
+Fit acceptance: max |dS| 0.01 (default) for `lna_IN` and `lna_OUT`; `lna_IS1` 0.012 over the data band and 0.01 in the
+band of use (no order meets 0.01 over the whole band); `lna_IS2` is fitted from 0 Hz to 300 GHz (the band of use).
+
+The test `test/task-consistency.test.mjs` runs this reference through the check path of the agent and through the
+scorer, and fails on any row difference (it needs the reference files; without them it is skipped).
 
 ## Scoring
 

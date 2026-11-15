@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { validateRequirements } from "@simra-tech/kernel";
 import { makePdf } from "../../kernel/test/pdf-fixture.ts";
-import extension, { checkHints, netlistsOf, readPath, readsRecords, REQUIREMENTS_EXAMPLE, sessionClock } from "../index.ts";
+import extension, { checkHints, leanContext, netlistsOf, readsOutputs, readPath, readsRecords, REQUIREMENTS_EXAMPLE, sessionClock } from "../index.ts";
 
 const fakeAdapters = new URL("../../kernel/test/fixtures/adapters", import.meta.url).pathname;
 
@@ -398,4 +398,30 @@ test("checkHints names the query of the check and the stability diagnosis of a f
 	assert.match(text, /query_results with source "checks", check "c1"/);
 	assert.match(text, /tt: experiment e1\): run_experiment with adapter ngspice, operation stability_diagnosis/);
 	assert.doesNotMatch(checkHints("c2", [rows[1]]), /stability_diagnosis/);
+});
+
+test("leanContext leaves out earlier reasoning and earlier state notes, and keeps the last ones", () => {
+	const a = (blocks: unknown[]) => ({ role: "assistant", content: blocks });
+	const msgs = [
+		{ role: "user", content: "task" },
+		a([{ type: "thinking", thinking: "old" }, { type: "toolCall", name: "state_note", arguments: { note: "n1" } }]),
+		{ role: "toolResult", content: [{ type: "text", text: "ok" }] },
+		a([{ type: "thinking", thinking: "mid" }, { type: "toolCall", name: "bash", arguments: { command: "ls" } }]),
+		{ role: "toolResult", content: [{ type: "text", text: "x" }] },
+		a([{ type: "thinking", thinking: "new" }, { type: "toolCall", name: "state_note", arguments: { note: "n2" } }]),
+	];
+	const out = leanContext(msgs as any) as any[];
+	assert.deepEqual(out[1].content.map((b: any) => b.type), ["toolCall"]);
+	assert.match(out[1].content[0].arguments.note, /earlier state note/);
+	assert.deepEqual(out[3].content.map((b: any) => b.type), ["toolCall"]);
+	assert.equal(out[5], msgs[5]);
+	assert.equal((msgs[1] as any).content.length, 2, "the input is not changed");
+});
+
+test("readsOutputs finds the calls that read simulator logs and tables", () => {
+	const bash = (command: string) => ({ toolName: "bash", input: { command } }) as any;
+	assert.equal(readsOutputs(bash("tail -50 simra/experiments/20261115-1/work/ngspice.log")), true);
+	assert.equal(readsOutputs(bash("python3 -c 'print(1)' run.raw")), true);
+	assert.equal(readsOutputs({ toolName: "read", input: { path: "simra/experiments/x/work/out.dat" } } as any), true);
+	assert.equal(readsOutputs(bash("cat lna.spice")), false);
 });

@@ -42,6 +42,7 @@
 // @openai/codex@<version>-linux-<arch>), mounted read-only. No login file goes into the sandbox.
 //
 // Usage: node evals/run-arm.mjs <task dir> <simra|pi|opencode|codex> [--model <id>] [--runs <dir>] [--timeout-min <n>]
+//        [--context lean|full]   (simra arm: lean leaves the reasoning of earlier turns out of each model call)
 //        [--upstream <url>] [--codex-dir <dir>]
 
 import { spawn, spawnSync, execFileSync } from "node:child_process";
@@ -448,6 +449,9 @@ async function main() {
 	const runs = realpathSync(runsArg);
 	const timeoutMin = Number(opt("--timeout-min", "30"));
 	const modelId = opt("--model", DEFAULT_MODEL);
+	// Context mode of the simra extension: lean (default; earlier reasoning left out, state note) or full.
+	const contextMode = opt("--context", "lean");
+	if (!["lean", "full"].includes(contextMode)) throw new Error(`--context is lean or full, not "${contextMode}"`);
 	const model = MODELS[modelId];
 	if (!model) throw new Error(`unknown model "${modelId}" (use ${Object.keys(MODELS).join(" or ")})`);
 	const upstream = opt("--upstream", arm === "codex" ? CODEX_UPSTREAM : model.upstream);
@@ -496,7 +500,7 @@ async function main() {
 	const toolEnv = sandboxToolEnv(env);
 	// The Simra extension tells the agent how much session time is left (other arms ignore the variable).
 	const deadline = new Date(Date.now() + timeoutMin * 60_000).toISOString();
-	const argv = sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar: model.keyVar, env: { ...toolEnv, ...cmd.env, SIMRA_SESSION_DEADLINE: deadline }, readOnly, command: cmd.command });
+	const argv = sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar: model.keyVar, env: { ...toolEnv, ...cmd.env, SIMRA_SESSION_DEADLINE: deadline, SIMRA_CONTEXT: contextMode }, readOnly, command: cmd.command });
 	const started = new Date();
 	const child = spawn(engine, argv, { env: engineEnv(), stdio: ["ignore", "pipe", "pipe"] });
 	child.stdout.pipe(createWriteStream(join(run, cmd.codex ? "stdout.log" : "transcript.jsonl")));
@@ -532,6 +536,7 @@ async function main() {
 		...(cmd.codex ? { codex_version: cmd.version } : {}),
 		request_models: [...new Set(calls.map((c) => c.request_model))],
 		response_models: [...new Set(calls.map((c) => c.response_model))],
+		context: arm === "simra" ? contextMode : null,
 		model_calls: calls.length,
 		tokens,
 		started_at: started.toISOString(),

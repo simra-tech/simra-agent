@@ -733,12 +733,14 @@ def main(argv):
     import monte_carlo
     import device_limits
     import stability_diagnosis
+    import device_budget
     operation = {"simulate": simulate, "operating_point": operating_point, "lint": lint,
                  "check_design": design_check.check_design, "probe_devices": device_probe.probe_devices,
                  "assemble_dc": assemble_dc.assemble_dc,
                  "oscillator": oscillator.oscillator, "monte_carlo": monte_carlo.monte_carlo,
                  "device_limits": device_limits.device_limits,
-                 "stability_diagnosis": stability_diagnosis.stability_diagnosis}.get(request.get("operation"))
+                 "stability_diagnosis": stability_diagnosis.stability_diagnosis,
+                 "device_budget": device_budget.device_budget}.get(request.get("operation"))
     if operation is None:
         response = failure(None, "unknown operation: {}".format(request.get("operation")))
     else:

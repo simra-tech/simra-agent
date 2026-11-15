@@ -38,9 +38,10 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
 - The touchstone adapter has one operation: `fit_to_spice`. It fits a Touchstone file with a passive rational model and
   writes a SPICE subcircuit that ngspice and Xyce both read. It re-simulates the subcircuit in each simulator and
   gives the error against the data (see [adapters/touchstone](adapters/touchstone/README.md)).
-- The xyce adapter has three operations: `parse`, `simulate` and `hb`. `parse` reports model gaps of a deck and its
-  libraries. `hb` gives the power per harmonic, supply currents, gain and P1dB from harmonic balance (see
-  [adapters/xyce](adapters/xyce/README.md)).
+- The xyce adapter has four operations: `parse`, `simulate`, `hb` and `hb_limits`. `parse` reports model gaps of a deck
+  and its libraries. `hb` gives the power per harmonic, supply currents, gain and P1dB from harmonic balance (see
+  [adapters/xyce](adapters/xyce/README.md)). `hb_limits` checks the operating limits of each HBT under the drive (see
+  [Operating-limit gate](#operating-limit-gate)).
 - An output file in Touchstone format (role `touchstone`) gets a summary from the kernel: ports, band, DC point,
   passivity and reciprocity. The requirement kinds `s_db` and `mu` read such a file (see
   [Frequency-domain requirements](#frequency-domain-requirements)).
@@ -61,6 +62,12 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
   points of its blocks: a clamp homotopy with seeds, then a free operating point (see [Assemble a DC point](#assemble-a-dc-point)).
 - The ngspice operation `oscillator` gives f0, the amplitude and the white phase noise of an oscillator by the impulse
   sensitivity function (see [Oscillator](#oscillator)).
+- The ngspice operation `device_budget` gives the RF budget of one device at a bias and frequency: fT, fmax, MAG / MSG,
+  the stability factor, NFmin, Rn and the noise-optimum source impedance (see [Device budget](#device-budget)).
+- The pi tool `read_output` reads a simulator log (measurement lines, errors, warnings, lines that match a pattern) or a
+  table (wrdata, print output, SPICE raw file) by column and range, without a script (see [Read an output](#read-an-output)).
+- The pi extension keeps the context of a session short: earlier reasoning is not sent again, and the agent keeps a
+  state note with the tool `state_note` (see [Context of a session](#context-of-a-session)).
 - Requirements can reduce a sweep table with the bracket rule (kind `sweep`), gate an RF block on mu over a band at
   each corner for each active stage (`gates.stability`), and cite assumption ids (`assumptions`); `simra assumptions`
   lists the rows of an assumption.
@@ -531,6 +538,62 @@ From a plain command line:
 2. Add `--pages 12-14` to print the header and only these pages.
 3. Add `--render 12` instead to render page 12 and print the path of its image.
 
+## Context of a session
+
+By default (`SIMRA_CONTEXT=lean`) the pi extension changes the messages before each model call:
+
+1. The reasoning (thinking) blocks of every assistant turn except the last are removed. The tool calls and the tool
+   results stay.
+2. The agent writes a short state note with the tool `state_note` (at most 3000 characters, file
+   `simra/state_note.md`): the aim, the design state, the results so far and the next step. Only the newest note is
+   sent in full; the arguments of earlier `state_note` calls are replaced by a one-line reference.
+
+`SIMRA_CONTEXT=full` keeps every message as pi sends it (the earlier mode). `evals/run-arm.mjs --context lean|full`
+sets the variable in the sandbox and writes the mode to `score.json`.
+
+## Read an output
+
+The pi tool `read_output` reads one output file of an experiment (`file`: a path in the design root, or
+`<experiment id>/<file>` for `simra/experiments/<id>/work/<file>`):
+
+1. `kind: "log"`: the measurement lines (`name = value`), the error lines (each message once) and the
+   warning lines, with their counts; `pattern` (a regular expression) adds the lines that match.
+2. `kind: "table"`: a SPICE raw file (ASCII or binary; complex values as `<name>.re` and `<name>.im`), an ngspice
+   `print` output or a `wrdata` file. `columns` (names or `/regex/`), `by` (the column of the range, default the first),
+   `from`, `to` and `max_rows` (default 40, spread evenly over the range) select the rows. The result also gives the
+   minimum and the maximum of each column in the range, with the value of the first column at each.
+
+The kernel functions `readLog`, `queryTable`, `formatLog` and `formatTable` do the work. The first three reads of a log
+or table with `bash` in a session, and then every tenth, get a note that names `read_output`.
+
+## Device budget
+
+The ngspice operation `device_budget` gives the RF budget of one HBT (or another three-terminal device) at a bias and
+frequency, from ngspice two-port and noise runs:
+
+1. Inputs: `device` (the subcircuit, for example `npn13G2`), `instance_params` (for example `{"Nx": 4}`), `pins`
+   (default `c b e bn`), `libs`, `temp_c`, `vce`, and `ic_a` or `vbe`; `freq_hz` (one or more frequencies); `z0`
+   (default 50); `noise` (default true).
+2. Bias: a DC sweep of V<sub>BE</sub> finds the V<sub>BE</sub> for `ic_a`. An operating point gives I<sub>C</sub> and
+   I<sub>B</sub>.
+3. Two-port: an `sp` run at each frequency gives S, the stability factor K, μ, MSG, MAG (K > 1 only), Mason's U and
+   h21. fT is f·|h21| and fmax is f·√U (a warning when |h21| < 3 at the frequency).
+4. Noise: one `noise` run per source impedance (seven impedances around 50 Ω) and a least-squares fit of
+   F = Fmin + Rn/Gs·|Ys − Yopt|² give NFmin, Rn, Zopt and the relative residual of the fit.
+5. Output `work/budget.json` and the measurements per frequency. NFmin is optimistic: the VBIC model of the PDK has no
+   correlated base–collector shot noise.
+
+Check on IHP SG13G2 npn13G2 Nx 4, V<sub>CE</sub> 1.2 V, hbt_typ, 27 °C (simulated, ngspice 46), against a published
+device study of a 122 GHz radar design:
+
+| Quantity | device_budget | Study |
+| --- | --- | --- |
+| U, MSG, K at 122 GHz (J<sub>C</sub> 38, 9.58 mA) | 11.29 dB, 11.74 dB, 0.945 | 11.3 dB, 11.7 dB, 0.95 |
+| U, MSG, K at 61 GHz | 17.45 dB, 14.84 dB, 0.49 | 17.5 dB, 15 dB, 0.49 |
+| NFmin and Zopt at 122 GHz (J<sub>C</sub> 38) | 4.11 dB, 50.0 + 31.7j Ω | 4.03 dB, 50 + 31j Ω |
+| NFmin at 122 GHz / 61 GHz (J<sub>C</sub> 4.3, 1.08 mA) | 2.80 dB / 1.61 dB | 2.75 dB / 1.6 dB |
+| fT / fmax (J<sub>C</sub> 38) | 351 GHz / 455 GHz | not given |
+
 ## Session time
 
 Set `SIMRA_SESSION_DEADLINE` to an ISO 8601 time, for example `2026-10-30T15:00:00Z`, to give pi a time limit.
@@ -910,7 +973,15 @@ condition of its rows, with the same deck, libs, params and temperature:
 4. `tran` gives a transient per experiment: the gate also checks the peak voltages over it (the peak V<sub>CE</sub>
    is a conservative bound from the extremes of V<sub>BE</sub> and V<sub>BC</sub>). Transient currents are not
    checked: the VBIC instance currents include the junction charge currents.
-5. One row per limit and per experiment and condition takes the worst device and names it. A run without its limits
+5. An xyce `hb` experiment of the gate (by default every `hb` experiment that a requirement cites) runs the xyce
+   operation `hb_limits` with all its inputs: the same harmonic balance, with the terminal voltages and the lead
+   currents of each HBT. The limits apply to the cycle means (rows `gate limits <id>`: V<sub>CE</sub>, V<sub>BE</sub>,
+   I<sub>C</sub> per emitter, the cycle-mean base current) and, with one tone, to the peak voltages over one period
+   (rows `gate limits <id> peak`; the peak V<sub>CE</sub> is exact, from V<sub>C</sub> − V<sub>E</sub> at the same
+   time). Each sweep point is checked. The instantaneous conduction currents are not checked: at 122 GHz the lead
+   currents include the junction charging currents (registry `xyce-sg13g2-hb-terminal-currents`); their cycle means
+   are exact.
+6. One row per limit and per experiment and condition takes the worst device and names it. A run without its limits
    table gives a row that is `not_run`, so the check cannot pass.
 
 ### Netlist gate
