@@ -730,10 +730,13 @@ def main(argv):
     import device_probe
     import assemble_dc
     import oscillator
+    import monte_carlo
+    import device_limits
     operation = {"simulate": simulate, "operating_point": operating_point, "lint": lint,
                  "check_design": design_check.check_design, "probe_devices": device_probe.probe_devices,
                  "assemble_dc": assemble_dc.assemble_dc,
-                 "oscillator": oscillator.oscillator}.get(request.get("operation"))
+                 "oscillator": oscillator.oscillator, "monte_carlo": monte_carlo.monte_carlo,
+                 "device_limits": device_limits.device_limits}.get(request.get("operation"))
     if operation is None:
         response = failure(None, "unknown operation: {}".format(request.get("operation")))
     else:

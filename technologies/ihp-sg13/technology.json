@@ -10,6 +10,177 @@
     },
     "size_unit_m": 1,
     "size_unit_source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_mod.lib (the subcircuit defaults are w=0.35u l=0.34u; the model files set no .option scale)",
+    "mismatch": {
+      "ihp-sg13g2": {
+        "lib_suffix": "_mismatch",
+        "instance_param": "mm_ok=1",
+        "devices": [
+          "npn13G2",
+          "npn13G2_5t",
+          "npn13G2l",
+          "npn13G2l_5t",
+          "npn13G2v",
+          "npn13G2v_5t",
+          "pnpMPA",
+          "rsil",
+          "rhigh",
+          "rppd",
+          "cap_cmim",
+          "cap_rfcmim",
+          "sg13_lv_nmos",
+          "sg13_lv_pmos",
+          "sg13_hv_nmos",
+          "sg13_hv_pmos",
+          "sg13_hv_svaricap"
+        ],
+        "source": "ihp-sg13g2/libs.tech/ngspice/models/cornerHBT.lib, cornerMOSlv.lib, cornerMOShv.lib, cornerRES.lib, cornerCAP.lib (sections <corner>_mismatch); *_mod_mismatch.lib (each device subcircuit has the parameter mm_ok=0, and agauss(..., (mm_ok != 1 ? 0 : 1)): no mismatch unless the instance sets mm_ok=1)"
+      }
+    },
+    "limits": {
+      "ihp-sg13g2": {
+        "hbt_cells": [
+          "npn13G2",
+          "npn13G2_5t",
+          "npn13G2l",
+          "npn13G2l_5t",
+          "npn13G2v",
+          "npn13G2v_5t"
+        ],
+        "classes": {
+          "hbt": {
+            "kind": "hbt",
+            "letter": "q",
+            "models": "^npn13g2[lv]?_nx_vbic$",
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_hbt_mod.lib (.model npn13G2_NX_vbic, npn13G2l_NX_vbic, npn13G2v_NX_vbic)"
+          },
+          "mos_lv": {
+            "kind": "mos",
+            "letter": "n",
+            "models": "^sg13g2_lv_[np]mos_psp",
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_parm.lib"
+          },
+          "mos_hv": {
+            "kind": "mos",
+            "letter": "n",
+            "models": "^sg13g2_hv_[np]mos_psp",
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moshv_parm.lib"
+          }
+        },
+        "limits": [
+          {
+            "id": "hbt_vce_max",
+            "class": "hbt",
+            "quantity": "vce",
+            "op": "<=",
+            "limit": 1.6,
+            "models": "^npn13g2l?_nx_vbic$",
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_hbt_mod.lib (npn13G2_NX_vbic and npn13G2l_NX_vbic: vce_max = 1.6); ihp-sg13g2/libs.doc/doc/SG13G2_os_process_spec.pdf 3.1, 3.2 (BVCEO target 1.6 V, min 1.4 V)"
+          },
+          {
+            "id": "hbt_v_vce_max",
+            "class": "hbt",
+            "quantity": "vce",
+            "op": "<=",
+            "limit": 2.2,
+            "models": "^npn13g2v_nx_vbic$",
+            "source": "ihp-sg13g2/libs.doc/doc/SG13G2_os_process_spec.pdf 3.3 (NPN13G2V_BVCEO min 2.2 V)"
+          },
+          {
+            "id": "hbt_vcb_max",
+            "class": "hbt",
+            "quantity": "vcb",
+            "op": "<=",
+            "limit": 3.8,
+            "models": "^npn13g2l?_nx_vbic$",
+            "source": "ihp-sg13g2/libs.doc/doc/SG13G2_os_process_spec.pdf 3.1, 3.2 (BVCBO min 3.8 V)"
+          },
+          {
+            "id": "hbt_veb_max",
+            "class": "hbt",
+            "quantity": "veb",
+            "op": "<=",
+            "limit": 1.0,
+            "source": "ihp-sg13g2/libs.doc/doc/SG13G2_os_process_spec.pdf 3.1 to 3.3 (BVEBO min 1.0 V)"
+          },
+          {
+            "id": "hbt_vbe_max",
+            "class": "hbt",
+            "quantity": "vbe",
+            "op": "<=",
+            "limit": 1.6,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_hbt_mod.lib (vbe_max = 1.6)"
+          },
+          {
+            "id": "hbt_ic_per_emitter_max",
+            "class": "hbt",
+            "quantity": "ic_per_emitter",
+            "op": "<=",
+            "limit": 0.0035,
+            "models": "^npn13g2_nx_vbic$",
+            "source": "ihp-sg13g2/libs.doc/doc/SG13G2_os_process_spec.pdf 3.1 (NPN13G2_ICMAX 3.5 mA, AE = 0.07 x 0.9 um2, one emitter)"
+          },
+          {
+            "id": "hbt_l_ic_per_emitter_max",
+            "class": "hbt",
+            "quantity": "ic_per_emitter",
+            "op": "<=",
+            "limit": 0.003,
+            "models": "^npn13g2l_nx_vbic$",
+            "source": "ihp-sg13g2/libs.doc/doc/SG13G2_os_process_spec.pdf 3.2 (NPN13G2L_ICMAX 3.0 mA)"
+          },
+          {
+            "id": "hbt_v_ic_per_emitter_max",
+            "class": "hbt",
+            "quantity": "ic_per_emitter",
+            "op": "<=",
+            "limit": 0.0005,
+            "models": "^npn13g2v_nx_vbic$",
+            "source": "ihp-sg13g2/libs.doc/doc/SG13G2_os_process_spec.pdf 3.3 (NPN13G2V_ICMAX 0.5 mA)"
+          },
+          {
+            "id": "hbt_ib_reverse",
+            "class": "hbt",
+            "quantity": "ib",
+            "op": ">=",
+            "limit": 0,
+            "assumption": "limit_hbt_ib_reverse",
+            "description": "no reverse DC base current (the onset of avalanche multiplication); the PDK gives no limit, so this limit is assumed"
+          },
+          {
+            "id": "mos_lv_vds_max",
+            "class": "mos_lv",
+            "quantity": "vds",
+            "op": "<=",
+            "limit": 1.6,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_parm.lib (VDS_MAX = 1.6)"
+          },
+          {
+            "id": "mos_lv_vgs_max",
+            "class": "mos_lv",
+            "quantity": "vgs",
+            "op": "<=",
+            "limit": 1.6,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_parm.lib (VGS_MAX = 1.6)"
+          },
+          {
+            "id": "mos_hv_vds_max",
+            "class": "mos_hv",
+            "quantity": "vds",
+            "op": "<=",
+            "limit": 3.0,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moshv_parm.lib (VDS_MAX = 3.0)"
+          },
+          {
+            "id": "mos_hv_vgs_max",
+            "class": "mos_hv",
+            "quantity": "vgs",
+            "op": "<=",
+            "limit": 3.0,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moshv_parm.lib (VGS_MAX = 3.0)"
+          }
+        ]
+      }
+    },
     "passives": {
       "ihp-sg13g2": {
         "r": {

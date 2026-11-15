@@ -28,7 +28,7 @@
       },
       "gap": "Monte Carlo DC points with reltol 1e-4: 21 of 300 seeds need the transient-op fallback, 4 have no DC point from Newton. The cause is the solver, not the circuit.",
       "symptom": "Seeds without a DC point, or fallback snapshots with large offsets.",
-      "workaround": "Use reltol=1e-3 and itl1=1000 for the operating points of a Monte Carlo run (300 of 300 seeds converge); state the options.",
+      "workaround": "Use reltol=1e-3 and itl1=1000 for the operating points of a Monte Carlo run (300 of 300 seeds converge); state the options. The ngspice operation monte_carlo uses these options by default and reports a seed without a DC point (seeds_no_dc, work/mc.json); a monte_carlo requirement row is then not measured.",
       "status": "worked_around",
       "evidence": "Monte Carlo of an IF amplifier block of a reference design"
     },
@@ -79,6 +79,23 @@
       "workaround": "Take the conduction currents from a DC table of the device at the junction voltages of the transient (@q[vbe], @q[vbc]): in the oscillator operation, isf.devices and shot {device, current}.",
       "status": "worked_around",
       "evidence": "simulated, ngspice 46: oscillator operation with shot vectors against the stored conduction-current result of the same deck; with isf.devices the result equals the stored result within 0.02 dB per source"
+    },
+    {
+      "id": "ngspice-sg13g2-mismatch-mm-ok",
+      "applies_to": {
+        "analyses": [
+          "op",
+          "dc",
+          "ac",
+          "tran",
+          "noise"
+        ]
+      },
+      "gap": "The mismatch sections of the IHP corner libraries (<corner>_mismatch) give mismatch only to instances with mm_ok=1: each device subcircuit has mm_ok=0 by default, and a global .param mm_ok=1 does not change it.",
+      "symptom": "A Monte Carlo run in which every seed gives the same value, with no message: the offset looks like zero.",
+      "workaround": "Set mm_ok=1 on each PDK device instance, or use the ngspice operation monte_carlo, which adds it and fails when no measurement varies over the seeds.",
+      "status": "worked_around",
+      "evidence": "PDK libraries *_mod_mismatch.lib (agauss(..., (mm_ok != 1 ? 0 : 1))); a 60-seed run of a detector cell gives offset sigma 3.9 mV with mm_ok=1"
     }
   ]
 }

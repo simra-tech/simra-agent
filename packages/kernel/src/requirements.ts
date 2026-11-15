@@ -48,8 +48,19 @@ export type Limit = number | [number, number];
  * worst point. s_db is 20 log10 |S_ij| (entry [i, j], ports from 1); mu is the stability factor of a 2-port
  * (Edwards and Sinsky), > 1 for an unconditionally stable 2-port.
  */
-export type RequirementKind = "measurement" | "s_db" | "mu" | "sweep";
-export const REQUIREMENT_KINDS: RequirementKind[] = ["measurement", "s_db", "mu", "sweep"];
+export type RequirementKind = "measurement" | "s_db" | "mu" | "sweep" | "monte_carlo";
+export const REQUIREMENT_KINDS: RequirementKind[] = ["measurement", "s_db", "mu", "sweep", "monte_carlo"];
+
+/**
+ * monte_carlo: a statistic of a measurement over the seeds of a Monte Carlo table (output role "monte_carlo", for
+ * example work/mc.json of the ngspice operation monte_carlo). "mean_abs_k_sigma" is |mean| + k sigma, the usual offset
+ * row; sigma is the sample standard deviation (n - 1). A seed without a value makes the row not measured: a seed
+ * without a DC point is never dropped.
+ */
+export type McStatistic = "mean" | "sigma" | "min" | "max" | "abs_max" | "mean_abs_k_sigma" | "mean_plus_k_sigma" | "mean_minus_k_sigma";
+export const MC_STATISTICS: McStatistic[] = ["mean", "sigma", "min", "max", "abs_max", "mean_abs_k_sigma", "mean_plus_k_sigma", "mean_minus_k_sigma"];
+/** The fewest seeds of a monte_carlo row, unless the requirement gives min_seeds. */
+export const MC_MIN_SEEDS = 30;
 
 /** The stability gate: every listed stage needs a mu requirement over the band at every listed condition. */
 /** The connection gate: the block interface record of a block against the connection table (see connections.ts). */
@@ -59,6 +70,20 @@ export interface ConnectionsGate {
 	block: string;
 	/** The block interface record, relative to the design root. */
 	interface: string;
+}
+
+/**
+ * The operating-limit gate: for each experiment (default: every ngspice simulate experiment that a requirement cites) and
+ * each condition of its rows, the check runs the ngspice operation device_limits with the same deck, libs, params and
+ * temperature. The limits come from the technology pack (each with its PDK source, or an assumption) and extra_limits.
+ * tran gives a transient per experiment for the peak values. A run without a result makes its gate row not run.
+ */
+export interface LimitsGate {
+	experiments?: string[];
+	technology?: string;
+	tran?: Record<string, { step_s: number; stop_s: number; start_s?: number }>;
+	/** Limits of the design (for example a minimum VCE); each cites an assumption of the file or gives a source. */
+	extra_limits?: { id: string; class: string; quantity: string; op: "<=" | ">="; limit: number; models?: string; source?: string; assumption?: string; description?: string }[];
 }
 
 export interface StabilityGate {
@@ -102,6 +127,10 @@ export interface Requirement {
 	reduce?: ReducerSpec;
 	/** sweep: the sweep table, by its path or the end of its path; optional when the experiment has one. */
 	table?: string;
+	/** monte_carlo: the statistic over the seeds, k (default 3) for the k-sigma statistics, and the fewest seeds (default 30). */
+	statistic?: McStatistic;
+	k?: number;
+	min_seeds?: number;
 	/** The ids of the assumptions that the row depends on (see "assumptions" of the file). */
 	assumptions?: string[];
 	/** Expected unit. A measurement with a different unit is not compared. */
@@ -131,7 +160,7 @@ export interface RequirementsFile {
 	experiments: Record<string, ExperimentTemplate>;
 	requirements: Requirement[];
 	assumptions?: Record<string, Assumption>;
-	gates?: { stability?: StabilityGate; connections?: ConnectionsGate };
+	gates?: { stability?: StabilityGate; connections?: ConnectionsGate; limits?: LimitsGate };
 }
 
 /**
@@ -236,7 +265,26 @@ export function validateRequirements(file: RequirementsFile): string[] {
 	}
 	for (const [name, c] of Object.entries(conditions)) cites(`condition "${name}"`, c?.assumptions);
 	const gate = file.gates?.stability;
-	for (const k of Object.keys(file.gates ?? {})) if (k !== "stability" && k !== "connections") errors.push(`gates.${k}: unknown gate; the gates are stability and connections`);
+	for (const k of Object.keys(file.gates ?? {})) if (!["stability", "connections", "limits"].includes(k)) errors.push(`gates.${k}: unknown gate; the gates are stability, connections and limits`);
+	const lg = file.gates?.limits;
+	if (lg !== undefined) {
+		if (!lg || typeof lg !== "object") errors.push("gates.limits: must be an object");
+		else {
+			for (const e of lg.experiments ?? []) if (!experiments[e]) errors.push(`gates.limits: experiment "${e}" is not defined`);
+			for (const [e, t] of Object.entries(lg.tran ?? {})) {
+				if (!experiments[e]) errors.push(`gates.limits.tran: experiment "${e}" is not defined`);
+				if (!(t && isNumber(t.step_s) && isNumber(t.stop_s) && t.step_s > 0 && t.step_s < t.stop_s && (t.start_s === undefined || (isNumber(t.start_s) && t.start_s >= 0 && t.start_s < t.stop_s)))) {
+					errors.push(`gates.limits.tran.${e}: give step_s < stop_s (and start_s < stop_s) in seconds`);
+				}
+			}
+			for (const l of lg.extra_limits ?? []) {
+				const w = `gates.limits.extra_limits "${l?.id}"`;
+				if (!l?.id || !l.class || !l.quantity || !["<=", ">="].includes(l.op) || !isNumber(l.limit)) errors.push(`${w}: id, class, quantity, op (<= or >=) and limit are required`);
+				if (!l?.source && !l?.assumption) errors.push(`${w}: give a source or an assumption`);
+				if (l?.assumption && !assumptions[l.assumption]) errors.push(`${w}: assumption "${l.assumption}" is not defined in assumptions`);
+			}
+		}
+	}
 	const cg = file.gates?.connections;
 	if (cg !== undefined && !(cg && typeof cg.table === "string" && typeof cg.block === "string" && typeof cg.interface === "string")) {
 		errors.push("gates.connections: table, block and interface (paths relative to the design root, and the block name) are required");
@@ -261,7 +309,12 @@ export function validateRequirements(file: RequirementsFile): string[] {
 		if (!experiments[r.experiment]) errors.push(`${where}: experiment "${r.experiment}" is not defined`);
 		const kind = r.kind ?? "measurement";
 		if (!REQUIREMENT_KINDS.includes(kind)) errors.push(`${where}: kind is ${String(kind)}, expected ${REQUIREMENT_KINDS.join(", ")}`);
-		if (kind === "measurement" && !r.measurement) errors.push(`${where}: measurement is required`);
+		if ((kind === "measurement" || kind === "monte_carlo") && !r.measurement) errors.push(`${where}: measurement is required`);
+		if (kind === "monte_carlo") {
+			if (!MC_STATISTICS.includes(r.statistic as McStatistic)) errors.push(`${where}: kind monte_carlo needs statistic (${MC_STATISTICS.join(", ")})`);
+			if (r.k !== undefined && !(isNumber(r.k) && r.k > 0)) errors.push(`${where}: k must be a positive number`);
+			if (r.min_seeds !== undefined && !(Number.isInteger(r.min_seeds) && r.min_seeds >= 2)) errors.push(`${where}: min_seeds must be an integer of at least 2`);
+		} else if (r.statistic !== undefined || r.k !== undefined || r.min_seeds !== undefined) errors.push(`${where}: statistic, k and min_seeds are for kind monte_carlo`);
 		cites(where, r.assumptions);
 		if (r.stage !== undefined && (kind !== "mu" || typeof r.stage !== "string")) errors.push(`${where}: stage is for kind mu (the name of an RF stage)`);
 		if (kind === "sweep") {
@@ -271,7 +324,7 @@ export function validateRequirements(file: RequirementsFile): string[] {
 			if (e) errors.push(`${where}: ${e}`);
 			if (r.table !== undefined && typeof r.table !== "string") errors.push(`${where}: table must be a path`);
 			if (r.band_hz !== undefined || r.touchstone !== undefined || r.entry !== undefined) errors.push(`${where}: band_hz, touchstone and entry are for the kinds s_db and mu`);
-		} else if (r.column !== undefined || r.reduce !== undefined || r.table !== undefined) errors.push(`${where}: column, reduce and table are for kind sweep`);
+		} else if (r.column !== undefined || r.reduce !== undefined || (r.table !== undefined && kind !== "monte_carlo")) errors.push(`${where}: column, reduce and table are for kind sweep`);
 		if (kind === "s_db" || kind === "mu") {
 			if (r.measurement !== undefined) errors.push(`${where}: kind ${kind} computes its value from a Touchstone file; remove measurement`);
 			const band = r.band_hz;
@@ -347,6 +400,7 @@ export function rowMeasurement(r: Requirement): string {
 	if (r.kind === "s_db") return `S${r.entry?.join("") ?? ""} dB`;
 	if (r.kind === "mu") return "mu";
 	if (r.kind === "sweep") return `${r.column ?? ""} ${r.reduce?.kind ?? ""}`;
+	if (r.kind === "monte_carlo") return `${r.measurement ?? ""} ${r.statistic === "mean_abs_k_sigma" ? `|mean|+${r.k ?? 3}sigma` : r.statistic === "mean_plus_k_sigma" ? `mean+${r.k ?? 3}sigma` : r.statistic === "mean_minus_k_sigma" ? `mean-${r.k ?? 3}sigma` : (r.statistic ?? "")}`;
 	return r.measurement ?? "";
 }
 
@@ -409,6 +463,51 @@ function sweepPoints(r: Requirement, run: { id: string; result: ResultRecord }, 
 	return { sweep: table.sweep, points };
 }
 
+interface McTable {
+	measurements: Record<string, string | null>;
+	seeds: { seed: number; status: string; dc: string; values: Record<string, number | null> }[];
+}
+
+/** The statistic of a monte_carlo row from the table of the run, or the reason why there is none. */
+function mcStatistic(r: Requirement, run: { id: string; result: ResultRecord }, root: string | undefined): { value: number; unit: string | null; at: Record<string, number> | null; note: string } | { reason: string } {
+	const files = run.result.outputs.filter((f) => f.role === "monte_carlo");
+	const chosen = r.table ? files.filter((f) => f.path === r.table || f.path.endsWith(`/${r.table}`)) : files;
+	if (chosen.length !== 1) return { reason: `experiment ${run.id} has ${chosen.length} Monte Carlo tables${r.table ? ` named ${r.table}` : ""} (role monte_carlo)` };
+	if (root === undefined) return { reason: "the design root is not known" };
+	const path = resolve(root, chosen[0].path);
+	let table: McTable;
+	try {
+		if (sha256File(path) !== chosen[0].sha256) return { reason: `${chosen[0].path} changed after experiment ${run.id}` };
+		table = readJson(path);
+	} catch (e) {
+		return { reason: `${chosen[0].path}: ${(e as Error).message}` };
+	}
+	const name = r.measurement as string;
+	if (!(name in (table.measurements ?? {}))) return { reason: `${chosen[0].path} has no measurement ${name}` };
+	const missing = table.seeds.filter((s) => !isNumber(s.values?.[name]));
+	if (missing.length) {
+		const by = (st: string) => missing.filter((s) => s.status === st).map((s) => s.seed);
+		return { reason: `${missing.length} of ${table.seeds.length} seeds have no value for ${name} (no DC point: ${by("no_dc").join(", ") || "none"}; failed: ${by("failed").join(", ") || "none"}); a seed is never dropped` };
+	}
+	const v = table.seeds.map((s) => ({ seed: s.seed, x: s.values[name] as number }));
+	const n = v.length;
+	const min = r.min_seeds ?? MC_MIN_SEEDS;
+	if (n < min) return { reason: `${n} seeds, the requirement needs at least ${min}` };
+	const mean = v.reduce((a, b) => a + b.x, 0) / n;
+	const sigma = Math.sqrt(v.reduce((a, b) => a + (b.x - mean) ** 2, 0) / (n - 1));
+	if (sigma === 0) return { reason: `${name} has the same value in all ${n} seeds: the mismatch models are not active` };
+	const k = r.k ?? 3;
+	const lo = v.reduce((a, b) => (b.x < a.x ? b : a));
+	const hi = v.reduce((a, b) => (b.x > a.x ? b : a));
+	const ab = v.reduce((a, b) => (Math.abs(b.x) > Math.abs(a.x) ? b : a));
+	const stat = r.statistic as McStatistic;
+	const value = { mean, sigma, min: lo.x, max: hi.x, abs_max: Math.abs(ab.x), mean_abs_k_sigma: Math.abs(mean) + k * sigma, mean_plus_k_sigma: mean + k * sigma, mean_minus_k_sigma: mean - k * sigma }[stat];
+	const at = stat === "min" ? { seed: lo.seed } : stat === "max" ? { seed: hi.seed } : stat === "abs_max" ? { seed: ab.seed } : null;
+	const unit = table.measurements[name] ?? null;
+	const fallback = table.seeds.filter((s) => s.dc === "fallback").length;
+	return { value, unit, at, note: `${n} seeds, mean ${mean.toPrecision(4)}, sigma ${sigma.toPrecision(4)}${fallback ? `, ${fallback} seeds needed the DC fallback` : ""}` };
+}
+
 /** The assumptions of a row: of the requirement, its experiment and its condition, without repeats. */
 export function rowAssumptions(file: RequirementsFile, r: Requirement, condition: string | null): string[] {
 	const all = [...(r.assumptions ?? []), ...(file.experiments[r.experiment]?.assumptions ?? []), ...(condition ? (file.conditions[condition]?.assumptions ?? []) : [])];
@@ -443,6 +542,12 @@ export function evaluateRow(
 	if (!run) return { ...row, reason: notRunReason };
 	if (run.result.status !== "completed") {
 		return { ...row, reason: `experiment ${run.id} ended with status ${run.result.status}` };
+	}
+	if (r.kind === "monte_carlo") {
+		const got = mcStatistic(r, run, root);
+		if ("reason" in got) return { ...row, status: "not_measured", reason: got.reason };
+		const c = compare(r.op, limit, got.value);
+		return { ...row, value: got.value, unit: got.unit ?? r.unit ?? null, ...c, status: c.margin >= 0 ? "pass" : "fail", at: got.at, reason: got.note };
 	}
 	if (r.kind === "sweep") {
 		const got = sweepPoints(r, run, root);
@@ -501,6 +606,71 @@ export function evaluateRow(
 }
 
 const rank: Record<RowStatus, number> = { fail: 0, not_run: 1, not_measured: 2, pass: 3 };
+
+interface LimitRow {
+	id: string;
+	class: string;
+	quantity: string;
+	op: "<=" | ">=";
+	limit: number;
+	source: string | null;
+	assumption: string | null;
+	description: string | null;
+	at: "dc" | "peak";
+	value: number | null;
+	device: string | null;
+	status: "pass" | "fail" | "not_measured" | "not_applicable";
+	reason: string | null;
+}
+
+/**
+ * The rows of the operating-limit gate: for each device_limits run (one per experiment and condition), one row per
+ * limit that applies (the worst device). A run without its limits table gives one row that is not run, so the check
+ * cannot pass.
+ */
+export function limitsGateRows(runs: { experiment: string; condition: string | null; id: string; result: ResultRecord }[], root: string): VerdictRow[] {
+	const out: VerdictRow[] = [];
+	const order = [...runs].sort((a, b) => (a.experiment + (a.condition ?? "")).localeCompare(b.experiment + (b.condition ?? "")));
+	for (const run of order) {
+		const base = { condition: run.condition, unit: "V", margin: null, margin_rel: null, experiment: run.id, at: null, gate: { name: "limits", stage: run.experiment, covered_by: [] as string[] } };
+		const file = run.result.outputs.find((f) => f.role === "device_limits");
+		let table: { limits: LimitRow[] } | null = null;
+		let why = run.result.status !== "completed" ? `experiment ${run.id} ended with status ${run.result.status}` : !file ? `experiment ${run.id} has no limits table` : null;
+		if (!why && file) {
+			try {
+				const path = resolve(root, file.path);
+				if (sha256File(path) !== file.sha256) why = `${file.path} changed after experiment ${run.id}`;
+				else table = readJson(path);
+			} catch (e) {
+				why = `${file.path}: ${(e as Error).message}`;
+			}
+		}
+		if (!table) {
+			out.push({ ...base, requirement: "gate limits", measurement: `device limits @ ${run.experiment}`, op: "<=", limit: 0, value: null, status: "not_run", reason: why } as VerdictRow);
+			continue;
+		}
+		for (const l of table.limits) {
+			if (l.status === "not_applicable") continue;
+			const c = l.value === null ? null : compare(l.op, l.limit, l.value);
+			const note = l.source ? null : `assumed: ${l.description ?? "no PDK source"}`;
+			const row: VerdictRow = {
+				...base,
+				requirement: `gate limits ${l.id}${l.at === "peak" ? " peak" : ""}`,
+				measurement: `${l.quantity} ${l.at} @ ${run.experiment}`,
+				op: l.op,
+				limit: l.limit,
+				value: l.value,
+				unit: /^(ic|ib|id)/.test(l.quantity) ? "A" : "V",
+				margin: c?.margin ?? null,
+				margin_rel: c?.margin_rel ?? null,
+				status: l.status,
+				reason: [l.device ? `worst device ${l.device}` : null, l.reason, note].filter(Boolean).join("; ") || null,
+			};
+			out.push(l.assumption ? { ...row, assumptions: [l.assumption] } : row);
+		}
+	}
+	return out;
+}
 
 /** The rows of the connection gate: one per item of the block against the connection table (connections.ts). */
 export function connectionGateRows(file: RequirementsFile, root: string): VerdictRow[] {
@@ -644,8 +814,14 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 		for (const c of conditionsOf(r)) if (selected(r, c)) pairs.set(key(r.experiment, c), { experiment: r.experiment, condition: c });
 	}
 
+	// The operating-limit gate: one device_limits run per (experiment, condition) pair of the gate.
+	const lg = file.gates?.limits;
+	const gateExperiments = lg ? (lg.experiments ?? [...new Set(file.requirements.map((r) => r.experiment))].filter((e) => file.experiments[e]?.adapter === "ngspice" && file.experiments[e]?.operation === "simulate")) : [];
+	const limitPairs = [...pairs.values()].filter((p) => gateExperiments.includes(p.experiment));
+
 	const id = newExperimentId();
 	const runs = new Map<string, { id: string; result: ResultRecord }>();
+	const limitRuns: { experiment: string; condition: string | null; id: string; result: ResultRecord }[] = [];
 	const list = [...pairs];
 	const done: (VerdictRecord["experiments"][number] | null)[] = list.map(() => null);
 	const jobs = list.map(([pair, { experiment, condition }], i) => async () => {
@@ -664,6 +840,30 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 		const diagnostics = outcome.result.diagnostics.filter((d) => d.severity !== "info");
 		done[i] = { id: outcome.id, experiment, condition, status: outcome.result.status, diagnostics };
 	});
+	for (const { experiment, condition } of limitPairs) {
+		jobs.push(async () => {
+			const all = experimentInputs(file, experiment, condition);
+			const inputs: Record<string, unknown> = {};
+			for (const k of ["deck", "libs", "params", "temp_c"]) if (all[k] !== undefined) inputs[k] = all[k];
+			if (lg?.tran?.[experiment]) inputs.tran = lg.tran[experiment];
+			if (lg?.extra_limits) inputs.extra_limits = lg.extra_limits;
+			if (lg?.technology) inputs.technology = lg.technology;
+			const t = file.experiments[experiment];
+			const outcome = await runExperiment({
+				root,
+				adapter: "ngspice",
+				operation: "device_limits",
+				inputs,
+				environment: t.environment,
+				timeoutS: t.timeout_s,
+				purpose: `check ${id}: gate limits ${experiment}${condition === null ? "" : ` at ${condition}`}`,
+				signal: opts.signal,
+			});
+			limitRuns.push({ experiment, condition, id: outcome.id, result: outcome.result });
+			const diagnostics = outcome.result.diagnostics.filter((d) => d.severity !== "info");
+			done.push({ id: outcome.id, experiment: `gate limits ${experiment}`, condition, status: outcome.result.status, diagnostics });
+		});
+	}
 	// A few workers take the jobs in order. After an abort, no worker starts a new run.
 	let next = 0;
 	const worker = async () => {
@@ -686,6 +886,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 	}
 	rows.push(...stabilityGateRows(file, rows));
 	rows.push(...connectionGateRows(file, root));
+	rows.push(...limitsGateRows(limitRuns, root));
 	const counts: Record<RowStatus, number> = { pass: 0, fail: 0, not_measured: 0, not_run: 0 };
 	for (const row of rows) counts[row.status]++;
 	// A selection is never a pass, also when it happens to include every row.

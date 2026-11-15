@@ -64,10 +64,11 @@ import { listExperiments, loadExperiment, readStatus } from "./records.ts";
 import { runDetachedWorker, runExperiment, sha256File } from "./runner.ts";
 import { formatAssumptionUses, formatOutcome, formatStarted, formatVerdict, formatWait } from "./summary.ts";
 import { waitExperiments } from "./wait.ts";
+import { formatQuery, queryRecords } from "./query.ts";
 
 function usage(): never {
 	console.error(
-		"usage: simra run [--detach] <spec.json> | simra jobs <jobs.json> [--cpus <list>] [--parallel <n>] [--timeout-s <n>] | simra wait <id> [<id>...] [--timeout-s <n>] | simra show <id> [--json] | simra record [<path>...] | simra probe --pdk <name> [--environment <env>] [--cpus <list>] [--json] | simra em <inputs.json> [--environment <env>] [--cpus <list>] [--parallel <n>] [--timeout-s <n>] | simra workarounds [--simulator <name>] [--pdk <name>] | simra snp-diff <a.sNp> <b.sNp> [--band <lo,hi>] | simra connections --table <file> [--block <name> --interface <file>] | simra list | simra assumptions [<id>] [--file <path>] | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>] | simra pdf <file> [--pages <a-b> | --render <N>] | simra pack init --pdk <name> [--adapter <name>] [--pdk-root <dir>] [--dir <dir>] [--inputs <json>] [--write] | simra pack check --pdk <name> [--adapter <name>] [--inputs <json>]   [--root <dir>]",
+		"usage: simra run [--detach] <spec.json> | simra jobs <jobs.json> [--cpus <list>] [--parallel <n>] [--timeout-s <n>] | simra wait <id> [<id>...] [--timeout-s <n>] | simra show <id> [--json] | simra record [<path>...] | simra probe --pdk <name> [--environment <env>] [--cpus <list>] [--json] | simra em <inputs.json> [--environment <env>] [--cpus <list>] [--parallel <n>] [--timeout-s <n>] | simra workarounds [--simulator <name>] [--pdk <name>] | simra query [--source experiments|checks] [--check <id|latest>] [--experiment <id or text>] [--condition <name>] [--measurement <text or /re/>] [--requirement <text>] [--status <s>] [--operation <op>] [--limit <n>] | simra snp-diff <a.sNp> <b.sNp> [--band <lo,hi>] | simra connections --table <file> [--block <name> --interface <file>] | simra list | simra assumptions [<id>] [--file <path>] | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>] | simra pdf <file> [--pages <a-b> | --render <N>] | simra pack init --pdk <name> [--adapter <name>] [--pdk-root <dir>] [--dir <dir>] [--inputs <json>] [--write] | simra pack check --pdk <name> [--adapter <name>] [--inputs <json>]   [--root <dir>]",
 	);
 	process.exit(2);
 }
@@ -90,7 +91,7 @@ async function main(argv: string[]): Promise<number> {
 			// Internal: the supervisor of a detached run (see runExperiment). The argument is the experiment directory.
 			const result = await runDetachedWorker(argv[++i] ?? usage());
 			return result.status === "completed" ? 0 : 1;
-		} else if (["--cpus", "--environment", "--file", "--only", "--conditions", "--parallel", "--timeout-s", "--pages", "--render", "--pdk", "--simulator", "--band", "--table", "--block", "--interface", "--adapter", "--pdk-root", "--dir", "--inputs"].includes(argv[i])) options[argv[i].slice(2)] = argv[++i] ?? usage();
+		} else if (["--cpus", "--environment", "--file", "--only", "--conditions", "--parallel", "--timeout-s", "--pages", "--render", "--pdk", "--simulator", "--band", "--table", "--block", "--interface", "--adapter", "--pdk-root", "--dir", "--inputs", "--source", "--check", "--experiment", "--condition", "--measurement", "--requirement", "--status", "--operation", "--limit"].includes(argv[i])) options[argv[i].slice(2)] = argv[++i] ?? usage();
 		else args.push(argv[i]);
 	}
 	root ??= findRoot(process.cwd()) ?? process.cwd();
@@ -191,6 +192,21 @@ async function main(argv: string[]): Promise<number> {
 			: checkTable(loadConnectionTable(resolve(root, table)));
 		console.log(formatConnectionRows(rows));
 		return rows.every((r) => r.status === "pass") ? 0 : 1;
+	}
+	if (command === "query") {
+		const q = queryRecords(root, {
+			source: options.source as "experiments" | "checks" | undefined,
+			check: options.check,
+			experiment: options.experiment,
+			condition: options.condition,
+			measurement: options.measurement,
+			requirement: options.requirement,
+			status: options.status,
+			operation: options.operation,
+			limit: options.limit === undefined ? undefined : positive(options.limit),
+		});
+		console.log(formatQuery(q));
+		return 0;
 	}
 	if (command === "workarounds") {
 		console.log(formatWorkarounds(workaroundsFor({ simulators: options.simulator ? [options.simulator] : undefined, pdk: options.pdk ?? null })));

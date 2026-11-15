@@ -864,6 +864,59 @@ condition:
 3. Run the check. A gate row takes the worst of the mu rows that cover it. Without such a row, the gate row is
    `not_run` with the stage, band and condition in the reason, so the block cannot pass without the record.
 
+### Monte Carlo rows
+
+The ngspice operation `monte_carlo` runs one ngspice batch run per seed with the mismatch models of the PDK. It
+replaces each lib section by its mismatch section (IHP: `<corner>_mismatch`) and adds the instance parameter of the
+technology pack (IHP: `mm_ok=1`; without it the IHP models give no mismatch) to each PDK device of the deck and of the
+files that it includes from the design root. The default options are `reltol=1e-3` and `itl1=1000` (registry entry
+`ngspice-sg13g2-mc-reltol`). Each seed is `ok`, `no_dc` or `failed`; work/mc.json keeps every seed. A row of kind
+`monte_carlo` reads that table:
+
+```json
+{ "id": "offset_3s", "experiment": "mc", "kind": "monte_carlo", "measurement": "offset_v",
+  "statistic": "mean_abs_k_sigma", "k": 3, "op": "<=", "limit": 0.02, "conditions": ["tt", "slow_hot"] }
+```
+
+1. `statistic` is `mean`, `sigma` (n − 1), `min`, `max`, `abs_max` (the row names the seed), `mean_abs_k_sigma`
+   (|mean| + k σ), `mean_plus_k_sigma` or `mean_minus_k_sigma`; `k` is 3 by default.
+2. A seed without a value (for example no DC point) makes the row `not_measured` with the seeds in the reason. A
+   seed is never dropped.
+3. Fewer seeds than `min_seeds` (default 30), or the same value in every seed (mismatch not active), are also
+   `not_measured`. The operation itself fails when no measurement varies.
+
+On the detector cell of the R2 design (tt, 60 seeds, simulated) the operation gives an offset σ of 3.88 mV; the R2
+record has σ 4.07 mV from 198 seeds.
+
+### Operating-limit gate
+
+`gates.limits` makes the check run the ngspice operation `device_limits` for each experiment of the gate and each
+condition of its rows, with the same deck, libs, params and temperature:
+
+```json
+"gates": { "limits": { "extra_limits": [ { "id": "hbt_vce_min", "class": "hbt", "quantity": "vce", "op": ">=",
+  "limit": 0.5, "assumption": "vce_min" } ], "tran": { "bench": { "step_s": 2e-13, "stop_s": 8e-8, "start_s": 1.5e-8 } } } }
+```
+
+1. The experiments are every ngspice `simulate` experiment that a requirement cites, unless `experiments` lists them.
+2. The limits come from the technology pack (`ngspice.limits.<pdk>`), each with its PDK source. For IHP SG13G2:
+   V<sub>CE</sub> ≤ 1.6 V (npn13G2, npn13G2l) and ≤ 2.2 V (npn13G2v), V<sub>CB</sub> ≤ 3.8 V, V<sub>EB</sub> ≤ 1.0 V,
+   V<sub>BE</sub> ≤ 1.6 V, I<sub>C</sub> per emitter ≤ 3.5 mA / 3.0 mA / 0.5 mA, MOS |V<sub>DS</sub>| and
+   |V<sub>GS</sub>| ≤ 1.6 V (LV) and 3.0 V (HV). The limit "no reverse DC base current" has no PDK source; it is
+   marked assumed and its rows cite the assumption `limit_hbt_ib_reverse`.
+3. `extra_limits` adds design limits; each gives a source or cites an assumption of the file.
+4. `tran` gives a transient per experiment: the gate also checks the peak voltages over it (the peak V<sub>CE</sub>
+   is a conservative bound from the extremes of V<sub>BE</sub> and V<sub>BC</sub>). Transient currents are not
+   checked: the VBIC instance currents include the junction charge currents.
+5. One row per limit and per experiment and condition takes the worst device and names it. A run without its limits
+   table gives a row that is `not_run`, so the check cannot pass.
+
+### Query the records
+
+`npx simra query` and the pi tool `query_results` give a table of the recorded results without a script: the
+measurements of the experiments (newest first; filters `--experiment`, `--condition`, `--measurement` (text or
+`/regex/`), `--operation`, `--status`), or the rows of a check (`--source checks`, `--check <id>`, `--requirement`).
+
 ### Assumptions
 
 A row can depend on a stated assumption, for example a system level that no block measures. Define it once and

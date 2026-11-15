@@ -1,5 +1,6 @@
 // Simra Agent extension for pi.
-// It registers the tools run_experiment (kernel runner + adapters; blocking or detached), wait_experiments (wait for
+// It registers the tools run_experiment (kernel runner + adapters; blocking or detached), query_results (a table of the
+// recorded measurements or check rows), wait_experiments (wait for
 // detached runs in one call), check_requirements (requirements.json against the design) and design_record (the checks
 // that ran on each file of record, current or stale), and the command /simra-version. In the terminal UI, it sets a
 // Simra header.
@@ -39,6 +40,8 @@ import {
 	assumptionUses,
 	formatAssumptionUses,
 	formatDesignRecord,
+	formatQuery,
+	queryRecords,
 	latestVerdict,
 	loadRequirements,
 	sha256File,
@@ -560,6 +563,38 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 	pi.registerTool({
+		name: "query_results",
+		label: "Query results",
+		description: [
+			"A table of recorded results; it runs no tool. source \"experiments\" (default): one row per measurement of each",
+			"experiment, newest first; the condition is the condition of its check, else the temperature and params of the inputs.",
+			"source \"checks\": one row per verdict row of a check (default the newest; check gives an id), with the limit, the",
+			"margin, the sweep point or seed, and the reason. A filter on check or requirement selects checks.",
+			"Filters: experiment (an id prefix or a text in the purpose; for checks the experiment name), condition (exact),",
+			"measurement and requirement (a text, or /regex/), status, operation (for example monte_carlo or device_limits).",
+		].join("\n"),
+		promptSnippet: "table of recorded measurements or check rows, filtered by corner, measurement or requirement",
+		promptGuidelines: [
+			"To compare results over corners, seeds or runs, use query_results instead of reading result.json or verdict.json files with a script.",
+		],
+		parameters: Type.Object({
+			source: Type.Optional(Type.Union([Type.Literal("experiments"), Type.Literal("checks")])),
+			check: Type.Optional(Type.String({ description: 'A check id or "latest"' })),
+			experiment: Type.Optional(Type.String()),
+			condition: Type.Optional(Type.String()),
+			measurement: Type.Optional(Type.String()),
+			requirement: Type.Optional(Type.String()),
+			status: Type.Optional(Type.String()),
+			operation: Type.Optional(Type.String()),
+			limit: Type.Optional(Type.Number({ description: "The most rows (default 200)" })),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const root = findRoot(ctx.cwd) ?? ctx.cwd;
+			const q = queryRecords(root, params);
+			return { content: [{ type: "text", text: formatQuery(q) }], details: { source: q.source, check: q.check, matched: q.matched, rows: q.rows.length } };
+		},
+	});
+	pi.registerTool({
 		name: "check_requirements",
 		label: "Check requirements",
 		description: [
@@ -590,6 +625,13 @@ export default function (pi: ExtensionAPI) {
 			"- kind \"sweep\": a reducer over a column of the sweep table of the experiment (output role sweep; ngspice ROW lines,",
 			"  xyce hb sweeps): column, reduce {kind: min | max | crossing (level, direction) | compression (db, default 1)}. The value",
 			"  is invalid (not measured) when a point inside the bracket of the reducer has no value.",
+			"- kind \"monte_carlo\": a statistic over the seeds of a Monte Carlo table (output role monte_carlo): measurement,",
+			"  statistic (mean, sigma, min, max, abs_max, mean_abs_k_sigma = |mean| + k sigma, mean_plus_k_sigma, mean_minus_k_sigma),",
+			"  k (default 3), min_seeds (default 30). A seed without a value (no DC point) makes the row not measured.",
+			"- gates.limits (optional): {experiments (default every ngspice simulate experiment of a requirement), tran ({experiment:",
+			"  {step_s, stop_s, start_s}} for the peak), extra_limits ([{id, class, quantity, op, limit, source or assumption}])}.",
+			"  The check runs the operation device_limits of the adapter at each experiment and condition: the operating limits of each",
+			"  device from the technology pack (HBT VCE, VCB, VEB, IC per emitter; MOS VDS, VGS) with their PDK source.",
 			"- gates.stability (optional): {stages, conditions, band_hz (default [1e9, 300e9])}. Each stage needs a mu requirement",
 			"  (op >=, limit >= 1, stage set) whose band contains band_hz at each condition; else its gate row is not run and the",
 			"  check cannot pass.",
