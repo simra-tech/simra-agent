@@ -111,3 +111,41 @@ Scorer fix after the second run (task error): the device rules allowed `.param` 
 values, so the design of the second run had 12 false errors (for example `len={lbias}` with `lbias=300u`) and got
 design 0/2, requirements 0/53 and claim 0/4, although the check passed every row. `score.mjs` now evaluates
 `{expr}` with the `.param` values; the second workspace was scored again with the fixed scorer (full verification).
+
+## Pilot runs, step 7 (three runs per model, 2026-11-15)
+
+Image `simra-agent-env:a9c3f12` (netlist gate, fit-band gate, port noise of fitted passives, stability diagnosis,
+query steering), 4 CPUs shared with one hard-detector run, 180 min limit. Three samples per model: a count, not a
+rate with a useful confidence interval.
+
+| Run | Model | Score (design, EM, requirements, claim, values) | Missed rows | Wall time | Model calls | Prompt tokens |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | default (`deepseek/deepseek-flash`) | 2, 2, 55/55, 4, 13/13 (scored again, see below) | none | 1875 s | 222 | 46.2 M |
+| 2 | default | 2, 2, 55/55, 4, 13/13 | none | 2832 s | 283 | 78.3 M |
+| 3 | default | 2, 2, 53/55, 4, 13/13 | `tt gain` 6.42 dB, `tt nf_db` 8.17 dB | 1989 s | 244 | 56.4 M |
+| 1 | stronger (`openai/gpt-6.1-sol`) | 2, 2, 55/55, 4, 13/13 (scored again, see below) | none | 399 s | 70 | 3.8 M |
+| 2 | stronger | 2, 2, 55/55, 4, 13/13 | none | 370 s | 59 | 3.2 M |
+| 3 | stronger | 2, 2, 55/55, 4, 13/13 | none | 641 s | 101 | 7.1 M |
+
+Pass count (every row, claim right): default model 2 of 3, stronger model 3 of 3 (step 6: 0 of 1 and 1 of 1).
+
+1. Default run 3, cause class design error: two cascode stages give about 3 dB each, and the input match for that
+   gain is far from the noise optimum. The agent stopped after 33 min of 180 with `meets_spec` false and the two
+   rows named; it put the cause on the gain limit of the device, which the reference (13.6 dB with three
+   common-emitter stages) does not support.
+2. Every run gave its fits `uses.band_hz` from 1 GHz to 300 GHz and `uses.noise_band_hz` around 122.5 GHz; the
+   fit-band rows passed. No run used an instance parameter that changes the device physics. The netlist gate of
+   the agent's own check failed once in four runs (a design without the EM passive yet; in one run also an ideal
+   1 GΩ resistor), and each agent fixed it before its final check.
+3. Task error in the scorer, found by default run 1 and stronger run 1: the scorer verified in a new root without
+   the fit records of the workspace, so the netlist gate did not see the fitted model (71 false rule errors) and
+   the fit-band rows were missing. The agent's own check of the same design passed both gates. `score.mjs` now
+   copies the `fit_to_spice` and `openems` records into the verify root (`copyFitRecords`); the two runs were scored
+   again with full verification.
+4. Bash calls that read record JSON files (`result.json`, `verdict.json`, `experiment.json`): default model 0, 0, 0
+   (step 6: 5 of 188); any path in the record tree, work logs included: 54, 75, 71 (step 6: 77). `query_results`
+   calls: 1, 1, 1 (step 6: 0). The steering moved the reads of record JSON to zero, not the reads of work logs
+   (`ngspice.log`, raw tables) with `cat` and Python, which the note does not cover.
+5. Token use of the default model (46 M to 78 M prompt tokens, step 6 59 M): the context grows from 17 k to 369 k
+   to 486 k tokens over 222 to 283 calls and each call sends all of it. In the final context, the reasoning of
+   earlier turns is 55 % to 57 % of the characters, tool results 27 % to 30 %, tool-call arguments 12 % to 17 %.

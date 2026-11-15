@@ -21,7 +21,7 @@
 //
 // Usage: node evals/lna-sg13g2/score.mjs <workspace>   (prints the score as JSON)
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { checkNetlist, fittedModels, instanceParamClasses, paramTable as kernelParamTable, runCheck, spiceValue } from "@simra-tech/kernel";
 import { numbersIn, readTexts, within } from "../ota-corners/score.mjs";
@@ -65,8 +65,44 @@ export function checkDesign(text, fits = [], taskDir = here) {
 	return { errors: r.errors.map((e) => e.message), em: r.fitted_used.filter((x) => x.em) };
 }
 
+/**
+ * Copy the fit_to_spice and openems records of the workspace (experiment.json, result.json and their subcircuit and
+ * Touchstone outputs) into the verify root, so that the netlist gate and the fit-band gate of the check see the
+ * fitted models of the design. No other record is copied.
+ */
+export function copyFitRecords(ws, root) {
+	const dir = join(ws, "simra", "experiments");
+	if (!existsSync(dir)) return 0;
+	let n = 0;
+	for (const id of readdirSync(dir)) {
+		const e = join(dir, id);
+		let exp, res;
+		try {
+			exp = readJson(join(e, "experiment.json"));
+			res = readJson(join(e, "result.json"));
+		} catch {
+			continue;
+		}
+		const fit = exp.adapter?.name === "touchstone" && exp.operation === "fit_to_spice";
+		if (!fit && exp.adapter?.name !== "openems") continue;
+		const to = join(root, "simra", "experiments", id);
+		mkdirSync(to, { recursive: true });
+		copyFileSync(join(e, "experiment.json"), join(to, "experiment.json"));
+		copyFileSync(join(e, "result.json"), join(to, "result.json"));
+		for (const o of res.outputs ?? []) {
+			if (!["subckt", "touchstone"].includes(o.role)) continue;
+			const from = join(ws, o.path);
+			if (!existsSync(from) || relative(ws, from).startsWith("..")) continue;
+			mkdirSync(dirname(join(root, o.path)), { recursive: true });
+			copyFileSync(from, join(root, o.path));
+		}
+		n++;
+	}
+	return n;
+}
+
 /** Run the check of requirements.json on the design text in root. Returns {rows: {"corner requirement": {value, pass, status}}, experiments}. */
-export async function verify(taskDir, designText, root, parallel = 5) {
+export async function verify(taskDir, designText, root, parallel = 5, ws = null) {
 	const task = readJson(join(taskDir, "task.json"));
 	rmSync(root, { recursive: true, force: true });
 	mkdirSync(root, { recursive: true });
@@ -75,6 +111,7 @@ export async function verify(taskDir, designText, root, parallel = 5) {
 		if (existsSync(from)) copyFileSync(from, join(root, f));
 	}
 	writeFileSync(join(root, DESIGN), designText);
+	if (ws) copyFitRecords(ws, root);
 	const { verdict } = await runCheck({ root, parallel });
 	const rows = {};
 	for (const r of verdict.rows) rows[`${r.condition} ${r.requirement}`] = { value: r.value ?? null, pass: r.status === "pass", status: r.status, gate: Boolean(r.gate) };
@@ -97,7 +134,7 @@ export async function score(ws, expected = readJson(join(here, "expected.json"))
 		report.em.used = d.em;
 		if (!d.errors.length) report.design = 2;
 		if (d.em.length) report.em_passive = 2;
-		verified = await verifier(here, text, verifyRoot);
+		verified = await verifier(here, text, verifyRoot, 5, ws);
 	}
 	let answer = null;
 	if (!existsSync(join(ws, "answer.json"))) report.errors.push("answer.json not found");

@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { score as hardScore, rowKey } from "../evals/det-cell-sg13g2-hard/score.mjs";
-import { checkDesign, emFits, paramTable, score as lnaScore, value } from "../evals/lna-sg13g2/score.mjs";
+import { checkDesign, copyFitRecords, emFits, paramTable, score as lnaScore, value } from "../evals/lna-sg13g2/score.mjs";
 
 const FIT = ".subckt em_match p1 p1_ref p2 p2_ref\nvsense1 p1 s1 0\ngport1 s1 p1_ref s1 p1_ref 0.02\ngr1_1_1 p1_ref s1 x1_1 0 1e3\ncx1_1 x1_1 0 1e-12\n.ends em_match\n";
 const LNA = (fit) =>
@@ -47,6 +47,11 @@ test("lna scorer: a fit counts only when its Touchstone input is an openEMS outp
 	writeFileSync(join(otherDir, "work", "other.lib"), other);
 	const fits = emFits(ws);
 	assert.deepEqual(fits.found.map((f) => [f.name, f.fit, f.em]), [["em_match", "e2", "e1"], ["other_fit", "e3", null]]);
+	// the verify root gets the fit and EM records with their outputs, so that the gates see the same fitted models
+	const root = join(ws, "..", "verify");
+	record(ws, "e4", "ngspice", "simulate", {});
+	assert.equal(copyFitRecords(ws, root), 3);
+	assert.deepEqual(emFits(root).found.map((f) => [f.name, f.fit, f.em]), [["em_match", "e2", "e1"], ["other_fit", "e3", null]]);
 	assert.match(fits.refused[0].reason, /not the output of an openems record/);
 	const ok = checkDesign(LNA(FIT), fits.found);
 	assert.deepEqual(ok.errors, []);

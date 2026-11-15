@@ -100,3 +100,20 @@ keeps), so the score was full. The rows of this run are without self-heating.
 Score again with the netlist gate (step 7): the gate rejects `selft=0` on the four HBTs (4 rule errors). The score is
 design 0/2, requirements 0/73 (the 72 rows and the netlist gate row), claim 0/4, values 37/37. The verification of
 the rows was not repeated: the score uses the verified rows of the first scoring and adds the netlist gate row.
+
+## Pilot runs, step 7 (three runs, 2026-11-15)
+
+Default model (`deepseek/deepseek-flash`), image `simra-agent-env:a9c3f12` (with the netlist gate), 4 CPUs shared
+with one LNA run, 180 min limit. Three samples: a count, not a rate with a useful confidence interval.
+
+| Run | Score (design, requirements, claim, values) | Missed rows | Wall time | Model calls | Prompt tokens | Bash calls (record JSON reads) | `query_results` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 2, 73/73, 4, 37/37 | none | 1620 s | 68 | 8.2 M | 43 (0) | 2 |
+| 2 | 2, 73/73, 4, 37/37 | none | 3695 s | 77 | 11.1 M | 46 (0) | 6 |
+| 3 | 2, 73/73, 4, 37/37 | none | 7522 s | 128 | 22.9 M | 81 (16) | 1 |
+
+Pass count: 3 of 3, every row with the netlist gate (step 6: 1 of 1 with the old rules, 0 of 1 with the netlist
+gate). No final design sets `selft`, `dtemp` or `mm_ok`. Run 3 used `selft=0` once, in a probe deck that compares
+the base current with and without self-heating, not in the design; no run got a netlist gate error. Run 3 took 125 min: it found that the DC base current of the PDK model turns negative at a larger V<sub>CB</sub>
+(the operating-limit gate fails) and fed each collector from a diode-connected HBT. The record JSON reads of run 3 (16) show that the note on record reads did not
+stop every such read.
