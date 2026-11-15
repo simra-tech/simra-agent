@@ -817,7 +817,15 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 	// The operating-limit gate: one device_limits run per (experiment, condition) pair of the gate.
 	const lg = file.gates?.limits;
 	const gateExperiments = lg ? (lg.experiments ?? [...new Set(file.requirements.map((r) => r.experiment))].filter((e) => file.experiments[e]?.adapter === "ngspice" && file.experiments[e]?.operation === "simulate")) : [];
-	const limitPairs = [...pairs.values()].filter((p) => gateExperiments.includes(p.experiment));
+	// An experiment of the gate runs at the conditions of its rows. An experiment that no selected row cites (for
+	// example a DC bench for the gate only) runs at every condition of the check; before, it gave no gate row at all.
+	// A row without a condition (for example an EM row) adds no condition: the DC point of a corner bench needs one.
+	const named = [...new Set([...pairs.values()].map((p) => p.condition))].filter((c) => c !== null);
+	const checkConditions = named.length ? named : [null];
+	const limitPairs = gateExperiments.flatMap((experiment) => {
+		const own = [...pairs.values()].filter((p) => p.experiment === experiment);
+		return own.length ? own : checkConditions.map((condition) => ({ experiment, condition }));
+	});
 
 	const id = newExperimentId();
 	const runs = new Map<string, { id: string; result: ResultRecord }>();

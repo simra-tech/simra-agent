@@ -899,6 +899,8 @@ condition of its rows, with the same deck, libs, params and temperature:
 ```
 
 1. The experiments are every ngspice `simulate` experiment that a requirement cites, unless `experiments` lists them.
+   An experiment of the list that no selected row cites (for example a DC bench for the gate only) runs at every
+   condition of the check. A row without a condition (for example an EM row) adds no condition to the gate.
 2. The limits come from the technology pack (`ngspice.limits.<pdk>`), each with its PDK source. For IHP SG13G2:
    V<sub>CE</sub> ≤ 1.6 V (npn13G2, npn13G2l) and ≤ 2.2 V (npn13G2v), V<sub>CB</sub> ≤ 3.8 V, V<sub>EB</sub> ≤ 1.0 V,
    V<sub>BE</sub> ≤ 1.6 V, I<sub>C</sub> per emitter ≤ 3.5 mA / 3.0 mA / 0.5 mA, MOS |V<sub>DS</sub>| and

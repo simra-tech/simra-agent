@@ -84,6 +84,35 @@
       "workaround": "Put the parameter expression in braces (sin({2*3.14159265*rf_f}*time)) or write the number.",
       "status": "worked_around",
       "evidence": "det-cell pilot run (two failed jobs), reproduced with a three-line deck: bare name fails, braces and a literal give the same 0.2 V result"
+    },
+    {
+      "id": "ngspice-wrs2p-rbase",
+      "applies_to": {
+        "analyses": [
+          "sp"
+        ]
+      },
+      "gap": "wrs2p after an sp analysis needs the reference resistance as a vector Rbase in the sp plot; the sp analysis does not make it (ngspice 41 and 46).",
+      "symptom": "'Error: No Rbase vector given' in the log and no Touchstone file; the run still ends with status completed, so an s_db or mu row has no data.",
+      "workaround": "Write 'let Rbase = 50' (the z0 of the ports) after sp and before wrs2p.",
+      "status": "worked_around",
+      "evidence": "LNA bench of the step-6 pilot task: no lna.s2p; a two-port probe deck writes the file after 'let Rbase = 50' (ngspice 41)"
+    },
+    {
+      "id": "fit-to-spice-noise",
+      "applies_to": {
+        "analyses": [
+          "noise"
+        ],
+        "operations": [
+          "fit_to_spice"
+        ]
+      },
+      "gap": "A vector-fit realisation of a passive (controlled sources and internal state nodes) does not have the thermal noise of the passive. Internal resistors of the realisation give noise with no relation to the passive; fit_to_spice now writes them as noiseless G sources, so the model has no noise at all.",
+      "symptom": "With internal resistors: a noise figure of hundreds of dB (an LNA with EM matching networks gave 275 dB). Without them: a noise figure that leaves out the loss noise of the passive, optimistic by up to the loss of a passive at the input.",
+      "workaround": "Use the noiseless model and state the omission, or add port noise sources with the correlation 4kT Re Y of the passive at one frequency per noise run (Twiss).",
+      "status": "open",
+      "evidence": "LNA reference of the step-6 pilot task through noise.spice: 275 dB with the resistor realisation; the reference design used the Twiss injection for its record"
     }
   ]
 }

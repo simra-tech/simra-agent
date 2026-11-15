@@ -22,8 +22,11 @@ The adapter needs Python 3.6 or later and numpy. ngspice and Xyce are necessary 
    residues, and change the residues by the smallest amount that removes the violation (residue perturbation).
    The change of the model at the data points is a measurement (`enforcement_max_abs_ds`).
 5. Write the subcircuit. Each port is a Norton network (Z0 and a controlled current source); each pole is a
-   state network of R, C and controlled sources. Only R, C, G, F and V elements occur, so one netlist works in ngspice
-   and in Xyce.
+   state network of C and controlled sources. Only C, G, F and V elements occur, so one netlist works in ngspice
+   and in Xyce. Each conductance is a G source controlled by its own voltage: the subcircuit is noiseless. A resistor
+   of the realisation would add noise with no relation to the passive (an LNA with fitted matching networks gave a
+   noise figure of 275 dB). A noise analysis therefore leaves out the loss noise of the passive (registry entry
+   `fit-to-spice-noise`).
 6. Re-simulate the subcircuit with an AC run per port, in each simulator of `verify`. Compare with the model and
    with the data. A difference to the model above 1e-4 is an error: the subcircuit is not the model.
 

@@ -359,7 +359,7 @@ def fit_to_spice(request):
                   "order %d; max |dS| %.3g against the data; passive (margin %.3g, sampled to %.3g Hz, Hamiltonian test)" % (
                       model.order, err["max"], margin, grid[-1]),
                   "DC: %s" % ("in the data" if f[0] == 0 else "from the model, not from the data"),
-                  "pins: p1 p1_ref p2 p2_ref ...; one netlist for ngspice and Xyce (R, C, G, F, V elements only)"]
+                  "pins: p1 p1_ref p2 p2_ref ...; one netlist for ngspice and Xyce (C, G, F, V elements only; noiseless: a noise analysis leaves out the loss noise of the passive)"]
         lib = os.path.join(work_dir, name + ".lib")
         with open(lib, "w") as fh:
             fh.write(rational.subcircuit(model, z0, name, header))

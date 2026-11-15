@@ -177,6 +177,8 @@ class TouchstoneTest(unittest.TestCase):
         with open(os.path.join(root, lib)) as fh:
             text = fh.read()
         self.assertIn(".subckt lp p1 p1_ref p2 p2_ref", text)
+        # noiseless realisation: no resistor (a resistor of the realisation adds non-physical noise)
+        self.assertFalse([ln for ln in text.splitlines() if ln[:1].lower() == "r"])
         fs = f[::20]
         for j in range(2):
             v = ac_solve(text, "lp", 2, [50.0, 50.0], fs, j)

@@ -12,7 +12,7 @@ Method.
      singular value above 1 - delta is the wanted change of S; a weighted least-squares fit of the residues gives this
      change and keeps the response at the data points. Repeated until the Hamiltonian test passes.
   4. Subcircuit: one Norton port network per port (Z0 and a current source 2 b / sqrt(Z0)), and one state network per
-     pole and port (a capacitor C = 1/|p|, so that every conductance is of order 1). Only R, C, G, F and V elements, so
+     pole and port (a capacitor C = 1/|p|, so that every conductance is of order 1). Only C, G, F and V elements (each conductance is a self-controlled G source: noiseless), so
      ngspice and Xyce read the same text.
 """
 
@@ -437,8 +437,16 @@ def enforce(model, f_data, delta=1e-3, d_delta=5e-5, max_iter=60, data_weight=0.
 
 
 # --------------------------------------------------------------------------------------------------------- subcircuit
+def _conductance(name, a, b, g):
+    """A conductance g from a to b as a G source controlled by its own voltage: the same in DC and AC, and noiseless.
+    A resistor of the realisation would add thermal noise that has no relation to the modelled passive (a vector-fit
+    realisation of a lossy line gave a noise figure of 275 dB)."""
+    return "%s %s %s %s %s %.12g" % (name, a, b, a, b, g)
+
+
 def subcircuit(model, z0, name, header):
-    """SPICE text of the model: pins p1 p1_ref p2 p2_ref ... State nodes are inside the subcircuit, referenced to 0."""
+    """SPICE text of the model: pins p1 p1_ref p2 p2_ref ... State nodes are inside the subcircuit, referenced to 0.
+    The model has no resistor: it is noiseless (see _conductance)."""
     n = model.n
     poles, res, d = model.physical()
     lines = ["* " + h for h in header]
@@ -447,7 +455,7 @@ def subcircuit(model, z0, name, header):
         gb = 2.0 / math.sqrt(z0[i])
         lines.append("* port %d: Z0 = %.12g ohm and the current 2 b / sqrt(Z0)" % (i + 1, z0[i]))
         lines.append("vsense%d p%d s%d 0" % (i + 1, i + 1, i + 1))
-        lines.append("rport%d s%d p%d_ref %.12g" % (i + 1, i + 1, i + 1, z0[i]))
+        lines.append(_conductance("gport%d" % (i + 1), "s%d" % (i + 1), "p%d_ref" % (i + 1), 1.0 / z0[i]))
         for j in range(n):
             ga, fa = 0.5 / math.sqrt(z0[j]), 0.5 * math.sqrt(z0[j])
             dij = d[i * n + j]
@@ -470,14 +478,14 @@ def subcircuit(model, z0, name, header):
             x = "x%d_%d" % (q + 1, i + 1)
             b = 1.0 if p.imag == 0 else 2.0
             lines += ["cx%d_%d %s 0 %.12g" % (q + 1, i + 1, x, c),
-                      "rx%d_%d %s 0 %.12g" % (q + 1, i + 1, x, 1.0 / (-p.real * c)),
+                      _conductance("grx%d_%d" % (q + 1, i + 1), x, "0", -p.real * c),
                       "gx%d_%d 0 %s p%d p%d_ref %.12g" % (q + 1, i + 1, x, i + 1, i + 1, b * c * ga),
                       "fx%d_%d 0 %s vsense%d %.12g" % (q + 1, i + 1, x, i + 1, b * c * fa)]
             if p.imag != 0:
                 y = "y%d_%d" % (q + 1, i + 1)
                 lines += ["gxy%d_%d 0 %s %s 0 %.12g" % (q + 1, i + 1, x, y, p.imag * c),
                           "cy%d_%d %s 0 %.12g" % (q + 1, i + 1, y, c),
-                          "ry%d_%d %s 0 %.12g" % (q + 1, i + 1, y, 1.0 / (-p.real * c)),
+                          _conductance("gry%d_%d" % (q + 1, i + 1), y, "0", -p.real * c),
                           "gyx%d_%d 0 %s %s 0 %.12g" % (q + 1, i + 1, y, x, -p.imag * c)]
     lines.append(".ends %s" % name)
     return "\n".join(lines) + "\n"

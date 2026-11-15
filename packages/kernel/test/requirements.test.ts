@@ -523,3 +523,21 @@ test("assumptions: each row lists the assumptions it depends on, and a query lis
 	await assert.rejects(runCheck({ root: designRoot(t, bad) }), (e: Error) =>
 		['assumption "unknown" is not defined', 'assumption "a b": an id has', 'assumption "a b": description is required'].every((m) => e.message.includes(m)));
 });
+
+test("gates.limits: an experiment that no row cites runs at every condition of the check", async (t) => {
+	const file = {
+		...amplifier,
+		experiments: { ...amplifier.experiments, dc: { adapter: "ngspice", operation: "simulate", inputs: { deck: "dc.spice" } } },
+		gates: { limits: { experiments: ["dc"] } },
+	};
+	const root = designRoot(t, file);
+	const { verdict } = await runCheck({ root });
+	// The fixture adapters have no ngspice, so each device_limits run has no table: one not-run gate row per condition.
+	const gate = verdict.rows.filter((r) => r.gate?.name === "limits");
+	assert.deepEqual(gate.map((r) => [r.condition, r.status]).sort(), [["ss", "not_run"], ["tt", "not_run"]]);
+	// A row without a condition does not add a gate run without a condition.
+	const withEm = { ...file, experiments: { ...file.experiments, em: { adapter: "fake", operation: "run", inputs: { mode: "values", units: { s21_db: "dB" }, values: { s21_db: -0.2 } } } }, requirements: [...file.requirements, { id: "s21", experiment: "em", measurement: "s21_db", unit: "dB", op: ">=", limit: -0.5 }] };
+	const { verdict: v2 } = await runCheck({ root: designRoot(t, withEm) });
+	assert.deepEqual(v2.rows.filter((r) => r.gate?.name === "limits").map((r) => r.condition).sort(), ["ss", "tt"]);
+	assert.equal(verdict.status, "fail");
+});
