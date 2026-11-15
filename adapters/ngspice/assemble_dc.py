@@ -20,10 +20,15 @@ import math
 import os
 import re
 import subprocess
+import time
 
 import ngspice_adapter as na
 
 V_KEY = re.compile(r"^v\((.+)\)$", re.IGNORECASE)
+# A node name that can stand in a B-source expression; others (v-sweep of a .dc plot, names with parentheses or
+# operators) are skipped.
+PLAIN_NODE = re.compile(r"^[a-z0-9_.:!$\[\]<>/]+$")
+SWEEP_NAMES = ("v-sweep", "sweep", "simra_gcl", "gcl")
 
 
 def node_key(name):
@@ -35,10 +40,11 @@ def node_key(name):
 def read_seeds(seeds, root):
     """{node: volts} from the seed list: [{file, from_prefix, to_prefix, only_prefix}]; later seeds win. A file is
     {"v(node)": volts, ...} (or {"nodes": {...}}, as dc_point.json); keys that are not node voltages (i(...), x) are
-    left out. Raises ValueError with the reason."""
+    left out, and so are node names that are not plain (see PLAIN_NODE) and the sweep variables of a .dc plot. The
+    number of skipped names is in read_seeds.skipped. Raises ValueError with the reason."""
     if not isinstance(seeds, list) or not seeds:
         raise ValueError("input 'seeds' is required: a list of {file, from_prefix, to_prefix, only_prefix}")
-    out = {}
+    out, skipped = {}, set()
     for n, s in enumerate(seeds, 1):
         if not isinstance(s, dict) or not isinstance(s.get("file"), str):
             raise ValueError("seed %d: file is required" % n)
@@ -60,6 +66,9 @@ def read_seeds(seeds, root):
             node = node_key(kl)
             if node in ("0", "gnd"):
                 continue
+            if node in SWEEP_NAMES or not PLAIN_NODE.match(node):
+                skipped.add(node)
+                continue
             if src:
                 if not node.startswith(src):
                     continue
@@ -71,6 +80,7 @@ def read_seeds(seeds, root):
             out[node] = float(v)
     if not out:
         raise ValueError("the seeds give no node voltage (check the prefixes)")
+    read_seeds.skipped = len(skipped)
     return out
 
 
@@ -91,7 +101,8 @@ def clamp_lines(seed, phases, decades):
              "Vsimra_gcl simra_gcl 0 %d" % n]
     for i, (node, v) in enumerate(sorted(seed.items())):
         k = phase_of(node, phases)
-        x = "min(max(v(simra_gcl)-%d,0),1)" % (n - k) if n > 1 else "min(v(simra_gcl),1)"
+        # one phase: x goes from 1 to 0, so v(simra_gcl) is used as it is (a min() term changes the Jacobian pattern)
+        x = "min(max(v(simra_gcl)-%d,0),1)" % (n - k) if n > 1 else "v(simra_gcl)"
         lines.append("Bsimra_cl%d %s 0 I=exp(%.9g*(%s-1))*(v(%s)-(%.9g))" % (i, node, a, x, node, v))
     return lines, n
 
@@ -188,10 +199,13 @@ def assemble_dc(request):
     write_deck(os.path.join(work, "clamp.cir"), "simra ngspice adapter: assemble_dc clamp sweep", libs, circuit, settings,
                solver + clamp, ["set num_threads=1", "set filetype=ascii", "dc Vsimra_gcl %d 0 %.9g" % (n, -1.0 / steps),
                                 "write clamp.raw"])
+    started = time.time()
     response = na.run(request, tool, "clamp.cir", deck_path, libs, None)
+    clamp_s = time.time() - started
     diagnostics = response["diagnostics"]
     m = response["measurements"] = {}
     m["nodes_seeded"] = {"value": len(seed), "unit": None, "status": "measured"}
+    m["seed_names_skipped"] = {"value": read_seeds.skipped, "unit": None, "status": "measured"}
     m["clamp_points_total"] = {"value": total, "unit": None, "status": "measured"}
     names, points = [], []
     raw = os.path.join(work, "clamp.raw")
@@ -220,16 +234,29 @@ def assemble_dc(request):
             "their clamps. Add a seed for them, split the phase, or use more steps" % (
                 x_last, len(points), total, "" if phase is None else ", in phase %d" % phase))})
         response["status"] = "failed"
+    if end:
+        with open(os.path.join(work, "clamp_end.json"), "w") as fh:
+            json.dump({"source": "end of the clamp sweep (residual clamp %g S)" % 10 ** -decades,
+                       "nodes": {"v(%s)" % k: v for k, v in sorted(end.items())}}, fh, indent=0)
     free_ok = None
     dc = end
+    accept = bool(inputs.get("accept_clamp_end", False))
+    limit = float(inputs.get("free_op_timeout_s", max(300.0, 2 * clamp_s)))
     if reached and inputs.get("free_op", True):
-        nodeset = [".nodeset %s" % " ".join("v(%s)=%.9g" % (k, v) for k, v in sorted(end.items())[i:i + 50])
-                   for i in range(0, len(end), 50)]
+        plain = sorted((k, v) for k, v in end.items() if PLAIN_NODE.match(k))
+        nodeset = [".nodeset %s" % " ".join("v(%s)=%.9g" % (k, v) for k, v in plain[i:i + 50])
+                   for i in range(0, len(plain), 50)]
         write_deck(os.path.join(work, "free.cir"), "simra ngspice adapter: assemble_dc free operating point", libs, circuit,
                    settings, solver + nodeset, ["set num_threads=1", "set filetype=ascii", "op", "write free.raw"])
         with open(os.path.join(work, "free.log"), "w") as log:
             env = dict(os.environ, NGSPICE_INPUT_DIR=os.path.realpath(root))
-            code = subprocess.call(["ngspice", "-b", "free.cir"], cwd=work, env=env, stdout=log, stderr=subprocess.STDOUT)
+            proc = subprocess.Popen(["ngspice", "-b", "free.cir"], cwd=work, env=env, stdout=log, stderr=subprocess.STDOUT)
+            try:
+                code = proc.wait(timeout=limit)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+                code = "timeout after %.0f s" % limit
         free = {}
         fr = os.path.join(work, "free.raw")
         if code == 0 and os.path.isfile(fr):
@@ -252,18 +279,28 @@ def assemble_dc(request):
             summary.update(free_op_max_dv_v=dv, seeds_not_in_circuit=len(lost))
             dc = free
         else:
-            diagnostics.insert(0, {"severity": "error", "source": "work/free.log", "message": (
-                "the free operating point (no clamps, .nodeset from the end of the sweep) did not converge (exit code %s); "
-                "dc_point.json has the end of the clamp sweep, which is not a DC point of the circuit" % code)})
-            response["status"] = "failed"
+            text = ("the free operating point (no clamps, .nodeset from the end of the sweep) did not converge (exit code "
+                    "%s); dc_point.json has the end of the clamp sweep, with the residual clamp of %g S on each seeded node"
+                    % (code, 10 ** -decades))
+            if accept:
+                diagnostics.insert(0, {"severity": "warning", "source": "work/free.log", "message": text + " (accept_clamp_end)"})
+            else:
+                diagnostics.insert(0, {"severity": "error", "source": "work/free.log", "message": text + (
+                    ". Set accept_clamp_end to use that point, as a clamp-homotopy flow without a free op does")})
+                response["status"] = "failed"
+    if reached:
         for src in inputs.get("currents") or []:
             val = None
             if free_ok:
                 fn, fp = read_raw_ascii(fr)
-                for i, x in enumerate(fn):
-                    if x.lower() in ("#i(%s)" % src.lower(), "#%s#branch" % src.lower()):
-                        val = fp[0][i]
+                row = fp[0]
+            else:
+                fn, row = names, points[-1]
+            for i, x in enumerate(fn):
+                if x.lower() in ("#i(%s)" % src.lower(), "#%s#branch" % src.lower()):
+                    val = row[i]
             m["i_%s_a" % src.lower()] = {"value": val, "unit": "A", "status": "measured" if val is not None else "missing"}
+    m["clamp_sweep_s"] = {"value": round(clamp_s, 1), "unit": "s", "status": "measured"}
     summary["free_op_converged"] = free_ok
     dc_path = os.path.join(work, "dc_point.json")
     with open(dc_path, "w") as fh:
@@ -277,6 +314,8 @@ def assemble_dc(request):
             e = {"path": na.display_path(p, root), "sha256": na.sha256(p), "bytes": os.path.getsize(p)}
             if name == "dc_point.json":
                 e["role"] = "dc_point"
+            elif name == "clamp_end.json":
+                e["role"] = "clamp_end"
             response["outputs"].append(e)
     response["report"] = ["assemble_dc: %d seeded nodes, %d phase(s), clamp sweep %s (%d of %d points, x = %s)%s" % (
         len(seed), n, "reached the end" if reached else "STOPPED", len(points), total, x_last,

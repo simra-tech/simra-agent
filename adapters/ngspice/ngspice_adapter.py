@@ -729,9 +729,11 @@ def main(argv):
     import design_check  # here, not at the top: design_check imports the helpers of this module
     import device_probe
     import assemble_dc
+    import oscillator
     operation = {"simulate": simulate, "operating_point": operating_point, "lint": lint,
                  "check_design": design_check.check_design, "probe_devices": device_probe.probe_devices,
-                 "assemble_dc": assemble_dc.assemble_dc}.get(request.get("operation"))
+                 "assemble_dc": assemble_dc.assemble_dc,
+                 "oscillator": oscillator.oscillator}.get(request.get("operation"))
     if operation is None:
         response = failure(None, "unknown operation: {}".format(request.get("operation")))
     else:

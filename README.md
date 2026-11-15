@@ -59,6 +59,8 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
   chip. `gates.connections` checks a block interface record against it (see [Connection table](#connection-table)).
 - The ngspice operation `assemble_dc` finds the DC point of a large deck (a whole chip of blocks) from the operating
   points of its blocks: a clamp homotopy with seeds, then a free operating point (see [Assemble a DC point](#assemble-a-dc-point)).
+- The ngspice operation `oscillator` gives f0, the amplitude and the white phase noise of an oscillator by the impulse
+  sensitivity function (see [Oscillator](#oscillator)).
 - Requirements can reduce a sweep table with the bracket rule (kind `sweep`), gate an RF block on mu over a band at
   each corner for each active stage (`gates.stability`), and cite assumption ids (`assumptions`); `simra assumptions`
   lists the rows of an assumption.
@@ -286,6 +288,12 @@ The default boundaries are PML on the sides and the top and PEC at the bottom. W
 microstrip on the IHP SG13G2 stackup stays at an energy plateau of -13 dB to -18 dB and never reaches the end
 criterion.
 
+A longer line can also stay above the end criterion with PML (simulated, openEMS 0.37, one-port runs of 60000 time
+steps, `margin_um` 200): a 600 um line reaches -41.0 dB, a 700 um line stays at -26 dB and an 800 um line at -20 dB.
+The 800 um line reaches -40.0 dB with `margin_um` 400, and -41.2 dB with PML also at the bottom. The mesh at the ports
+is the same for all lengths. A wave in the substrate that the side PML at 200 um does not absorb is the probable
+cause; the workaround registry entry `openems-sg13g2-long-line-decay` gives the workaround (a larger margin).
+
 The container test is one real run: a TopMetal2 line (300 um x 18 um) over a Metal1 ground on the IHP SG13G2 stackup,
 1 GHz to 60 GHz, two port jobs on 4 CPUs (see [test/openems-container.test.mjs](test/openems-container.test.mjs)).
 Result (openEMS 0.37, simulated): each port run reaches -40.5 dB after 16450 time steps on 68952 cells, in 16.5 s. At
@@ -307,10 +315,19 @@ each at -50 dB after 66930 to 77794 time steps, 1080 s in total. `simra snp-diff
 
 Without `cut`, the slits of the ground are solid metal, and the reflections differ by 1.1 dB to 1.2 dB at every
 frequency from 1 GHz (transmission 0.47 dB). With `cut`, the metal areas are equal to those of the reference model.
-The remaining reflection difference is 0.2 dB at 1 GHz and rises with frequency to 0.7 dB; its cause is not
-established. The known model differences that remain: the mesh (smallest cell 0.7 um to 0.85 um here, 1.0 um to
-1.8 um in the reference, which also has a refined region at the line), the via conductivity (fill factor 0.108 here,
-0.100 in the reference), and the reference has reciprocity enforced (mean of S_ij and S_ji).
+The remaining reflection difference is 0.2 dB at 1 GHz and rises with frequency to 0.7 dB. Three known model
+differences were tested one at a time (simulated, openEMS 0.37, 1 GHz to 400 GHz, maximum reflection difference to
+the reference):
+
+| change | S11 | S22 | S33 | result |
+| --- | --- | --- | --- | --- |
+| none (the run above) | 0.73 dB | 0.64 dB | 0.68 dB | |
+| reciprocity: mean of S_ij and S_ji, as the reference | 0.73 dB | 0.64 dB | 0.68 dB | excluded: it changes no S_ii; max \|S_ij - S_ji\| is 0.005 |
+| Via1 conductivity factor 0.1003 (`via_fill`), as the reference (0.108 before) | 0.76 dB | 0.66 dB | 0.71 dB | excluded: 0.03 dB or less change |
+| `min_cell_um` 1.5 (631680 cells), near the reference mesh | 0.73 dB | 0.43 dB | 0.66 dB | explains a part of S22 only |
+
+The cause of the S11 and S33 difference is not established. The refined region of the reference at the line was not
+tried.
 
 ## Workaround registry
 
@@ -363,10 +380,31 @@ gives one verdict row per item (requirement `gate connections <block>`):
 4. each control: bits, encoding, active level and reset value;
 5. a bias need or a control of the block that is not in the table;
 6. the problems of the table for this block: a need without a provider, a provider with another value or temperature
-   behaviour, a control without a definition.
+   behaviour, a control without a definition, a bias output that no other pin uses.
 
-A block without a record gets a row that is not run, so the check is never a pass. `npx simra connections --table <file>`
-checks the whole table; add `--block <name> --interface <file>` for one block.
+A block without a record gets a row that is not run, so the check is never a pass. A record that does not state a
+value (a supply voltage, a temperature behaviour) gives a row that is not run, not a fail.
+`npx simra connections --table <file>` checks the whole table; add `--block <name> --interface <file>` for one block.
+
+Result on a real chip (17 instances, 919 pins, 88 control fields; fixture
+[chip17.json](packages/kernel/test/fixtures/connections/chip17.json)). The table was converted from the chip's
+interface specification (bias values, control widths) and its top netlist (pins, nets, register map); the records
+from the testbench sources of each block, its control files and its subcircuit lines. The gate gives 6 distinct
+mismatches:
+
+| Mismatch | Instance and pin | Reading |
+| --- | --- | --- |
+| bias output without a consumer | `xbias.vref_f` | an open item of the chip's own list |
+| control width 4 bits in the specification, 5 in the block | `xbias.pa_t0` to `pa_t4` | stale specification row |
+| high-pass and gain codes: 3-bit binary in the specification, 7 and 6 one-hot lines in the block | `xif.hp0` to `hp6`, `xif.pg0` to `pg5` | stale specification row |
+| mixer reference 1.0 mA +-5 % in the specification, 1.1 mA in the block | `xmixi.m1_m`, `xmixq.m1_m` | stale specification row |
+| LO bias 2.25 V in the specification, 1.95 V in the block | `xmixi.vblo`, `xmixq.vblo` | stale specification row |
+| PA supply simulated at 0.75 V, the net is 0.90 V | `xpa.vccpa` | a range supply: the table holds one value (a limit of the format) |
+
+The chip's own list of open mismatches has six items. The gate finds the unused output and the stale specification
+rows. It does not find, by design, the items that are not pins, values or encodings: an ideal source inside a cell, a
+missing DC path in an EM fit, ESD and ideal resistors, one ground for all blocks, ideal port resistors, and a count
+of reference channels.
 
 ## Add a PDK
 
@@ -529,11 +567,84 @@ converges. The operation `assemble_dc` of the ngspice adapter builds the DC poin
 4. Then a free operating point runs without clamps, with `.nodeset` from the end of the sweep. Its node voltages are
    in `work/dc_point.json` (role `dc_point`). The measurement `free_op_max_dv_v` is the largest change from the end of
    the sweep.
+5. The free op has a time limit, `free_op_timeout_s` (default 2 x the time of the sweep, at least 300 s). When it
+   fails or passes the limit, the run fails. With `accept_clamp_end: true`, the run is completed with a warning, and
+   `dc_point.json` and the currents come from the end of the sweep, with the residual clamp of 10^-`decades` S on each
+   seeded node. `work/clamp_end.json` (role `clamp_end`) always has the end of the sweep; use it as the seed of a next
+   run when the free op moves nodes without a DC path (for example thermal nodes with self-heating off).
 
 The solver is Sparse 1.3, the ngspice default; `solver: "klu"` selects KLU. `options` adds one line of ngspice options,
 for example `reltol=1e-3 itl1=1000`. The test
 [test/ngspice-assemble.test.mjs](test/ngspice-assemble.test.mjs) uses a latch with two stable states: the seed
 selects the state, and the free operating point corrects a wrong seed of a divider.
+
+Result on a real chip (the same chip as the connection table: 17 block instances, 6561 seeded nodes, three corners).
+The reference is the stored result of the chip's own clamp-homotopy scripts, which use the same method without a free
+operating point: step A with self-heating off, seeded from the block points, then step B with self-heating on, seeded
+from the end of step A; 100 steps, 12 decades, one phase, Sparse 1.3 (simulated, ngspice 46, one CPU per run, three
+runs at a time on a shared server):
+
+| corner, step | clamp sweep | free op | total | reference | nodes > 1 mV different | supply currents |
+| --- | --- | --- | --- | --- | --- | --- |
+| tt, A | 194 s | 135 s | 337 s | 164 s | 37 (free op, see below); clamp end: 0 (max 0.6 uV) | equal to 0.001 mA |
+| fast -40 C, A | 193 s | 115 s | 315 s | 149 s | 39 (free op); clamp end: 0 (max 0.7 uV) | equal to 0.001 mA |
+| slow 125 C, A | 614 s | stopped at 600 s | 1223 s | 443 s | clamp end: 0 (max 4.6 uV) | equal to 0.001 mA, total 134.89 mA |
+| tt, B | 494 s | 160 s | 659 s | 274 s | 0 (max 63 uV) | total 140.48 mA, equal |
+| fast -40 C, B | 277 s | 119 s | 401 s | 302 s | 0 (max 0.24 mV) | total 148.42 mA, equal |
+| slow 125 C, B | 701 s | stopped at 900 s | 1609 s | 590 s | clamp end: 0 (max 2.6 uV) | total 134.89 mA, equal |
+
+In step A the free op moves the 37 thermal nodes of the HBTs (no DC path with self-heating off) from the residual
+clamp to 0 V, by up to 30 mV; at fast -40 C two more nodes (a test-current input to an open switch) move by 1.04 mV.
+These nodes have no defined DC value, so the end of the clamp sweep is the point to compare and to use as the next
+seed. At slow 125 C the free op does not converge in 600 s (step A) or 900 s (step B); the clamp end is the
+result there, as in the reference. Two faults of the tool on this chip were fixed: the free op at slow 125 C did not end in 45 min (now
+`free_op_timeout_s` and `accept_clamp_end`), and step B at fast -40 C seeded from the free op of step A (thermal nodes
+at exactly 0 V) went to gmin stepping after a NaN in the thermal limiter of the HBT model, where the seed from the
+clamp end (`clamp_end.json`) converges. The clamp sweep takes 0.9 to 1.8 times the reference time with the same deck
+and method; the run load of the server differed, so this ratio is not a property of the tool.
+
+## Oscillator
+
+The operation `oscillator` of the ngspice adapter gives the steady-state frequency, the amplitude and the white phase
+noise of an oscillator from transients, by the impulse sensitivity function (ISF).
+
+1. Give `deck` and `libs` as for `simulate`. The deck must start to oscillate by itself (for example with a short
+   current kick). Give `output` (`{p, n}`: the output is v(p) - v(n)), `tstep_s` (a fixed step), `settle_s` and
+   `ref_stop_s`. The reference run gives `f0_hz`, `amplitude_v` and `period_spread_rel` (a warning above 1e-3: the
+   oscillator is not in steady state at `settle_s`).
+2. Optional `isf`: the noise sources. A current source is `{name, nodes: "n+ n-", psd_a2_hz, mult}`, or
+   `{name, nodes, shot: "<current vector>", mult}` for shot noise 2 q |i(t)| of a vector of the reference run.
+   `psd_a2_hz` can also be a list with one PSD per phase (a cyclostationary PSD from another run); `t0_s` then fixes
+   the phase origin. A shot vector must be a conduction current: in a transient, the terminal currents of a bipolar
+   model, and `[ib]` of the ngspice VBIC model, include the charge currents. A series voltage source is `{name, vsource, psd_v2_hz, mult}`; `vsource` is a
+   voltage source of value 0 in the deck. `mult` counts identical sources by symmetry.
+3. For each source and each of `phases` phases, two runs inject +q and -q with a short triangle pulse. The shift of
+   the output zero crossings in `window_periods` (default 35 to 45 periods after the injection) gives the ISF. Then
+   L(df) = mult x 1/2 x (f0/df)^2 x mean(ISF^2 x S) for each source, and the total is the sum.
+4. `output_multiplier` gives L after an ideal frequency multiplier (+20 log10 of it). The measurements are
+   `l_<offset>_hz_dbc`, for example `l_1e+06_hz_dbc`. `work/oscillator.json` has the ISF, the PSD and L of each source.
+
+Flicker noise and AM-to-PM conversion after the oscillator are not included. The test
+[test/ngspice-oscillator.test.mjs](test/ngspice-oscillator.test.mjs) uses an LC oscillator with a limiting negative
+conductance: f0, the amplitude and L(1 MHz) of the tank resistor noise agree with the closed form for a sine output
+(simulated, ngspice 41 on the host: −128.92 dBc/Hz against −128.85 dBc/Hz).
+
+Result on a real VCO (simulated, ngspice 46, IHP SG13G2 typical, 27 C): the 61.8 GHz cross-coupled HBT oscillator of
+architecture A of the radar study (fixture [vco_a.spice](packages/kernel/test/fixtures/oscillator/vco_a.spice)), 32
+phases, six sources (tank, collector and base shot noise, rb, re, rc), the same pulse, charge and window as the stored
+result of the study's own ISF script. 384 runs, 681 s on 2 CPUs.
+
+| quantity | operation | stored | difference |
+| --- | --- | --- | --- |
+| f0 | 61.828 GHz | 61.830 GHz | 0.002 % |
+| ISF of each source, largest point difference over the rms | 0.3 % to 7.4 % (rc) | | |
+| L(1 MHz) of each source | | | 0.02 dB or less |
+| L(1 MHz) at 122 GHz, white noise | −88.63 dBc/Hz | −88.63 dBc/Hz (−88.60 with base flicker noise) | 0.01 dB |
+
+The first run used `shot` with the VBIC vectors `[ic]` and `[ib]`: the ISF was the same, but the base shot noise was
+24 dB too high and the collector shot noise 1.7 dB too high, because in a transient these vectors include the charge
+currents. The result above uses the conduction currents of the stored run as `psd_a2_hz` lists with `t0_s` 1 ns. The
+container test runs the same deck with 8 phases and the tank source only: −96.43 dBc/Hz at 2 f0 against −96.41.
 
 ## Check requirements
 

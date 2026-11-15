@@ -9,7 +9,8 @@
         "vss": { "net": "0", "kind": "ground" },
         "div_ref": { "net": "div_iref", "kind": "bias_out", "current_a": 5e-4, "tc": "constant" },
         "lna_ref": { "net": "lna_iref", "kind": "bias_out", "current_a": 9.31e-4, "tc": "ptat" },
-        "div_en": { "net": "div_en", "kind": "control", "control": "div_en" }
+        "div_en": { "net": "div_en", "kind": "control", "control": "div_en" },
+        "spare_ref": { "net": "spare_ref", "kind": "bias_out", "voltage_v": 1.2 }
       }
     },
     "div": {

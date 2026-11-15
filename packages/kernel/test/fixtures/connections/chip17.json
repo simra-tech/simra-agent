@@ -1,0 +1,4690 @@
+{
+ "schema": "simra.connections/0",
+ "supplies": {
+  "vcc33": {
+   "volts": 3.3,
+   "tolerance_rel": 0.001
+  },
+  "vcc18_lo": {
+   "volts": 1.8,
+   "tolerance_rel": 0.001
+  },
+  "vcc18_pa": {
+   "volts": 1.8,
+   "tolerance_rel": 0.001
+  },
+  "vcc18_rx": {
+   "volts": 1.8,
+   "tolerance_rel": 0.001
+  },
+  "vcc18_div": {
+   "volts": 1.8,
+   "tolerance_rel": 0.001
+  },
+  "vcc18_ctrl": {
+   "volts": 1.8,
+   "tolerance_rel": 0.001
+  },
+  "vdd12": {
+   "volts": 1.2,
+   "tolerance_rel": 0.001
+  },
+  "vccvco": {
+   "volts": 1.8,
+   "tolerance_rel": 0.001
+  },
+  "vcclna": {
+   "volts": 2.4,
+   "tolerance_rel": 0.001
+  },
+  "vccpa": {
+   "volts": 0.9,
+   "tolerance_rel": 0.001
+  }
+ },
+ "blocks": {
+  "xvco": {
+   "subckt": "r2t_vcodbl",
+   "pins": {
+    "vccb": {
+     "net": "vcc18_lo",
+     "kind": "supply"
+    },
+    "vccvco": {
+     "net": "vccvco",
+     "kind": "supply"
+    },
+    "vtune": {
+     "net": "VTUNE",
+     "kind": "signal"
+    },
+    "vbvar": {
+     "net": "vbvar",
+     "kind": "signal"
+    },
+    "vbvar2": {
+     "net": "vbvar2",
+     "kind": "signal"
+    },
+    "wb0": {
+     "net": "vco_band0_b",
+     "kind": "control",
+     "control": "vco_band"
+    },
+    "wb1": {
+     "net": "vco_band1_b",
+     "kind": "control",
+     "control": "vco_band"
+    },
+    "wb2": {
+     "net": "vco_band2_b",
+     "kind": "control",
+     "control": "vco_band"
+    },
+    "rep": {
+     "net": "vco_irep",
+     "kind": "bias",
+     "current_a": 0.0005,
+     "tolerance_rel": 0.05,
+     "provider": "xbias.i_vcor"
+    },
+    "rr": {
+     "net": "vco_itail",
+     "kind": "bias",
+     "current_a": 0.0006,
+     "tolerance_rel": 0.05,
+     "tc": "constant",
+     "provider": "xbias.i_vcot"
+    },
+    "rrd": {
+     "net": "dbl_iref",
+     "kind": "bias",
+     "current_a": 0.0005,
+     "tolerance_rel": 0.05,
+     "provider": "xbias.i_dbl"
+    },
+    "rrb1": {
+     "net": "buf1_iref",
+     "kind": "bias",
+     "current_a": 0.00125,
+     "tolerance_rel": 0.05,
+     "provider": "xbias.i_buf1"
+    },
+    "rrb2": {
+     "net": "buf2_iref",
+     "kind": "bias",
+     "current_a": 0.00175,
+     "tolerance_rel": 0.05,
+     "provider": "xbias.i_buf2"
+    },
+    "dva": {
+     "net": "div_dva",
+     "kind": "signal"
+    },
+    "dvb": {
+     "net": "div_dvb",
+     "kind": "signal"
+    },
+    "out": {
+     "net": "lo122",
+     "kind": "signal"
+    }
+   }
+  },
+  "xdiv": {
+   "subckt": "r2t_div",
+   "pins": {
+    "vcc": {
+     "net": "vcc33",
+     "kind": "supply"
+    },
+    "vcc18": {
+     "net": "vcc18_div",
+     "kind": "supply"
+    },
+    "dva": {
+     "net": "div_dva",
+     "kind": "signal"
+    },
+    "dvb": {
+     "net": "div_dvb",
+     "kind": "signal"
+    },
+    "pad": {
+     "net": "DIV_OUT",
+     "kind": "signal"
+    },
+    "vbx": {
+     "net": "div_iref",
+     "kind": "bias",
+     "current_a": 0.0005,
+     "tolerance_rel": 0.05,
+     "tc": "constant",
+     "provider": "xbias.i_div"
+    }
+   }
+  },
+  "xspl": {
+   "subckt": "r2_lo_split_g3",
+   "pins": {
+    "p1": {
+     "net": "lo122",
+     "kind": "signal"
+    },
+    "p2": {
+     "net": "txin",
+     "kind": "signal"
+    },
+    "p3": {
+     "net": "lomix",
+     "kind": "signal"
+    },
+    "vlvl": {
+     "net": "vlvl",
+     "kind": "signal"
+    },
+    "vlvd": {
+     "net": "vlvd",
+     "kind": "signal"
+    }
+   }
+  },
+  "xhyb": {
+   "subckt": "r2_lo_hyb",
+   "pins": {
+    "p1": {
+     "net": "lomix",
+     "kind": "signal"
+    },
+    "p1_ref": {
+     "net": "0",
+     "kind": "ground"
+    },
+    "p2": {
+     "net": "lo_i",
+     "kind": "signal"
+    },
+    "p2_ref": {
+     "net": "0",
+     "kind": "ground"
+    },
+    "p3": {
+     "net": "lo_q",
+     "kind": "signal"
+    },
+    "p3_ref": {
+     "net": "0",
+     "kind": "ground"
+    },
+    "p4": {
+     "net": "hyb_iso",
+     "kind": "signal"
+    },
+    "p4_ref": {
+     "net": "0",
+     "kind": "ground"
+    }
+   }
+  },
+  "xpa": {
+   "subckt": "r2t_pa",
+   "pins": {
+    "txin": {
+     "net": "txin",
+     "kind": "signal"
+    },
+    "ants": {
+     "net": "txout",
+     "kind": "signal"
+    },
+    "vccpa": {
+     "net": "vccpa",
+     "kind": "supply"
+    },
+    "vcc18": {
+     "net": "vcc18_pa",
+     "kind": "supply"
+    },
+    "nref1": {
+     "net": "pa_iref1",
+     "kind": "bias",
+     "current_a": 0.0019,
+     "tolerance_rel": 0.05,
+     "provider": "xbias.i_pa1"
+    },
+    "nref2": {
+     "net": "pa_iref2",
+     "kind": "bias",
+     "current_a": 0.0022,
+     "tolerance_rel": 0.05,
+     "provider": "xbias.i_pa2"
+    },
+    "vcb": {
+     "net": "vcbpa",
+     "kind": "signal"
+    }
+   }
+  },
+  "xdet": {
+   "subckt": "r2_det_revA",
+   "pins": {
+    "txout": {
+     "net": "txout",
+     "kind": "signal"
+    },
+    "lo122": {
+     "net": "lo122",
+     "kind": "signal"
+    },
+    "vcc18_pa": {
+     "net": "vcc18_pa",
+     "kind": "supply"
+    },
+    "vcc18_lo": {
+     "net": "vcc18_lo",
+     "kind": "supply"
+    },
+    "vcc33": {
+     "net": "vcc33",
+     "kind": "supply"
+    },
+    "vss": {
+     "net": "0",
+     "kind": "ground"
+    },
+    "dettx_iref": {
+     "net": "dettx_iref",
+     "kind": "bias",
+     "current_a": 2.5e-05,
+     "tolerance_rel": 0.05,
+     "tc": "ptat",
+     "provider": "xbias.i_det1"
+    },
+    "detlo_iref": {
+     "net": "detlo_iref",
+     "kind": "bias",
+     "current_a": 2.5e-05,
+     "tolerance_rel": 0.05,
+     "tc": "ptat",
+     "provider": "xbias.i_det2"
+    },
+    "tsen": {
+     "net": "tsen",
+     "kind": "signal"
+    },
+    "vb1s": {
+     "net": "vb1s",
+     "kind": "signal"
+    },
+    "itst": {
+     "net": "itst",
+     "kind": "signal"
+    },
+    "det_en_b": {
+     "net": "det_en_b",
+     "kind": "control",
+     "control": "det_en"
+    },
+    "det_sel0": {
+     "net": "det_sel0",
+     "kind": "control",
+     "control": "det_sel"
+    },
+    "det_sel0_b": {
+     "net": "det_sel0_b",
+     "kind": "control",
+     "control": "det_sel"
+    },
+    "det_sel1": {
+     "net": "det_sel1",
+     "kind": "control",
+     "control": "det_sel"
+    },
+    "det_sel1_b": {
+     "net": "det_sel1_b",
+     "kind": "control",
+     "control": "det_sel"
+    },
+    "det_sel2": {
+     "net": "det_sel2",
+     "kind": "control",
+     "control": "det_sel"
+    },
+    "det_sel2_b": {
+     "net": "det_sel2_b",
+     "kind": "control",
+     "control": "det_sel"
+    },
+    "det_mux_en": {
+     "net": "det_mux_en",
+     "kind": "control",
+     "control": "det_mux_en"
+    },
+    "detp": {
+     "net": "DETP",
+     "kind": "signal"
+    },
+    "detn": {
+     "net": "DETN",
+     "kind": "signal"
+    }
+   }
+  },
+  "xanttx": {
+   "subckt": "r2t_ant",
+   "pins": {
+    "p": {
+     "net": "txout",
+     "kind": "signal"
+    }
+   }
+  },
+  "xantrx": {
+   "subckt": "r2t_ant",
+   "pins": {
+    "p": {
+     "net": "rxin",
+     "kind": "signal"
+    }
+   }
+  },
+  "xlna": {
+   "subckt": "r2t_lna",
+   "pins": {
+    "rfin": {
+     "net": "rxin",
+     "kind": "signal"
+    },
+    "rfout": {
+     "net": "lnaout",
+     "kind": "signal"
+    },
+    "vcc18": {
+     "net": "vcc18_rx",
+     "kind": "supply"
+    },
+    "vcclna": {
+     "net": "vcclna",
+     "kind": "supply"
+    },
+    "vcas": {
+     "net": "vcas",
+     "kind": "bias",
+     "voltage_v": 1.9,
+     "tolerance_rel": 0.02,
+     "provider": "xbias.vcas"
+    },
+    "vsteer": {
+     "net": "vsteer",
+     "kind": "signal"
+    },
+    "iref1": {
+     "net": "lna_iref1",
+     "kind": "bias",
+     "current_a": 0.000931,
+     "tolerance_rel": 0.05,
+     "tc": "ptat",
+     "provider": "xbias.i_lna1"
+    },
+    "iref2": {
+     "net": "lna_iref2",
+     "kind": "bias",
+     "current_a": 0.001295,
+     "tolerance_rel": 0.05,
+     "tc": "ptat",
+     "provider": "xbias.i_lna2"
+    },
+    "iref3": {
+     "net": "lna_iref3",
+     "kind": "bias",
+     "current_a": 0.001387,
+     "tolerance_rel": 0.05,
+     "tc": "ptat",
+     "provider": "xbias.i_lna3"
+    },
+    "hx2": {
+     "net": "LNA_STA",
+     "kind": "signal"
+    },
+    "hy2": {
+     "net": "LNA_STB",
+     "kind": "signal"
+    }
+   }
+  },
+  "xspm": {
+   "subckt": "r2_mix_split",
+   "pins": {
+    "p1": {
+     "net": "lnaout",
+     "kind": "signal"
+    },
+    "p1_ref": {
+     "net": "0",
+     "kind": "ground"
+    },
+    "p2": {
+     "net": "rf_i",
+     "kind": "signal"
+    },
+    "p2_ref": {
+     "net": "0",
+     "kind": "ground"
+    },
+    "p3": {
+     "net": "rf_q",
+     "kind": "signal"
+    },
+    "p3_ref": {
+     "net": "0",
+     "kind": "ground"
+    }
+   }
+  },
+  "xmixi": {
+   "subckt": "r2t_mix",
+   "pins": {
+    "vcc": {
+     "net": "vcc33",
+     "kind": "supply"
+    },
+    "rfp": {
+     "net": "rf_i",
+     "kind": "signal"
+    },
+    "lo1": {
+     "net": "lo_i",
+     "kind": "signal"
+    },
+    "ifp": {
+     "net": "ifip",
+     "kind": "signal"
+    },
+    "ifn": {
+     "net": "ifin",
+     "kind": "signal"
+    },
+    "m1_m": {
+     "net": "mixi_iref",
+     "kind": "bias",
+     "current_a": 0.001,
+     "tolerance_rel": 0.05,
+     "provider": "xbias.i_mixi"
+    },
+    "eb": {
+     "net": "mixi_tail",
+     "kind": "bias",
+     "current_a": 0.006,
+     "tolerance_rel": 0.05,
+     "provider": "xbias.tail_i"
+    },
+    "vbbuf": {
+     "net": "vbbuf",
+     "kind": "signal"
+    },
+    "vbcas": {
+     "net": "vbcas",
+     "kind": "signal"
+    },
+    "vblo": {
+     "net": "vblo",
+     "kind": "bias",
+     "voltage_v": 2.25,
+     "tolerance_rel": 0.02,
+     "provider": "xbias.vblo"
+    }
+   }
+  },
+  "xmixq": {
+   "subckt": "r2t_mix",
+   "pins": {
+    "vcc": {
+     "net": "vcc33",
+     "kind": "supply"
+    },
+    "rfp": {
+     "net": "rf_q",
+     "kind": "signal"
+    },
+    "lo1": {
+     "net": "lo_q",
+     "kind": "signal"
+    },
+    "ifp": {
+     "net": "ifqp",
+     "kind": "signal"
+    },
+    "ifn": {
+     "net": "ifqn",
+     "kind": "signal"
+    },
+    "m1_m": {
+     "net": "mixq_iref",
+     "kind": "bias",
+     "current_a": 0.001,
+     "tolerance_rel": 0.05,
+     "provider": "xbias.i_mixq"
+    },
+    "eb": {
+     "net": "mixq_tail",
+     "kind": "bias",
+     "current_a": 0.006,
+     "tolerance_rel": 0.05,
+     "provider": "xbias.tail_q"
+    },
+    "vbbuf": {
+     "net": "vbbuf",
+     "kind": "signal"
+    },
+    "vbcas": {
+     "net": "vbcas",
+     "kind": "signal"
+    },
+    "vblo": {
+     "net": "vblo",
+     "kind": "bias",
+     "voltage_v": 2.25,
+     "tolerance_rel": 0.02,
+     "provider": "xbias.vblo"
+    }
+   }
+  },
+  "xif": {
+   "subckt": "r2_if",
+   "pins": {
+    "ifip": {
+     "net": "ifip",
+     "kind": "signal"
+    },
+    "ifin": {
+     "net": "ifin",
+     "kind": "signal"
+    },
+    "ifqp": {
+     "net": "ifqp",
+     "kind": "signal"
+    },
+    "ifqn": {
+     "net": "ifqn",
+     "kind": "signal"
+    },
+    "outip": {
+     "net": "ADCIP",
+     "kind": "signal"
+    },
+    "outin": {
+     "net": "ADCIN",
+     "kind": "signal"
+    },
+    "outqp": {
+     "net": "ADCQP",
+     "kind": "signal"
+    },
+    "outqn": {
+     "net": "ADCQN",
+     "kind": "signal"
+    },
+    "vcc33": {
+     "net": "vcc33",
+     "kind": "supply"
+    },
+    "vss": {
+     "net": "0",
+     "kind": "ground"
+    },
+    "irefi": {
+     "net": "if_irefi",
+     "kind": "bias",
+     "current_a": 2e-05,
+     "tolerance_rel": 0.05,
+     "provider": "xbias.i_ifi"
+    },
+    "irefq": {
+     "net": "if_irefq",
+     "kind": "bias",
+     "current_a": 2e-05,
+     "tolerance_rel": 0.05,
+     "provider": "xbias.i_ifq"
+    },
+    "irefr": {
+     "net": "if_irefr",
+     "kind": "bias",
+     "current_a": 2e-05,
+     "tolerance_rel": 0.05,
+     "provider": "xbias.i_ifr"
+    },
+    "vcm": {
+     "net": "vcm",
+     "kind": "bias",
+     "voltage_v": 1.4,
+     "tolerance_rel": 0.02,
+     "provider": "xbias.vcm"
+    },
+    "hp0": {
+     "net": "if_hp0",
+     "kind": "control",
+     "control": "if_hp"
+    },
+    "hp1": {
+     "net": "if_hp1",
+     "kind": "control",
+     "control": "if_hp"
+    },
+    "hp2": {
+     "net": "if_hp2",
+     "kind": "control",
+     "control": "if_hp"
+    },
+    "hp3": {
+     "net": "if_hp3",
+     "kind": "control",
+     "control": "if_hp"
+    },
+    "hp4": {
+     "net": "if_hp4",
+     "kind": "control",
+     "control": "if_hp"
+    },
+    "hp5": {
+     "net": "if_hp5",
+     "kind": "control",
+     "control": "if_hp"
+    },
+    "hp6": {
+     "net": "if_hp6",
+     "kind": "control",
+     "control": "if_hp"
+    },
+    "hpb0": {
+     "net": "if_hp0_b",
+     "kind": "control",
+     "control": "if_hp"
+    },
+    "hpb1": {
+     "net": "if_hp1_b",
+     "kind": "control",
+     "control": "if_hp"
+    },
+    "hpb2": {
+     "net": "if_hp2_b",
+     "kind": "control",
+     "control": "if_hp"
+    },
+    "hpb3": {
+     "net": "if_hp3_b",
+     "kind": "control",
+     "control": "if_hp"
+    },
+    "hpb4": {
+     "net": "if_hp4_b",
+     "kind": "control",
+     "control": "if_hp"
+    },
+    "hpb5": {
+     "net": "if_hp5_b",
+     "kind": "control",
+     "control": "if_hp"
+    },
+    "hpb6": {
+     "net": "if_hp6_b",
+     "kind": "control",
+     "control": "if_hp"
+    },
+    "pg0": {
+     "net": "if_pga0",
+     "kind": "control",
+     "control": "if_pga"
+    },
+    "pg1": {
+     "net": "if_pga1",
+     "kind": "control",
+     "control": "if_pga"
+    },
+    "pg2": {
+     "net": "if_pga2",
+     "kind": "control",
+     "control": "if_pga"
+    },
+    "pg3": {
+     "net": "if_pga3",
+     "kind": "control",
+     "control": "if_pga"
+    },
+    "pg4": {
+     "net": "if_pga4",
+     "kind": "control",
+     "control": "if_pga"
+    },
+    "pg5": {
+     "net": "if_pga5",
+     "kind": "control",
+     "control": "if_pga"
+    },
+    "pgb0": {
+     "net": "if_pga0_b",
+     "kind": "control",
+     "control": "if_pga"
+    },
+    "pgb1": {
+     "net": "if_pga1_b",
+     "kind": "control",
+     "control": "if_pga"
+    },
+    "pgb2": {
+     "net": "if_pga2_b",
+     "kind": "control",
+     "control": "if_pga"
+    },
+    "pgb3": {
+     "net": "if_pga3_b",
+     "kind": "control",
+     "control": "if_pga"
+    },
+    "pgb4": {
+     "net": "if_pga4_b",
+     "kind": "control",
+     "control": "if_pga"
+    },
+    "pgb5": {
+     "net": "if_pga5_b",
+     "kind": "control",
+     "control": "if_pga"
+    },
+    "fs": {
+     "net": "fs",
+     "kind": "control",
+     "control": "fs"
+    },
+    "fsb": {
+     "net": "fs_b",
+     "kind": "control",
+     "control": "fs"
+    },
+    "set": {
+     "net": "if_set",
+     "kind": "control",
+     "control": "if_set"
+    },
+    "setb": {
+     "net": "if_set_b",
+     "kind": "control",
+     "control": "if_set"
+    },
+    "lt0": {
+     "net": "if_lt0",
+     "kind": "control",
+     "control": "if_lt"
+    },
+    "lt1": {
+     "net": "if_lt1",
+     "kind": "control",
+     "control": "if_lt"
+    },
+    "ltb0": {
+     "net": "if_lt0_b",
+     "kind": "control",
+     "control": "if_lt"
+    },
+    "ltb1": {
+     "net": "if_lt1_b",
+     "kind": "control",
+     "control": "if_lt"
+    }
+   }
+  },
+  "xbias": {
+   "subckt": "r2_bias",
+   "pins": {
+    "vcc33": {
+     "net": "vcc33",
+     "kind": "supply"
+    },
+    "vcc18": {
+     "net": "vcc18_pa",
+     "kind": "supply"
+    },
+    "vss": {
+     "net": "0",
+     "kind": "ground"
+    },
+    "i_lna1": {
+     "net": "lna_iref1",
+     "kind": "bias_out",
+     "current_a": 0.000931,
+     "tc": "ptat"
+    },
+    "i_lna2": {
+     "net": "lna_iref2",
+     "kind": "bias_out",
+     "current_a": 0.001295,
+     "tc": "ptat"
+    },
+    "i_lna3": {
+     "net": "lna_iref3",
+     "kind": "bias_out",
+     "current_a": 0.001387,
+     "tc": "ptat"
+    },
+    "i_pa1": {
+     "net": "pa_iref1",
+     "kind": "bias_out",
+     "current_a": 0.0019
+    },
+    "i_pa2": {
+     "net": "pa_iref2",
+     "kind": "bias_out",
+     "current_a": 0.0022
+    },
+    "i_mixi": {
+     "net": "mixi_iref",
+     "kind": "bias_out",
+     "current_a": 0.001
+    },
+    "i_mixq": {
+     "net": "mixq_iref",
+     "kind": "bias_out",
+     "current_a": 0.001
+    },
+    "i_vcot": {
+     "net": "vco_itail",
+     "kind": "bias_out",
+     "current_a": 0.0006,
+     "tc": "constant"
+    },
+    "i_vcor": {
+     "net": "vco_irep",
+     "kind": "bias_out",
+     "current_a": 0.0005
+    },
+    "i_div": {
+     "net": "div_iref",
+     "kind": "bias_out",
+     "current_a": 0.0005,
+     "tc": "constant"
+    },
+    "i_dbl": {
+     "net": "dbl_iref",
+     "kind": "bias_out",
+     "current_a": 0.0005
+    },
+    "i_buf1": {
+     "net": "buf1_iref",
+     "kind": "bias_out",
+     "current_a": 0.00125
+    },
+    "i_buf2": {
+     "net": "buf2_iref",
+     "kind": "bias_out",
+     "current_a": 0.00175
+    },
+    "i_ifi": {
+     "net": "if_irefi",
+     "kind": "bias_out",
+     "current_a": 2e-05
+    },
+    "i_ifq": {
+     "net": "if_irefq",
+     "kind": "bias_out",
+     "current_a": 2e-05
+    },
+    "i_ifr": {
+     "net": "if_irefr",
+     "kind": "bias_out",
+     "current_a": 2e-05
+    },
+    "i_det1": {
+     "net": "dettx_iref",
+     "kind": "bias_out",
+     "current_a": 2.5e-05,
+     "tc": "ptat"
+    },
+    "i_det2": {
+     "net": "detlo_iref",
+     "kind": "bias_out",
+     "current_a": 2.5e-05,
+     "tc": "ptat"
+    },
+    "i_itst": {
+     "net": "itst",
+     "kind": "signal"
+    },
+    "tail_i": {
+     "net": "mixi_tail",
+     "kind": "bias_out",
+     "current_a": 0.006
+    },
+    "tail_q": {
+     "net": "mixq_tail",
+     "kind": "bias_out",
+     "current_a": 0.006
+    },
+    "vccpa": {
+     "net": "vccpa",
+     "kind": "bias_out",
+     "voltage_v": 0.9
+    },
+    "vccvco": {
+     "net": "vccvco",
+     "kind": "bias_out",
+     "voltage_v": 1.8
+    },
+    "vblo": {
+     "net": "vblo",
+     "kind": "bias_out",
+     "voltage_v": 2.25
+    },
+    "vbvar": {
+     "net": "vbvar",
+     "kind": "signal"
+    },
+    "vbvar2": {
+     "net": "vbvar2",
+     "kind": "signal"
+    },
+    "vref_f": {
+     "net": "bias_vref_f",
+     "kind": "bias_out",
+     "voltage_v": 1.2
+    },
+    "vref_b": {
+     "net": "vref_b",
+     "kind": "bias_out",
+     "voltage_v": 1.2
+    },
+    "vcm": {
+     "net": "vcm",
+     "kind": "bias_out",
+     "voltage_v": 1.4
+    },
+    "tsen": {
+     "net": "tsen",
+     "kind": "signal"
+    },
+    "vcclna": {
+     "net": "vcclna",
+     "kind": "bias_out",
+     "voltage_v": 2.4
+    },
+    "vcas": {
+     "net": "vcas",
+     "kind": "bias_out",
+     "voltage_v": 1.9
+    },
+    "vsteer": {
+     "net": "vsteer",
+     "kind": "signal"
+    },
+    "vcbpa": {
+     "net": "vcbpa",
+     "kind": "signal"
+    },
+    "vb1s": {
+     "net": "vb1s_b",
+     "kind": "signal"
+    },
+    "vbbuf": {
+     "net": "vbbuf",
+     "kind": "signal"
+    },
+    "vbcas": {
+     "net": "vbcas",
+     "kind": "signal"
+    },
+    "vlvl": {
+     "net": "vlvl",
+     "kind": "signal"
+    },
+    "vlvd": {
+     "net": "vlvd",
+     "kind": "signal"
+    },
+    "lna1_en": {
+     "net": "lna1_en",
+     "kind": "control",
+     "control": "lna1_en"
+    },
+    "lna1_s0": {
+     "net": "lna1_s0",
+     "kind": "control",
+     "control": "lna1_s"
+    },
+    "lna1_s1": {
+     "net": "lna1_s1",
+     "kind": "control",
+     "control": "lna1_s"
+    },
+    "lna1_v0": {
+     "net": "lna1_v0",
+     "kind": "control",
+     "control": "lna1_v"
+    },
+    "lna1_v1": {
+     "net": "lna1_v1",
+     "kind": "control",
+     "control": "lna1_v"
+    },
+    "lna1_v2": {
+     "net": "lna1_v2",
+     "kind": "control",
+     "control": "lna1_v"
+    },
+    "lna2_en": {
+     "net": "lna2_en",
+     "kind": "control",
+     "control": "lna2_en"
+    },
+    "lna2_s0": {
+     "net": "lna2_s0",
+     "kind": "control",
+     "control": "lna2_s"
+    },
+    "lna2_s1": {
+     "net": "lna2_s1",
+     "kind": "control",
+     "control": "lna2_s"
+    },
+    "lna2_v0": {
+     "net": "lna2_v0",
+     "kind": "control",
+     "control": "lna2_v"
+    },
+    "lna2_v1": {
+     "net": "lna2_v1",
+     "kind": "control",
+     "control": "lna2_v"
+    },
+    "lna2_v2": {
+     "net": "lna2_v2",
+     "kind": "control",
+     "control": "lna2_v"
+    },
+    "lna3_en": {
+     "net": "lna3_en",
+     "kind": "control",
+     "control": "lna3_en"
+    },
+    "lna3_s0": {
+     "net": "lna3_s0",
+     "kind": "control",
+     "control": "lna3_s"
+    },
+    "lna3_s1": {
+     "net": "lna3_s1",
+     "kind": "control",
+     "control": "lna3_s"
+    },
+    "lna3_v0": {
+     "net": "lna3_v0",
+     "kind": "control",
+     "control": "lna3_v"
+    },
+    "lna3_v1": {
+     "net": "lna3_v1",
+     "kind": "control",
+     "control": "lna3_v"
+    },
+    "lna3_v2": {
+     "net": "lna3_v2",
+     "kind": "control",
+     "control": "lna3_v"
+    },
+    "pa1_en": {
+     "net": "pa1_en",
+     "kind": "control",
+     "control": "pa1_en"
+    },
+    "pa1_s0": {
+     "net": "pa1_s0",
+     "kind": "control",
+     "control": "pa1_s"
+    },
+    "pa1_s1": {
+     "net": "pa1_s1",
+     "kind": "control",
+     "control": "pa1_s"
+    },
+    "pa1_v0": {
+     "net": "pa1_v0",
+     "kind": "control",
+     "control": "pa1_v"
+    },
+    "pa1_v1": {
+     "net": "pa1_v1",
+     "kind": "control",
+     "control": "pa1_v"
+    },
+    "pa1_v2": {
+     "net": "pa1_v2",
+     "kind": "control",
+     "control": "pa1_v"
+    },
+    "pa2_en": {
+     "net": "pa2_en",
+     "kind": "control",
+     "control": "pa2_en"
+    },
+    "pa2_s0": {
+     "net": "pa2_s0",
+     "kind": "control",
+     "control": "pa2_s"
+    },
+    "pa2_s1": {
+     "net": "pa2_s1",
+     "kind": "control",
+     "control": "pa2_s"
+    },
+    "pa2_v0": {
+     "net": "pa2_v0",
+     "kind": "control",
+     "control": "pa2_v"
+    },
+    "pa2_v1": {
+     "net": "pa2_v1",
+     "kind": "control",
+     "control": "pa2_v"
+    },
+    "pa2_v2": {
+     "net": "pa2_v2",
+     "kind": "control",
+     "control": "pa2_v"
+    },
+    "mixi_en": {
+     "net": "mixi_en",
+     "kind": "control",
+     "control": "mixi_en"
+    },
+    "mixi_s0": {
+     "net": "mixi_s0",
+     "kind": "control",
+     "control": "mixi_s"
+    },
+    "mixi_s1": {
+     "net": "mixi_s1",
+     "kind": "control",
+     "control": "mixi_s"
+    },
+    "mixi_v0": {
+     "net": "mixi_v0",
+     "kind": "control",
+     "control": "mixi_v"
+    },
+    "mixi_v1": {
+     "net": "mixi_v1",
+     "kind": "control",
+     "control": "mixi_v"
+    },
+    "mixi_v2": {
+     "net": "mixi_v2",
+     "kind": "control",
+     "control": "mixi_v"
+    },
+    "mixq_en": {
+     "net": "mixq_en",
+     "kind": "control",
+     "control": "mixq_en"
+    },
+    "mixq_s0": {
+     "net": "mixq_s0",
+     "kind": "control",
+     "control": "mixq_s"
+    },
+    "mixq_s1": {
+     "net": "mixq_s1",
+     "kind": "control",
+     "control": "mixq_s"
+    },
+    "mixq_v0": {
+     "net": "mixq_v0",
+     "kind": "control",
+     "control": "mixq_v"
+    },
+    "mixq_v1": {
+     "net": "mixq_v1",
+     "kind": "control",
+     "control": "mixq_v"
+    },
+    "mixq_v2": {
+     "net": "mixq_v2",
+     "kind": "control",
+     "control": "mixq_v"
+    },
+    "mixti_en": {
+     "net": "mixti_en",
+     "kind": "control",
+     "control": "mixti_en"
+    },
+    "mixti_s0": {
+     "net": "mixti_s0",
+     "kind": "control",
+     "control": "mixti_s"
+    },
+    "mixti_s1": {
+     "net": "mixti_s1",
+     "kind": "control",
+     "control": "mixti_s"
+    },
+    "mixti_v0": {
+     "net": "mixti_v0",
+     "kind": "control",
+     "control": "mixti_v"
+    },
+    "mixti_v1": {
+     "net": "mixti_v1",
+     "kind": "control",
+     "control": "mixti_v"
+    },
+    "mixti_v2": {
+     "net": "mixti_v2",
+     "kind": "control",
+     "control": "mixti_v"
+    },
+    "mixtq_en": {
+     "net": "mixtq_en",
+     "kind": "control",
+     "control": "mixtq_en"
+    },
+    "mixtq_s0": {
+     "net": "mixtq_s0",
+     "kind": "control",
+     "control": "mixtq_s"
+    },
+    "mixtq_s1": {
+     "net": "mixtq_s1",
+     "kind": "control",
+     "control": "mixtq_s"
+    },
+    "mixtq_v0": {
+     "net": "mixtq_v0",
+     "kind": "control",
+     "control": "mixtq_v"
+    },
+    "mixtq_v1": {
+     "net": "mixtq_v1",
+     "kind": "control",
+     "control": "mixtq_v"
+    },
+    "mixtq_v2": {
+     "net": "mixtq_v2",
+     "kind": "control",
+     "control": "mixtq_v"
+    },
+    "vcot_en": {
+     "net": "vcot_en",
+     "kind": "control",
+     "control": "vcot_en"
+    },
+    "vcot_s0": {
+     "net": "vcot_s0",
+     "kind": "control",
+     "control": "vcot_s"
+    },
+    "vcot_s1": {
+     "net": "vcot_s1",
+     "kind": "control",
+     "control": "vcot_s"
+    },
+    "vcot_v0": {
+     "net": "vcot_v0",
+     "kind": "control",
+     "control": "vcot_v"
+    },
+    "vcot_v1": {
+     "net": "vcot_v1",
+     "kind": "control",
+     "control": "vcot_v"
+    },
+    "vcot_v2": {
+     "net": "vcot_v2",
+     "kind": "control",
+     "control": "vcot_v"
+    },
+    "vcor_en": {
+     "net": "vcor_en",
+     "kind": "control",
+     "control": "vcor_en"
+    },
+    "vcor_s0": {
+     "net": "vcor_s0",
+     "kind": "control",
+     "control": "vcor_s"
+    },
+    "vcor_s1": {
+     "net": "vcor_s1",
+     "kind": "control",
+     "control": "vcor_s"
+    },
+    "vcor_v0": {
+     "net": "vcor_v0",
+     "kind": "control",
+     "control": "vcor_v"
+    },
+    "vcor_v1": {
+     "net": "vcor_v1",
+     "kind": "control",
+     "control": "vcor_v"
+    },
+    "vcor_v2": {
+     "net": "vcor_v2",
+     "kind": "control",
+     "control": "vcor_v"
+    },
+    "div_en": {
+     "net": "div_en",
+     "kind": "control",
+     "control": "div_en"
+    },
+    "div_s0": {
+     "net": "div_s0",
+     "kind": "control",
+     "control": "div_s"
+    },
+    "div_s1": {
+     "net": "div_s1",
+     "kind": "control",
+     "control": "div_s"
+    },
+    "div_v0": {
+     "net": "div_v0",
+     "kind": "control",
+     "control": "div_v"
+    },
+    "div_v1": {
+     "net": "div_v1",
+     "kind": "control",
+     "control": "div_v"
+    },
+    "div_v2": {
+     "net": "div_v2",
+     "kind": "control",
+     "control": "div_v"
+    },
+    "dbl_en": {
+     "net": "dbl_en",
+     "kind": "control",
+     "control": "dbl_en"
+    },
+    "dbl_s0": {
+     "net": "dbl_s0",
+     "kind": "control",
+     "control": "dbl_s"
+    },
+    "dbl_s1": {
+     "net": "dbl_s1",
+     "kind": "control",
+     "control": "dbl_s"
+    },
+    "dbl_v0": {
+     "net": "dbl_v0",
+     "kind": "control",
+     "control": "dbl_v"
+    },
+    "dbl_v1": {
+     "net": "dbl_v1",
+     "kind": "control",
+     "control": "dbl_v"
+    },
+    "dbl_v2": {
+     "net": "dbl_v2",
+     "kind": "control",
+     "control": "dbl_v"
+    },
+    "buf1_en": {
+     "net": "buf1_en",
+     "kind": "control",
+     "control": "buf1_en"
+    },
+    "buf1_s0": {
+     "net": "buf1_s0",
+     "kind": "control",
+     "control": "buf1_s"
+    },
+    "buf1_s1": {
+     "net": "buf1_s1",
+     "kind": "control",
+     "control": "buf1_s"
+    },
+    "buf1_v0": {
+     "net": "buf1_v0",
+     "kind": "control",
+     "control": "buf1_v"
+    },
+    "buf1_v1": {
+     "net": "buf1_v1",
+     "kind": "control",
+     "control": "buf1_v"
+    },
+    "buf1_v2": {
+     "net": "buf1_v2",
+     "kind": "control",
+     "control": "buf1_v"
+    },
+    "buf2_en": {
+     "net": "buf2_en",
+     "kind": "control",
+     "control": "buf2_en"
+    },
+    "buf2_s0": {
+     "net": "buf2_s0",
+     "kind": "control",
+     "control": "buf2_s"
+    },
+    "buf2_s1": {
+     "net": "buf2_s1",
+     "kind": "control",
+     "control": "buf2_s"
+    },
+    "buf2_v0": {
+     "net": "buf2_v0",
+     "kind": "control",
+     "control": "buf2_v"
+    },
+    "buf2_v1": {
+     "net": "buf2_v1",
+     "kind": "control",
+     "control": "buf2_v"
+    },
+    "buf2_v2": {
+     "net": "buf2_v2",
+     "kind": "control",
+     "control": "buf2_v"
+    },
+    "ifi_en": {
+     "net": "ifi_en",
+     "kind": "control",
+     "control": "ifi_en"
+    },
+    "ifi_s0": {
+     "net": "ifi_s0",
+     "kind": "control",
+     "control": "ifi_s"
+    },
+    "ifi_s1": {
+     "net": "ifi_s1",
+     "kind": "control",
+     "control": "ifi_s"
+    },
+    "ifi_v0": {
+     "net": "ifi_v0",
+     "kind": "control",
+     "control": "ifi_v"
+    },
+    "ifi_v1": {
+     "net": "ifi_v1",
+     "kind": "control",
+     "control": "ifi_v"
+    },
+    "ifi_v2": {
+     "net": "ifi_v2",
+     "kind": "control",
+     "control": "ifi_v"
+    },
+    "ifq_en": {
+     "net": "ifq_en",
+     "kind": "control",
+     "control": "ifq_en"
+    },
+    "ifq_s0": {
+     "net": "ifq_s0",
+     "kind": "control",
+     "control": "ifq_s"
+    },
+    "ifq_s1": {
+     "net": "ifq_s1",
+     "kind": "control",
+     "control": "ifq_s"
+    },
+    "ifq_v0": {
+     "net": "ifq_v0",
+     "kind": "control",
+     "control": "ifq_v"
+    },
+    "ifq_v1": {
+     "net": "ifq_v1",
+     "kind": "control",
+     "control": "ifq_v"
+    },
+    "ifq_v2": {
+     "net": "ifq_v2",
+     "kind": "control",
+     "control": "ifq_v"
+    },
+    "ifr_en": {
+     "net": "ifr_en",
+     "kind": "control",
+     "control": "ifr_en"
+    },
+    "ifr_s0": {
+     "net": "ifr_s0",
+     "kind": "control",
+     "control": "ifr_s"
+    },
+    "ifr_s1": {
+     "net": "ifr_s1",
+     "kind": "control",
+     "control": "ifr_s"
+    },
+    "ifr_v0": {
+     "net": "ifr_v0",
+     "kind": "control",
+     "control": "ifr_v"
+    },
+    "ifr_v1": {
+     "net": "ifr_v1",
+     "kind": "control",
+     "control": "ifr_v"
+    },
+    "ifr_v2": {
+     "net": "ifr_v2",
+     "kind": "control",
+     "control": "ifr_v"
+    },
+    "det1_en": {
+     "net": "det1_en",
+     "kind": "control",
+     "control": "det1_en"
+    },
+    "det1_s0": {
+     "net": "det1_s0",
+     "kind": "control",
+     "control": "det1_s"
+    },
+    "det1_s1": {
+     "net": "det1_s1",
+     "kind": "control",
+     "control": "det1_s"
+    },
+    "det1_v0": {
+     "net": "det1_v0",
+     "kind": "control",
+     "control": "det1_v"
+    },
+    "det1_v1": {
+     "net": "det1_v1",
+     "kind": "control",
+     "control": "det1_v"
+    },
+    "det1_v2": {
+     "net": "det1_v2",
+     "kind": "control",
+     "control": "det1_v"
+    },
+    "det2_en": {
+     "net": "det2_en",
+     "kind": "control",
+     "control": "det2_en"
+    },
+    "det2_s0": {
+     "net": "det2_s0",
+     "kind": "control",
+     "control": "det2_s"
+    },
+    "det2_s1": {
+     "net": "det2_s1",
+     "kind": "control",
+     "control": "det2_s"
+    },
+    "det2_v0": {
+     "net": "det2_v0",
+     "kind": "control",
+     "control": "det2_v"
+    },
+    "det2_v1": {
+     "net": "det2_v1",
+     "kind": "control",
+     "control": "det2_v"
+    },
+    "det2_v2": {
+     "net": "det2_v2",
+     "kind": "control",
+     "control": "det2_v"
+    },
+    "tsen_en": {
+     "net": "tsen_en",
+     "kind": "control",
+     "control": "tsen_en"
+    },
+    "tsen_s0": {
+     "net": "tsen_s0",
+     "kind": "control",
+     "control": "tsen_s"
+    },
+    "tsen_s1": {
+     "net": "tsen_s1",
+     "kind": "control",
+     "control": "tsen_s"
+    },
+    "tsen_v0": {
+     "net": "tsen_v0",
+     "kind": "control",
+     "control": "tsen_v"
+    },
+    "tsen_v1": {
+     "net": "tsen_v1",
+     "kind": "control",
+     "control": "tsen_v"
+    },
+    "tsen_v2": {
+     "net": "tsen_v2",
+     "kind": "control",
+     "control": "tsen_v"
+    },
+    "itst_en": {
+     "net": "itst_en",
+     "kind": "control",
+     "control": "itst_en"
+    },
+    "itst_s0": {
+     "net": "itst_s0",
+     "kind": "control",
+     "control": "itst_s"
+    },
+    "itst_s1": {
+     "net": "itst_s1",
+     "kind": "control",
+     "control": "itst_s"
+    },
+    "itst_v0": {
+     "net": "itst_v0",
+     "kind": "control",
+     "control": "itst_v"
+    },
+    "itst_v1": {
+     "net": "itst_v1",
+     "kind": "control",
+     "control": "itst_v"
+    },
+    "itst_v2": {
+     "net": "itst_v2",
+     "kind": "control",
+     "control": "itst_v"
+    },
+    "pacb_en": {
+     "net": "pacb_en",
+     "kind": "control",
+     "control": "pacb_en"
+    },
+    "pacb_s0": {
+     "net": "pacb_s0",
+     "kind": "control",
+     "control": "pacb_s"
+    },
+    "pacb_s1": {
+     "net": "pacb_s1",
+     "kind": "control",
+     "control": "pacb_s"
+    },
+    "pacb_v0": {
+     "net": "pacb_v0",
+     "kind": "control",
+     "control": "pacb_v"
+    },
+    "pacb_v1": {
+     "net": "pacb_v1",
+     "kind": "control",
+     "control": "pacb_v"
+    },
+    "pacb_v2": {
+     "net": "pacb_v2",
+     "kind": "control",
+     "control": "pacb_v"
+    },
+    "pa_en": {
+     "net": "pa_en",
+     "kind": "control",
+     "control": "pa_en"
+    },
+    "pa_t0": {
+     "net": "pa_t0",
+     "kind": "control",
+     "control": "pa_t"
+    },
+    "pa_t1": {
+     "net": "pa_t1",
+     "kind": "control",
+     "control": "pa_t"
+    },
+    "pa_t2": {
+     "net": "pa_t2",
+     "kind": "control",
+     "control": "pa_t"
+    },
+    "pa_t3": {
+     "net": "pa_t3",
+     "kind": "control",
+     "control": "pa_t"
+    },
+    "pa_t4": {
+     "net": "pa_t4",
+     "kind": "control",
+     "control": "pa_t"
+    },
+    "vco_en": {
+     "net": "vco_en",
+     "kind": "control",
+     "control": "vco_en"
+    },
+    "vblo_en": {
+     "net": "vblo_en",
+     "kind": "control",
+     "control": "vblo_en"
+    },
+    "vcm_en": {
+     "net": "vcm_en",
+     "kind": "control",
+     "control": "vcm_en"
+    },
+    "fst": {
+     "net": "fst",
+     "kind": "control",
+     "control": "fst"
+    },
+    "gt0": {
+     "net": "gt0",
+     "kind": "control",
+     "control": "gt"
+    },
+    "gt1": {
+     "net": "gt1",
+     "kind": "control",
+     "control": "gt"
+    },
+    "gt2": {
+     "net": "gt2",
+     "kind": "control",
+     "control": "gt"
+    },
+    "gt3": {
+     "net": "gt3",
+     "kind": "control",
+     "control": "gt"
+    },
+    "lna_en": {
+     "net": "lna_en",
+     "kind": "control",
+     "control": "lna_en"
+    },
+    "lg0": {
+     "net": "lg0",
+     "kind": "control",
+     "control": "lna_code"
+    },
+    "lg1": {
+     "net": "lg1",
+     "kind": "control",
+     "control": "lna_code"
+    },
+    "lg2": {
+     "net": "lg2",
+     "kind": "control",
+     "control": "lna_code"
+    },
+    "lg3": {
+     "net": "lg3",
+     "kind": "control",
+     "control": "lna_code"
+    },
+    "lg4": {
+     "net": "lg4",
+     "kind": "control",
+     "control": "lna_code"
+    },
+    "lvl": {
+     "net": "lvl",
+     "kind": "control",
+     "control": "lvl"
+    }
+   }
+  },
+  "xls": {
+   "subckt": "r2c_lsbank",
+   "pins": {
+    "vdd": {
+     "net": "vdd12",
+     "kind": "supply"
+    },
+    "vcc": {
+     "net": "vcc33",
+     "kind": "supply"
+    },
+    "vss": {
+     "net": "0",
+     "kind": "ground"
+    },
+    "ok": {
+     "net": "ctrl_ok",
+     "kind": "signal"
+    },
+    "nok": {
+     "net": "ctrl_nok",
+     "kind": "signal"
+    },
+    "fs_i": {
+     "net": "mfs",
+     "kind": "signal"
+    },
+    "ctl0": {
+     "net": "ctl0",
+     "kind": "signal"
+    },
+    "ctl1": {
+     "net": "ctl1",
+     "kind": "signal"
+    },
+    "ctl2": {
+     "net": "ctl2",
+     "kind": "signal"
+    },
+    "ctl3": {
+     "net": "ctl3",
+     "kind": "signal"
+    },
+    "ctl4": {
+     "net": "ctl4",
+     "kind": "signal"
+    },
+    "ctl5": {
+     "net": "ctl5",
+     "kind": "signal"
+    },
+    "ctl6": {
+     "net": "ctl6",
+     "kind": "signal"
+    },
+    "ctl7": {
+     "net": "ctl7",
+     "kind": "signal"
+    },
+    "ctl8": {
+     "net": "ctl8",
+     "kind": "signal"
+    },
+    "ctl9": {
+     "net": "ctl9",
+     "kind": "signal"
+    },
+    "ctl10": {
+     "net": "ctl10",
+     "kind": "signal"
+    },
+    "ctl11": {
+     "net": "ctl11",
+     "kind": "signal"
+    },
+    "ctl12": {
+     "net": "ctl12",
+     "kind": "signal"
+    },
+    "ctl13": {
+     "net": "ctl13",
+     "kind": "signal"
+    },
+    "ctl14": {
+     "net": "ctl14",
+     "kind": "signal"
+    },
+    "ctl15": {
+     "net": "ctl15",
+     "kind": "signal"
+    },
+    "ctl16": {
+     "net": "ctl16",
+     "kind": "signal"
+    },
+    "ctl17": {
+     "net": "ctl17",
+     "kind": "signal"
+    },
+    "ctl18": {
+     "net": "ctl18",
+     "kind": "signal"
+    },
+    "ctl19": {
+     "net": "ctl19",
+     "kind": "signal"
+    },
+    "ctl20": {
+     "net": "ctl20",
+     "kind": "signal"
+    },
+    "ctl21": {
+     "net": "ctl21",
+     "kind": "signal"
+    },
+    "ctl22": {
+     "net": "ctl22",
+     "kind": "signal"
+    },
+    "ctl23": {
+     "net": "ctl23",
+     "kind": "signal"
+    },
+    "ctl24": {
+     "net": "ctl24",
+     "kind": "signal"
+    },
+    "ctl25": {
+     "net": "ctl25",
+     "kind": "signal"
+    },
+    "ctl26": {
+     "net": "ctl26",
+     "kind": "signal"
+    },
+    "ctl27": {
+     "net": "ctl27",
+     "kind": "signal"
+    },
+    "ctl28": {
+     "net": "ctl28",
+     "kind": "signal"
+    },
+    "ctl29": {
+     "net": "ctl29",
+     "kind": "signal"
+    },
+    "ctl30": {
+     "net": "ctl30",
+     "kind": "signal"
+    },
+    "ctl31": {
+     "net": "ctl31",
+     "kind": "signal"
+    },
+    "ctl32": {
+     "net": "ctl32",
+     "kind": "signal"
+    },
+    "ctl33": {
+     "net": "ctl33",
+     "kind": "signal"
+    },
+    "ctl34": {
+     "net": "ctl34",
+     "kind": "signal"
+    },
+    "ctl35": {
+     "net": "ctl35",
+     "kind": "signal"
+    },
+    "ctl36": {
+     "net": "ctl36",
+     "kind": "signal"
+    },
+    "ctl37": {
+     "net": "ctl37",
+     "kind": "signal"
+    },
+    "ctl38": {
+     "net": "ctl38",
+     "kind": "signal"
+    },
+    "ctl39": {
+     "net": "ctl39",
+     "kind": "signal"
+    },
+    "ctl40": {
+     "net": "ctl40",
+     "kind": "signal"
+    },
+    "ctl41": {
+     "net": "ctl41",
+     "kind": "signal"
+    },
+    "ctl42": {
+     "net": "ctl42",
+     "kind": "signal"
+    },
+    "ctl43": {
+     "net": "ctl43",
+     "kind": "signal"
+    },
+    "ctl44": {
+     "net": "ctl44",
+     "kind": "signal"
+    },
+    "ctl45": {
+     "net": "ctl45",
+     "kind": "signal"
+    },
+    "ctl46": {
+     "net": "ctl46",
+     "kind": "signal"
+    },
+    "ctl47": {
+     "net": "ctl47",
+     "kind": "signal"
+    },
+    "ctl48": {
+     "net": "ctl48",
+     "kind": "signal"
+    },
+    "ctl49": {
+     "net": "ctl49",
+     "kind": "signal"
+    },
+    "ctl50": {
+     "net": "ctl50",
+     "kind": "signal"
+    },
+    "ctl51": {
+     "net": "ctl51",
+     "kind": "signal"
+    },
+    "ctl52": {
+     "net": "ctl52",
+     "kind": "signal"
+    },
+    "ctl53": {
+     "net": "ctl53",
+     "kind": "signal"
+    },
+    "ctl54": {
+     "net": "ctl54",
+     "kind": "signal"
+    },
+    "ctl55": {
+     "net": "ctl55",
+     "kind": "signal"
+    },
+    "ctl56": {
+     "net": "ctl56",
+     "kind": "signal"
+    },
+    "ctl57": {
+     "net": "ctl57",
+     "kind": "signal"
+    },
+    "ctl58": {
+     "net": "ctl58",
+     "kind": "signal"
+    },
+    "ctl59": {
+     "net": "ctl59",
+     "kind": "signal"
+    },
+    "ctl60": {
+     "net": "ctl60",
+     "kind": "signal"
+    },
+    "ctl61": {
+     "net": "ctl61",
+     "kind": "signal"
+    },
+    "ctl62": {
+     "net": "ctl62",
+     "kind": "signal"
+    },
+    "ctl63": {
+     "net": "ctl63",
+     "kind": "signal"
+    },
+    "ctl64": {
+     "net": "ctl64",
+     "kind": "signal"
+    },
+    "ctl65": {
+     "net": "ctl65",
+     "kind": "signal"
+    },
+    "ctl66": {
+     "net": "ctl66",
+     "kind": "signal"
+    },
+    "ctl67": {
+     "net": "ctl67",
+     "kind": "signal"
+    },
+    "ctl68": {
+     "net": "ctl68",
+     "kind": "signal"
+    },
+    "ctl69": {
+     "net": "ctl69",
+     "kind": "signal"
+    },
+    "ctl70": {
+     "net": "ctl70",
+     "kind": "signal"
+    },
+    "ctl71": {
+     "net": "ctl71",
+     "kind": "signal"
+    },
+    "ctl72": {
+     "net": "ctl72",
+     "kind": "signal"
+    },
+    "ctl73": {
+     "net": "ctl73",
+     "kind": "signal"
+    },
+    "ctl74": {
+     "net": "ctl74",
+     "kind": "signal"
+    },
+    "ctl75": {
+     "net": "ctl75",
+     "kind": "signal"
+    },
+    "ctl76": {
+     "net": "ctl76",
+     "kind": "signal"
+    },
+    "ctl77": {
+     "net": "ctl77",
+     "kind": "signal"
+    },
+    "ctl78": {
+     "net": "ctl78",
+     "kind": "signal"
+    },
+    "ctl79": {
+     "net": "ctl79",
+     "kind": "signal"
+    },
+    "ctl80": {
+     "net": "ctl80",
+     "kind": "signal"
+    },
+    "ctl81": {
+     "net": "ctl81",
+     "kind": "signal"
+    },
+    "ctl82": {
+     "net": "ctl82",
+     "kind": "signal"
+    },
+    "ctl83": {
+     "net": "ctl83",
+     "kind": "signal"
+    },
+    "ctl84": {
+     "net": "ctl84",
+     "kind": "signal"
+    },
+    "ctl85": {
+     "net": "ctl85",
+     "kind": "signal"
+    },
+    "ctl86": {
+     "net": "ctl86",
+     "kind": "signal"
+    },
+    "ctl87": {
+     "net": "ctl87",
+     "kind": "signal"
+    },
+    "ctl88": {
+     "net": "ctl88",
+     "kind": "signal"
+    },
+    "ctl89": {
+     "net": "ctl89",
+     "kind": "signal"
+    },
+    "ctl90": {
+     "net": "ctl90",
+     "kind": "signal"
+    },
+    "ctl91": {
+     "net": "ctl91",
+     "kind": "signal"
+    },
+    "ctl92": {
+     "net": "ctl92",
+     "kind": "signal"
+    },
+    "ctl93": {
+     "net": "ctl93",
+     "kind": "signal"
+    },
+    "ctl94": {
+     "net": "ctl94",
+     "kind": "signal"
+    },
+    "ctl95": {
+     "net": "ctl95",
+     "kind": "signal"
+    },
+    "ctl96": {
+     "net": "ctl96",
+     "kind": "signal"
+    },
+    "ctl97": {
+     "net": "ctl97",
+     "kind": "signal"
+    },
+    "ctl98": {
+     "net": "ctl98",
+     "kind": "signal"
+    },
+    "ctl99": {
+     "net": "ctl99",
+     "kind": "signal"
+    },
+    "ctl100": {
+     "net": "ctl100",
+     "kind": "signal"
+    },
+    "ctl101": {
+     "net": "ctl101",
+     "kind": "signal"
+    },
+    "ctl102": {
+     "net": "ctl102",
+     "kind": "signal"
+    },
+    "ctl103": {
+     "net": "ctl103",
+     "kind": "signal"
+    },
+    "ctl104": {
+     "net": "ctl104",
+     "kind": "signal"
+    },
+    "ctl105": {
+     "net": "ctl105",
+     "kind": "signal"
+    },
+    "ctl106": {
+     "net": "ctl106",
+     "kind": "signal"
+    },
+    "ctl107": {
+     "net": "ctl107",
+     "kind": "signal"
+    },
+    "ctl108": {
+     "net": "ctl108",
+     "kind": "signal"
+    },
+    "ctl109": {
+     "net": "ctl109",
+     "kind": "signal"
+    },
+    "ctl110": {
+     "net": "ctl110",
+     "kind": "signal"
+    },
+    "ctl111": {
+     "net": "ctl111",
+     "kind": "signal"
+    },
+    "ctl112": {
+     "net": "ctl112",
+     "kind": "signal"
+    },
+    "ctl113": {
+     "net": "ctl113",
+     "kind": "signal"
+    },
+    "ctl114": {
+     "net": "ctl114",
+     "kind": "signal"
+    },
+    "ctl115": {
+     "net": "ctl115",
+     "kind": "signal"
+    },
+    "ctl116": {
+     "net": "ctl116",
+     "kind": "signal"
+    },
+    "ctl117": {
+     "net": "ctl117",
+     "kind": "signal"
+    },
+    "ctl118": {
+     "net": "ctl118",
+     "kind": "signal"
+    },
+    "ctl119": {
+     "net": "ctl119",
+     "kind": "signal"
+    },
+    "ctl120": {
+     "net": "ctl120",
+     "kind": "signal"
+    },
+    "ctl121": {
+     "net": "ctl121",
+     "kind": "signal"
+    },
+    "ctl122": {
+     "net": "ctl122",
+     "kind": "signal"
+    },
+    "ctl123": {
+     "net": "ctl123",
+     "kind": "signal"
+    },
+    "ctl124": {
+     "net": "ctl124",
+     "kind": "signal"
+    },
+    "ctl125": {
+     "net": "ctl125",
+     "kind": "signal"
+    },
+    "ctl126": {
+     "net": "ctl126",
+     "kind": "signal"
+    },
+    "ctl127": {
+     "net": "ctl127",
+     "kind": "signal"
+    },
+    "ctl128": {
+     "net": "ctl128",
+     "kind": "signal"
+    },
+    "ctl129": {
+     "net": "ctl129",
+     "kind": "signal"
+    },
+    "ctl130": {
+     "net": "ctl130",
+     "kind": "signal"
+    },
+    "ctl131": {
+     "net": "ctl131",
+     "kind": "signal"
+    },
+    "ctl132": {
+     "net": "ctl132",
+     "kind": "signal"
+    },
+    "ctl133": {
+     "net": "ctl133",
+     "kind": "signal"
+    },
+    "ctl134": {
+     "net": "ctl134",
+     "kind": "signal"
+    },
+    "ctl135": {
+     "net": "ctl135",
+     "kind": "signal"
+    },
+    "ctl136": {
+     "net": "ctl136",
+     "kind": "signal"
+    },
+    "ctl137": {
+     "net": "ctl137",
+     "kind": "signal"
+    },
+    "ctl138": {
+     "net": "ctl138",
+     "kind": "signal"
+    },
+    "ctl139": {
+     "net": "ctl139",
+     "kind": "signal"
+    },
+    "ctl140": {
+     "net": "ctl140",
+     "kind": "signal"
+    },
+    "ctl141": {
+     "net": "ctl141",
+     "kind": "signal"
+    },
+    "ctl142": {
+     "net": "ctl142",
+     "kind": "signal"
+    },
+    "ctl143": {
+     "net": "ctl143",
+     "kind": "signal"
+    },
+    "ctl144": {
+     "net": "ctl144",
+     "kind": "signal"
+    },
+    "ctl145": {
+     "net": "ctl145",
+     "kind": "signal"
+    },
+    "ctl146": {
+     "net": "ctl146",
+     "kind": "signal"
+    },
+    "ctl147": {
+     "net": "ctl147",
+     "kind": "signal"
+    },
+    "ctl148": {
+     "net": "ctl148",
+     "kind": "signal"
+    },
+    "ctl149": {
+     "net": "ctl149",
+     "kind": "signal"
+    },
+    "ctl150": {
+     "net": "ctl150",
+     "kind": "signal"
+    },
+    "ctl151": {
+     "net": "ctl151",
+     "kind": "signal"
+    },
+    "ctl152": {
+     "net": "ctl152",
+     "kind": "signal"
+    },
+    "ctl153": {
+     "net": "ctl153",
+     "kind": "signal"
+    },
+    "ctl154": {
+     "net": "ctl154",
+     "kind": "signal"
+    },
+    "ctl155": {
+     "net": "ctl155",
+     "kind": "signal"
+    },
+    "ctl156": {
+     "net": "ctl156",
+     "kind": "signal"
+    },
+    "ctl157": {
+     "net": "ctl157",
+     "kind": "signal"
+    },
+    "ctl158": {
+     "net": "ctl158",
+     "kind": "signal"
+    },
+    "ctl159": {
+     "net": "ctl159",
+     "kind": "signal"
+    },
+    "ctl160": {
+     "net": "ctl160",
+     "kind": "signal"
+    },
+    "ctl161": {
+     "net": "ctl161",
+     "kind": "signal"
+    },
+    "ctl162": {
+     "net": "ctl162",
+     "kind": "signal"
+    },
+    "ctl163": {
+     "net": "ctl163",
+     "kind": "signal"
+    },
+    "ctl164": {
+     "net": "ctl164",
+     "kind": "signal"
+    },
+    "ctl165": {
+     "net": "ctl165",
+     "kind": "signal"
+    },
+    "ctl166": {
+     "net": "ctl166",
+     "kind": "signal"
+    },
+    "ctl167": {
+     "net": "ctl167",
+     "kind": "signal"
+    },
+    "ctl168": {
+     "net": "ctl168",
+     "kind": "signal"
+    },
+    "ctl169": {
+     "net": "ctl169",
+     "kind": "signal"
+    },
+    "ctl170": {
+     "net": "ctl170",
+     "kind": "signal"
+    },
+    "ctl171": {
+     "net": "ctl171",
+     "kind": "signal"
+    },
+    "ctl172": {
+     "net": "ctl172",
+     "kind": "signal"
+    },
+    "ctl173": {
+     "net": "ctl173",
+     "kind": "signal"
+    },
+    "ctl174": {
+     "net": "ctl174",
+     "kind": "signal"
+    },
+    "ctl175": {
+     "net": "ctl175",
+     "kind": "signal"
+    },
+    "ctl176": {
+     "net": "ctl176",
+     "kind": "signal"
+    },
+    "ctl177": {
+     "net": "ctl177",
+     "kind": "signal"
+    },
+    "ctl178": {
+     "net": "ctl178",
+     "kind": "signal"
+    },
+    "ctl179": {
+     "net": "ctl179",
+     "kind": "signal"
+    },
+    "ctl180": {
+     "net": "ctl180",
+     "kind": "signal"
+    },
+    "ctl181": {
+     "net": "ctl181",
+     "kind": "signal"
+    },
+    "ctl182": {
+     "net": "ctl182",
+     "kind": "signal"
+    },
+    "fs": {
+     "net": "fs",
+     "kind": "signal"
+    },
+    "fs_b": {
+     "net": "fs_b",
+     "kind": "signal"
+    },
+    "if_set": {
+     "net": "if_set",
+     "kind": "signal"
+    },
+    "if_set_b": {
+     "net": "if_set_b",
+     "kind": "signal"
+    },
+    "fst": {
+     "net": "fst",
+     "kind": "signal"
+    },
+    "fst_b": {
+     "net": "fst_b",
+     "kind": "signal"
+    },
+    "if_hp0": {
+     "net": "if_hp0",
+     "kind": "signal"
+    },
+    "if_hp0_b": {
+     "net": "if_hp0_b",
+     "kind": "signal"
+    },
+    "if_hp1": {
+     "net": "if_hp1",
+     "kind": "signal"
+    },
+    "if_hp1_b": {
+     "net": "if_hp1_b",
+     "kind": "signal"
+    },
+    "if_hp2": {
+     "net": "if_hp2",
+     "kind": "signal"
+    },
+    "if_hp2_b": {
+     "net": "if_hp2_b",
+     "kind": "signal"
+    },
+    "if_hp3": {
+     "net": "if_hp3",
+     "kind": "signal"
+    },
+    "if_hp3_b": {
+     "net": "if_hp3_b",
+     "kind": "signal"
+    },
+    "if_hp4": {
+     "net": "if_hp4",
+     "kind": "signal"
+    },
+    "if_hp4_b": {
+     "net": "if_hp4_b",
+     "kind": "signal"
+    },
+    "if_hp5": {
+     "net": "if_hp5",
+     "kind": "signal"
+    },
+    "if_hp5_b": {
+     "net": "if_hp5_b",
+     "kind": "signal"
+    },
+    "if_hp6": {
+     "net": "if_hp6",
+     "kind": "signal"
+    },
+    "if_hp6_b": {
+     "net": "if_hp6_b",
+     "kind": "signal"
+    },
+    "if_pga0": {
+     "net": "if_pga0",
+     "kind": "signal"
+    },
+    "if_pga0_b": {
+     "net": "if_pga0_b",
+     "kind": "signal"
+    },
+    "if_pga1": {
+     "net": "if_pga1",
+     "kind": "signal"
+    },
+    "if_pga1_b": {
+     "net": "if_pga1_b",
+     "kind": "signal"
+    },
+    "if_pga2": {
+     "net": "if_pga2",
+     "kind": "signal"
+    },
+    "if_pga2_b": {
+     "net": "if_pga2_b",
+     "kind": "signal"
+    },
+    "if_pga3": {
+     "net": "if_pga3",
+     "kind": "signal"
+    },
+    "if_pga3_b": {
+     "net": "if_pga3_b",
+     "kind": "signal"
+    },
+    "if_pga4": {
+     "net": "if_pga4",
+     "kind": "signal"
+    },
+    "if_pga4_b": {
+     "net": "if_pga4_b",
+     "kind": "signal"
+    },
+    "if_pga5": {
+     "net": "if_pga5",
+     "kind": "signal"
+    },
+    "if_pga5_b": {
+     "net": "if_pga5_b",
+     "kind": "signal"
+    },
+    "if_lt0": {
+     "net": "if_lt0",
+     "kind": "signal"
+    },
+    "if_lt0_b": {
+     "net": "if_lt0_b",
+     "kind": "signal"
+    },
+    "if_lt1": {
+     "net": "if_lt1",
+     "kind": "signal"
+    },
+    "if_lt1_b": {
+     "net": "if_lt1_b",
+     "kind": "signal"
+    },
+    "vco_band0": {
+     "net": "vco_band0",
+     "kind": "signal"
+    },
+    "vco_band0_b": {
+     "net": "vco_band0_b",
+     "kind": "signal"
+    },
+    "vco_band1": {
+     "net": "vco_band1",
+     "kind": "signal"
+    },
+    "vco_band1_b": {
+     "net": "vco_band1_b",
+     "kind": "signal"
+    },
+    "vco_band2": {
+     "net": "vco_band2",
+     "kind": "signal"
+    },
+    "vco_band2_b": {
+     "net": "vco_band2_b",
+     "kind": "signal"
+    },
+    "det_en": {
+     "net": "det_en",
+     "kind": "signal"
+    },
+    "det_en_b": {
+     "net": "det_en_b",
+     "kind": "signal"
+    },
+    "det_sel0": {
+     "net": "det_sel0",
+     "kind": "signal"
+    },
+    "det_sel0_b": {
+     "net": "det_sel0_b",
+     "kind": "signal"
+    },
+    "det_sel1": {
+     "net": "det_sel1",
+     "kind": "signal"
+    },
+    "det_sel1_b": {
+     "net": "det_sel1_b",
+     "kind": "signal"
+    },
+    "det_sel2": {
+     "net": "det_sel2",
+     "kind": "signal"
+    },
+    "det_sel2_b": {
+     "net": "det_sel2_b",
+     "kind": "signal"
+    },
+    "det_mux_en": {
+     "net": "det_mux_en",
+     "kind": "signal"
+    },
+    "det_mux_en_b": {
+     "net": "det_mux_en_b",
+     "kind": "signal"
+    },
+    "pa_en": {
+     "net": "pa_en",
+     "kind": "signal"
+    },
+    "pa_en_b": {
+     "net": "pa_en_b",
+     "kind": "signal"
+    },
+    "pa_t0": {
+     "net": "pa_t0",
+     "kind": "signal"
+    },
+    "pa_t0_b": {
+     "net": "pa_t0_b",
+     "kind": "signal"
+    },
+    "pa_t1": {
+     "net": "pa_t1",
+     "kind": "signal"
+    },
+    "pa_t1_b": {
+     "net": "pa_t1_b",
+     "kind": "signal"
+    },
+    "pa_t2": {
+     "net": "pa_t2",
+     "kind": "signal"
+    },
+    "pa_t2_b": {
+     "net": "pa_t2_b",
+     "kind": "signal"
+    },
+    "pa_t3": {
+     "net": "pa_t3",
+     "kind": "signal"
+    },
+    "pa_t3_b": {
+     "net": "pa_t3_b",
+     "kind": "signal"
+    },
+    "pa_t4": {
+     "net": "pa_t4",
+     "kind": "signal"
+    },
+    "pa_t4_b": {
+     "net": "pa_t4_b",
+     "kind": "signal"
+    },
+    "vco_en": {
+     "net": "vco_en",
+     "kind": "signal"
+    },
+    "vco_en_b": {
+     "net": "vco_en_b",
+     "kind": "signal"
+    },
+    "vblo_en": {
+     "net": "vblo_en",
+     "kind": "signal"
+    },
+    "vblo_en_b": {
+     "net": "vblo_en_b",
+     "kind": "signal"
+    },
+    "vcm_en": {
+     "net": "vcm_en",
+     "kind": "signal"
+    },
+    "vcm_en_b": {
+     "net": "vcm_en_b",
+     "kind": "signal"
+    },
+    "lna_en": {
+     "net": "lna_en",
+     "kind": "signal"
+    },
+    "lna_en_b": {
+     "net": "lna_en_b",
+     "kind": "signal"
+    },
+    "lvl": {
+     "net": "lvl",
+     "kind": "signal"
+    },
+    "lvl_b": {
+     "net": "lvl_b",
+     "kind": "signal"
+    },
+    "lg0": {
+     "net": "lg0",
+     "kind": "signal"
+    },
+    "lg0_b": {
+     "net": "lg0_b",
+     "kind": "signal"
+    },
+    "lg1": {
+     "net": "lg1",
+     "kind": "signal"
+    },
+    "lg1_b": {
+     "net": "lg1_b",
+     "kind": "signal"
+    },
+    "lg2": {
+     "net": "lg2",
+     "kind": "signal"
+    },
+    "lg2_b": {
+     "net": "lg2_b",
+     "kind": "signal"
+    },
+    "lg3": {
+     "net": "lg3",
+     "kind": "signal"
+    },
+    "lg3_b": {
+     "net": "lg3_b",
+     "kind": "signal"
+    },
+    "lg4": {
+     "net": "lg4",
+     "kind": "signal"
+    },
+    "lg4_b": {
+     "net": "lg4_b",
+     "kind": "signal"
+    },
+    "gt0": {
+     "net": "gt0",
+     "kind": "signal"
+    },
+    "gt0_b": {
+     "net": "gt0_b",
+     "kind": "signal"
+    },
+    "gt1": {
+     "net": "gt1",
+     "kind": "signal"
+    },
+    "gt1_b": {
+     "net": "gt1_b",
+     "kind": "signal"
+    },
+    "gt2": {
+     "net": "gt2",
+     "kind": "signal"
+    },
+    "gt2_b": {
+     "net": "gt2_b",
+     "kind": "signal"
+    },
+    "gt3": {
+     "net": "gt3",
+     "kind": "signal"
+    },
+    "gt3_b": {
+     "net": "gt3_b",
+     "kind": "signal"
+    },
+    "lna1_en": {
+     "net": "lna1_en",
+     "kind": "signal"
+    },
+    "lna1_en_b": {
+     "net": "lna1_en_b",
+     "kind": "signal"
+    },
+    "lna1_s0": {
+     "net": "lna1_s0",
+     "kind": "signal"
+    },
+    "lna1_s0_b": {
+     "net": "lna1_s0_b",
+     "kind": "signal"
+    },
+    "lna1_s1": {
+     "net": "lna1_s1",
+     "kind": "signal"
+    },
+    "lna1_s1_b": {
+     "net": "lna1_s1_b",
+     "kind": "signal"
+    },
+    "lna1_v0": {
+     "net": "lna1_v0",
+     "kind": "signal"
+    },
+    "lna1_v0_b": {
+     "net": "lna1_v0_b",
+     "kind": "signal"
+    },
+    "lna1_v1": {
+     "net": "lna1_v1",
+     "kind": "signal"
+    },
+    "lna1_v1_b": {
+     "net": "lna1_v1_b",
+     "kind": "signal"
+    },
+    "lna1_v2": {
+     "net": "lna1_v2",
+     "kind": "signal"
+    },
+    "lna1_v2_b": {
+     "net": "lna1_v2_b",
+     "kind": "signal"
+    },
+    "lna2_en": {
+     "net": "lna2_en",
+     "kind": "signal"
+    },
+    "lna2_en_b": {
+     "net": "lna2_en_b",
+     "kind": "signal"
+    },
+    "lna2_s0": {
+     "net": "lna2_s0",
+     "kind": "signal"
+    },
+    "lna2_s0_b": {
+     "net": "lna2_s0_b",
+     "kind": "signal"
+    },
+    "lna2_s1": {
+     "net": "lna2_s1",
+     "kind": "signal"
+    },
+    "lna2_s1_b": {
+     "net": "lna2_s1_b",
+     "kind": "signal"
+    },
+    "lna2_v0": {
+     "net": "lna2_v0",
+     "kind": "signal"
+    },
+    "lna2_v0_b": {
+     "net": "lna2_v0_b",
+     "kind": "signal"
+    },
+    "lna2_v1": {
+     "net": "lna2_v1",
+     "kind": "signal"
+    },
+    "lna2_v1_b": {
+     "net": "lna2_v1_b",
+     "kind": "signal"
+    },
+    "lna2_v2": {
+     "net": "lna2_v2",
+     "kind": "signal"
+    },
+    "lna2_v2_b": {
+     "net": "lna2_v2_b",
+     "kind": "signal"
+    },
+    "lna3_en": {
+     "net": "lna3_en",
+     "kind": "signal"
+    },
+    "lna3_en_b": {
+     "net": "lna3_en_b",
+     "kind": "signal"
+    },
+    "lna3_s0": {
+     "net": "lna3_s0",
+     "kind": "signal"
+    },
+    "lna3_s0_b": {
+     "net": "lna3_s0_b",
+     "kind": "signal"
+    },
+    "lna3_s1": {
+     "net": "lna3_s1",
+     "kind": "signal"
+    },
+    "lna3_s1_b": {
+     "net": "lna3_s1_b",
+     "kind": "signal"
+    },
+    "lna3_v0": {
+     "net": "lna3_v0",
+     "kind": "signal"
+    },
+    "lna3_v0_b": {
+     "net": "lna3_v0_b",
+     "kind": "signal"
+    },
+    "lna3_v1": {
+     "net": "lna3_v1",
+     "kind": "signal"
+    },
+    "lna3_v1_b": {
+     "net": "lna3_v1_b",
+     "kind": "signal"
+    },
+    "lna3_v2": {
+     "net": "lna3_v2",
+     "kind": "signal"
+    },
+    "lna3_v2_b": {
+     "net": "lna3_v2_b",
+     "kind": "signal"
+    },
+    "pa1_en": {
+     "net": "pa1_en",
+     "kind": "signal"
+    },
+    "pa1_en_b": {
+     "net": "pa1_en_b",
+     "kind": "signal"
+    },
+    "pa1_s0": {
+     "net": "pa1_s0",
+     "kind": "signal"
+    },
+    "pa1_s0_b": {
+     "net": "pa1_s0_b",
+     "kind": "signal"
+    },
+    "pa1_s1": {
+     "net": "pa1_s1",
+     "kind": "signal"
+    },
+    "pa1_s1_b": {
+     "net": "pa1_s1_b",
+     "kind": "signal"
+    },
+    "pa1_v0": {
+     "net": "pa1_v0",
+     "kind": "signal"
+    },
+    "pa1_v0_b": {
+     "net": "pa1_v0_b",
+     "kind": "signal"
+    },
+    "pa1_v1": {
+     "net": "pa1_v1",
+     "kind": "signal"
+    },
+    "pa1_v1_b": {
+     "net": "pa1_v1_b",
+     "kind": "signal"
+    },
+    "pa1_v2": {
+     "net": "pa1_v2",
+     "kind": "signal"
+    },
+    "pa1_v2_b": {
+     "net": "pa1_v2_b",
+     "kind": "signal"
+    },
+    "pa2_en": {
+     "net": "pa2_en",
+     "kind": "signal"
+    },
+    "pa2_en_b": {
+     "net": "pa2_en_b",
+     "kind": "signal"
+    },
+    "pa2_s0": {
+     "net": "pa2_s0",
+     "kind": "signal"
+    },
+    "pa2_s0_b": {
+     "net": "pa2_s0_b",
+     "kind": "signal"
+    },
+    "pa2_s1": {
+     "net": "pa2_s1",
+     "kind": "signal"
+    },
+    "pa2_s1_b": {
+     "net": "pa2_s1_b",
+     "kind": "signal"
+    },
+    "pa2_v0": {
+     "net": "pa2_v0",
+     "kind": "signal"
+    },
+    "pa2_v0_b": {
+     "net": "pa2_v0_b",
+     "kind": "signal"
+    },
+    "pa2_v1": {
+     "net": "pa2_v1",
+     "kind": "signal"
+    },
+    "pa2_v1_b": {
+     "net": "pa2_v1_b",
+     "kind": "signal"
+    },
+    "pa2_v2": {
+     "net": "pa2_v2",
+     "kind": "signal"
+    },
+    "pa2_v2_b": {
+     "net": "pa2_v2_b",
+     "kind": "signal"
+    },
+    "mixi_en": {
+     "net": "mixi_en",
+     "kind": "signal"
+    },
+    "mixi_en_b": {
+     "net": "mixi_en_b",
+     "kind": "signal"
+    },
+    "mixi_s0": {
+     "net": "mixi_s0",
+     "kind": "signal"
+    },
+    "mixi_s0_b": {
+     "net": "mixi_s0_b",
+     "kind": "signal"
+    },
+    "mixi_s1": {
+     "net": "mixi_s1",
+     "kind": "signal"
+    },
+    "mixi_s1_b": {
+     "net": "mixi_s1_b",
+     "kind": "signal"
+    },
+    "mixi_v0": {
+     "net": "mixi_v0",
+     "kind": "signal"
+    },
+    "mixi_v0_b": {
+     "net": "mixi_v0_b",
+     "kind": "signal"
+    },
+    "mixi_v1": {
+     "net": "mixi_v1",
+     "kind": "signal"
+    },
+    "mixi_v1_b": {
+     "net": "mixi_v1_b",
+     "kind": "signal"
+    },
+    "mixi_v2": {
+     "net": "mixi_v2",
+     "kind": "signal"
+    },
+    "mixi_v2_b": {
+     "net": "mixi_v2_b",
+     "kind": "signal"
+    },
+    "mixq_en": {
+     "net": "mixq_en",
+     "kind": "signal"
+    },
+    "mixq_en_b": {
+     "net": "mixq_en_b",
+     "kind": "signal"
+    },
+    "mixq_s0": {
+     "net": "mixq_s0",
+     "kind": "signal"
+    },
+    "mixq_s0_b": {
+     "net": "mixq_s0_b",
+     "kind": "signal"
+    },
+    "mixq_s1": {
+     "net": "mixq_s1",
+     "kind": "signal"
+    },
+    "mixq_s1_b": {
+     "net": "mixq_s1_b",
+     "kind": "signal"
+    },
+    "mixq_v0": {
+     "net": "mixq_v0",
+     "kind": "signal"
+    },
+    "mixq_v0_b": {
+     "net": "mixq_v0_b",
+     "kind": "signal"
+    },
+    "mixq_v1": {
+     "net": "mixq_v1",
+     "kind": "signal"
+    },
+    "mixq_v1_b": {
+     "net": "mixq_v1_b",
+     "kind": "signal"
+    },
+    "mixq_v2": {
+     "net": "mixq_v2",
+     "kind": "signal"
+    },
+    "mixq_v2_b": {
+     "net": "mixq_v2_b",
+     "kind": "signal"
+    },
+    "mixti_en": {
+     "net": "mixti_en",
+     "kind": "signal"
+    },
+    "mixti_en_b": {
+     "net": "mixti_en_b",
+     "kind": "signal"
+    },
+    "mixti_s0": {
+     "net": "mixti_s0",
+     "kind": "signal"
+    },
+    "mixti_s0_b": {
+     "net": "mixti_s0_b",
+     "kind": "signal"
+    },
+    "mixti_s1": {
+     "net": "mixti_s1",
+     "kind": "signal"
+    },
+    "mixti_s1_b": {
+     "net": "mixti_s1_b",
+     "kind": "signal"
+    },
+    "mixti_v0": {
+     "net": "mixti_v0",
+     "kind": "signal"
+    },
+    "mixti_v0_b": {
+     "net": "mixti_v0_b",
+     "kind": "signal"
+    },
+    "mixti_v1": {
+     "net": "mixti_v1",
+     "kind": "signal"
+    },
+    "mixti_v1_b": {
+     "net": "mixti_v1_b",
+     "kind": "signal"
+    },
+    "mixti_v2": {
+     "net": "mixti_v2",
+     "kind": "signal"
+    },
+    "mixti_v2_b": {
+     "net": "mixti_v2_b",
+     "kind": "signal"
+    },
+    "mixtq_en": {
+     "net": "mixtq_en",
+     "kind": "signal"
+    },
+    "mixtq_en_b": {
+     "net": "mixtq_en_b",
+     "kind": "signal"
+    },
+    "mixtq_s0": {
+     "net": "mixtq_s0",
+     "kind": "signal"
+    },
+    "mixtq_s0_b": {
+     "net": "mixtq_s0_b",
+     "kind": "signal"
+    },
+    "mixtq_s1": {
+     "net": "mixtq_s1",
+     "kind": "signal"
+    },
+    "mixtq_s1_b": {
+     "net": "mixtq_s1_b",
+     "kind": "signal"
+    },
+    "mixtq_v0": {
+     "net": "mixtq_v0",
+     "kind": "signal"
+    },
+    "mixtq_v0_b": {
+     "net": "mixtq_v0_b",
+     "kind": "signal"
+    },
+    "mixtq_v1": {
+     "net": "mixtq_v1",
+     "kind": "signal"
+    },
+    "mixtq_v1_b": {
+     "net": "mixtq_v1_b",
+     "kind": "signal"
+    },
+    "mixtq_v2": {
+     "net": "mixtq_v2",
+     "kind": "signal"
+    },
+    "mixtq_v2_b": {
+     "net": "mixtq_v2_b",
+     "kind": "signal"
+    },
+    "vcot_en": {
+     "net": "vcot_en",
+     "kind": "signal"
+    },
+    "vcot_en_b": {
+     "net": "vcot_en_b",
+     "kind": "signal"
+    },
+    "vcot_s0": {
+     "net": "vcot_s0",
+     "kind": "signal"
+    },
+    "vcot_s0_b": {
+     "net": "vcot_s0_b",
+     "kind": "signal"
+    },
+    "vcot_s1": {
+     "net": "vcot_s1",
+     "kind": "signal"
+    },
+    "vcot_s1_b": {
+     "net": "vcot_s1_b",
+     "kind": "signal"
+    },
+    "vcot_v0": {
+     "net": "vcot_v0",
+     "kind": "signal"
+    },
+    "vcot_v0_b": {
+     "net": "vcot_v0_b",
+     "kind": "signal"
+    },
+    "vcot_v1": {
+     "net": "vcot_v1",
+     "kind": "signal"
+    },
+    "vcot_v1_b": {
+     "net": "vcot_v1_b",
+     "kind": "signal"
+    },
+    "vcot_v2": {
+     "net": "vcot_v2",
+     "kind": "signal"
+    },
+    "vcot_v2_b": {
+     "net": "vcot_v2_b",
+     "kind": "signal"
+    },
+    "vcor_en": {
+     "net": "vcor_en",
+     "kind": "signal"
+    },
+    "vcor_en_b": {
+     "net": "vcor_en_b",
+     "kind": "signal"
+    },
+    "vcor_s0": {
+     "net": "vcor_s0",
+     "kind": "signal"
+    },
+    "vcor_s0_b": {
+     "net": "vcor_s0_b",
+     "kind": "signal"
+    },
+    "vcor_s1": {
+     "net": "vcor_s1",
+     "kind": "signal"
+    },
+    "vcor_s1_b": {
+     "net": "vcor_s1_b",
+     "kind": "signal"
+    },
+    "vcor_v0": {
+     "net": "vcor_v0",
+     "kind": "signal"
+    },
+    "vcor_v0_b": {
+     "net": "vcor_v0_b",
+     "kind": "signal"
+    },
+    "vcor_v1": {
+     "net": "vcor_v1",
+     "kind": "signal"
+    },
+    "vcor_v1_b": {
+     "net": "vcor_v1_b",
+     "kind": "signal"
+    },
+    "vcor_v2": {
+     "net": "vcor_v2",
+     "kind": "signal"
+    },
+    "vcor_v2_b": {
+     "net": "vcor_v2_b",
+     "kind": "signal"
+    },
+    "div_en": {
+     "net": "div_en",
+     "kind": "signal"
+    },
+    "div_en_b": {
+     "net": "div_en_b",
+     "kind": "signal"
+    },
+    "div_s0": {
+     "net": "div_s0",
+     "kind": "signal"
+    },
+    "div_s0_b": {
+     "net": "div_s0_b",
+     "kind": "signal"
+    },
+    "div_s1": {
+     "net": "div_s1",
+     "kind": "signal"
+    },
+    "div_s1_b": {
+     "net": "div_s1_b",
+     "kind": "signal"
+    },
+    "div_v0": {
+     "net": "div_v0",
+     "kind": "signal"
+    },
+    "div_v0_b": {
+     "net": "div_v0_b",
+     "kind": "signal"
+    },
+    "div_v1": {
+     "net": "div_v1",
+     "kind": "signal"
+    },
+    "div_v1_b": {
+     "net": "div_v1_b",
+     "kind": "signal"
+    },
+    "div_v2": {
+     "net": "div_v2",
+     "kind": "signal"
+    },
+    "div_v2_b": {
+     "net": "div_v2_b",
+     "kind": "signal"
+    },
+    "dbl_en": {
+     "net": "dbl_en",
+     "kind": "signal"
+    },
+    "dbl_en_b": {
+     "net": "dbl_en_b",
+     "kind": "signal"
+    },
+    "dbl_s0": {
+     "net": "dbl_s0",
+     "kind": "signal"
+    },
+    "dbl_s0_b": {
+     "net": "dbl_s0_b",
+     "kind": "signal"
+    },
+    "dbl_s1": {
+     "net": "dbl_s1",
+     "kind": "signal"
+    },
+    "dbl_s1_b": {
+     "net": "dbl_s1_b",
+     "kind": "signal"
+    },
+    "dbl_v0": {
+     "net": "dbl_v0",
+     "kind": "signal"
+    },
+    "dbl_v0_b": {
+     "net": "dbl_v0_b",
+     "kind": "signal"
+    },
+    "dbl_v1": {
+     "net": "dbl_v1",
+     "kind": "signal"
+    },
+    "dbl_v1_b": {
+     "net": "dbl_v1_b",
+     "kind": "signal"
+    },
+    "dbl_v2": {
+     "net": "dbl_v2",
+     "kind": "signal"
+    },
+    "dbl_v2_b": {
+     "net": "dbl_v2_b",
+     "kind": "signal"
+    },
+    "buf1_en": {
+     "net": "buf1_en",
+     "kind": "signal"
+    },
+    "buf1_en_b": {
+     "net": "buf1_en_b",
+     "kind": "signal"
+    },
+    "buf1_s0": {
+     "net": "buf1_s0",
+     "kind": "signal"
+    },
+    "buf1_s0_b": {
+     "net": "buf1_s0_b",
+     "kind": "signal"
+    },
+    "buf1_s1": {
+     "net": "buf1_s1",
+     "kind": "signal"
+    },
+    "buf1_s1_b": {
+     "net": "buf1_s1_b",
+     "kind": "signal"
+    },
+    "buf1_v0": {
+     "net": "buf1_v0",
+     "kind": "signal"
+    },
+    "buf1_v0_b": {
+     "net": "buf1_v0_b",
+     "kind": "signal"
+    },
+    "buf1_v1": {
+     "net": "buf1_v1",
+     "kind": "signal"
+    },
+    "buf1_v1_b": {
+     "net": "buf1_v1_b",
+     "kind": "signal"
+    },
+    "buf1_v2": {
+     "net": "buf1_v2",
+     "kind": "signal"
+    },
+    "buf1_v2_b": {
+     "net": "buf1_v2_b",
+     "kind": "signal"
+    },
+    "buf2_en": {
+     "net": "buf2_en",
+     "kind": "signal"
+    },
+    "buf2_en_b": {
+     "net": "buf2_en_b",
+     "kind": "signal"
+    },
+    "buf2_s0": {
+     "net": "buf2_s0",
+     "kind": "signal"
+    },
+    "buf2_s0_b": {
+     "net": "buf2_s0_b",
+     "kind": "signal"
+    },
+    "buf2_s1": {
+     "net": "buf2_s1",
+     "kind": "signal"
+    },
+    "buf2_s1_b": {
+     "net": "buf2_s1_b",
+     "kind": "signal"
+    },
+    "buf2_v0": {
+     "net": "buf2_v0",
+     "kind": "signal"
+    },
+    "buf2_v0_b": {
+     "net": "buf2_v0_b",
+     "kind": "signal"
+    },
+    "buf2_v1": {
+     "net": "buf2_v1",
+     "kind": "signal"
+    },
+    "buf2_v1_b": {
+     "net": "buf2_v1_b",
+     "kind": "signal"
+    },
+    "buf2_v2": {
+     "net": "buf2_v2",
+     "kind": "signal"
+    },
+    "buf2_v2_b": {
+     "net": "buf2_v2_b",
+     "kind": "signal"
+    },
+    "ifi_en": {
+     "net": "ifi_en",
+     "kind": "signal"
+    },
+    "ifi_en_b": {
+     "net": "ifi_en_b",
+     "kind": "signal"
+    },
+    "ifi_s0": {
+     "net": "ifi_s0",
+     "kind": "signal"
+    },
+    "ifi_s0_b": {
+     "net": "ifi_s0_b",
+     "kind": "signal"
+    },
+    "ifi_s1": {
+     "net": "ifi_s1",
+     "kind": "signal"
+    },
+    "ifi_s1_b": {
+     "net": "ifi_s1_b",
+     "kind": "signal"
+    },
+    "ifi_v0": {
+     "net": "ifi_v0",
+     "kind": "signal"
+    },
+    "ifi_v0_b": {
+     "net": "ifi_v0_b",
+     "kind": "signal"
+    },
+    "ifi_v1": {
+     "net": "ifi_v1",
+     "kind": "signal"
+    },
+    "ifi_v1_b": {
+     "net": "ifi_v1_b",
+     "kind": "signal"
+    },
+    "ifi_v2": {
+     "net": "ifi_v2",
+     "kind": "signal"
+    },
+    "ifi_v2_b": {
+     "net": "ifi_v2_b",
+     "kind": "signal"
+    },
+    "ifq_en": {
+     "net": "ifq_en",
+     "kind": "signal"
+    },
+    "ifq_en_b": {
+     "net": "ifq_en_b",
+     "kind": "signal"
+    },
+    "ifq_s0": {
+     "net": "ifq_s0",
+     "kind": "signal"
+    },
+    "ifq_s0_b": {
+     "net": "ifq_s0_b",
+     "kind": "signal"
+    },
+    "ifq_s1": {
+     "net": "ifq_s1",
+     "kind": "signal"
+    },
+    "ifq_s1_b": {
+     "net": "ifq_s1_b",
+     "kind": "signal"
+    },
+    "ifq_v0": {
+     "net": "ifq_v0",
+     "kind": "signal"
+    },
+    "ifq_v0_b": {
+     "net": "ifq_v0_b",
+     "kind": "signal"
+    },
+    "ifq_v1": {
+     "net": "ifq_v1",
+     "kind": "signal"
+    },
+    "ifq_v1_b": {
+     "net": "ifq_v1_b",
+     "kind": "signal"
+    },
+    "ifq_v2": {
+     "net": "ifq_v2",
+     "kind": "signal"
+    },
+    "ifq_v2_b": {
+     "net": "ifq_v2_b",
+     "kind": "signal"
+    },
+    "ifr_en": {
+     "net": "ifr_en",
+     "kind": "signal"
+    },
+    "ifr_en_b": {
+     "net": "ifr_en_b",
+     "kind": "signal"
+    },
+    "ifr_s0": {
+     "net": "ifr_s0",
+     "kind": "signal"
+    },
+    "ifr_s0_b": {
+     "net": "ifr_s0_b",
+     "kind": "signal"
+    },
+    "ifr_s1": {
+     "net": "ifr_s1",
+     "kind": "signal"
+    },
+    "ifr_s1_b": {
+     "net": "ifr_s1_b",
+     "kind": "signal"
+    },
+    "ifr_v0": {
+     "net": "ifr_v0",
+     "kind": "signal"
+    },
+    "ifr_v0_b": {
+     "net": "ifr_v0_b",
+     "kind": "signal"
+    },
+    "ifr_v1": {
+     "net": "ifr_v1",
+     "kind": "signal"
+    },
+    "ifr_v1_b": {
+     "net": "ifr_v1_b",
+     "kind": "signal"
+    },
+    "ifr_v2": {
+     "net": "ifr_v2",
+     "kind": "signal"
+    },
+    "ifr_v2_b": {
+     "net": "ifr_v2_b",
+     "kind": "signal"
+    },
+    "det1_en": {
+     "net": "det1_en",
+     "kind": "signal"
+    },
+    "det1_en_b": {
+     "net": "det1_en_b",
+     "kind": "signal"
+    },
+    "det1_s0": {
+     "net": "det1_s0",
+     "kind": "signal"
+    },
+    "det1_s0_b": {
+     "net": "det1_s0_b",
+     "kind": "signal"
+    },
+    "det1_s1": {
+     "net": "det1_s1",
+     "kind": "signal"
+    },
+    "det1_s1_b": {
+     "net": "det1_s1_b",
+     "kind": "signal"
+    },
+    "det1_v0": {
+     "net": "det1_v0",
+     "kind": "signal"
+    },
+    "det1_v0_b": {
+     "net": "det1_v0_b",
+     "kind": "signal"
+    },
+    "det1_v1": {
+     "net": "det1_v1",
+     "kind": "signal"
+    },
+    "det1_v1_b": {
+     "net": "det1_v1_b",
+     "kind": "signal"
+    },
+    "det1_v2": {
+     "net": "det1_v2",
+     "kind": "signal"
+    },
+    "det1_v2_b": {
+     "net": "det1_v2_b",
+     "kind": "signal"
+    },
+    "det2_en": {
+     "net": "det2_en",
+     "kind": "signal"
+    },
+    "det2_en_b": {
+     "net": "det2_en_b",
+     "kind": "signal"
+    },
+    "det2_s0": {
+     "net": "det2_s0",
+     "kind": "signal"
+    },
+    "det2_s0_b": {
+     "net": "det2_s0_b",
+     "kind": "signal"
+    },
+    "det2_s1": {
+     "net": "det2_s1",
+     "kind": "signal"
+    },
+    "det2_s1_b": {
+     "net": "det2_s1_b",
+     "kind": "signal"
+    },
+    "det2_v0": {
+     "net": "det2_v0",
+     "kind": "signal"
+    },
+    "det2_v0_b": {
+     "net": "det2_v0_b",
+     "kind": "signal"
+    },
+    "det2_v1": {
+     "net": "det2_v1",
+     "kind": "signal"
+    },
+    "det2_v1_b": {
+     "net": "det2_v1_b",
+     "kind": "signal"
+    },
+    "det2_v2": {
+     "net": "det2_v2",
+     "kind": "signal"
+    },
+    "det2_v2_b": {
+     "net": "det2_v2_b",
+     "kind": "signal"
+    },
+    "tsen_en": {
+     "net": "tsen_en",
+     "kind": "signal"
+    },
+    "tsen_en_b": {
+     "net": "tsen_en_b",
+     "kind": "signal"
+    },
+    "tsen_s0": {
+     "net": "tsen_s0",
+     "kind": "signal"
+    },
+    "tsen_s0_b": {
+     "net": "tsen_s0_b",
+     "kind": "signal"
+    },
+    "tsen_s1": {
+     "net": "tsen_s1",
+     "kind": "signal"
+    },
+    "tsen_s1_b": {
+     "net": "tsen_s1_b",
+     "kind": "signal"
+    },
+    "tsen_v0": {
+     "net": "tsen_v0",
+     "kind": "signal"
+    },
+    "tsen_v0_b": {
+     "net": "tsen_v0_b",
+     "kind": "signal"
+    },
+    "tsen_v1": {
+     "net": "tsen_v1",
+     "kind": "signal"
+    },
+    "tsen_v1_b": {
+     "net": "tsen_v1_b",
+     "kind": "signal"
+    },
+    "tsen_v2": {
+     "net": "tsen_v2",
+     "kind": "signal"
+    },
+    "tsen_v2_b": {
+     "net": "tsen_v2_b",
+     "kind": "signal"
+    },
+    "itst_en": {
+     "net": "itst_en",
+     "kind": "signal"
+    },
+    "itst_en_b": {
+     "net": "itst_en_b",
+     "kind": "signal"
+    },
+    "itst_s0": {
+     "net": "itst_s0",
+     "kind": "signal"
+    },
+    "itst_s0_b": {
+     "net": "itst_s0_b",
+     "kind": "signal"
+    },
+    "itst_s1": {
+     "net": "itst_s1",
+     "kind": "signal"
+    },
+    "itst_s1_b": {
+     "net": "itst_s1_b",
+     "kind": "signal"
+    },
+    "itst_v0": {
+     "net": "itst_v0",
+     "kind": "signal"
+    },
+    "itst_v0_b": {
+     "net": "itst_v0_b",
+     "kind": "signal"
+    },
+    "itst_v1": {
+     "net": "itst_v1",
+     "kind": "signal"
+    },
+    "itst_v1_b": {
+     "net": "itst_v1_b",
+     "kind": "signal"
+    },
+    "itst_v2": {
+     "net": "itst_v2",
+     "kind": "signal"
+    },
+    "itst_v2_b": {
+     "net": "itst_v2_b",
+     "kind": "signal"
+    },
+    "pacb_en": {
+     "net": "pacb_en",
+     "kind": "signal"
+    },
+    "pacb_en_b": {
+     "net": "pacb_en_b",
+     "kind": "signal"
+    },
+    "pacb_s0": {
+     "net": "pacb_s0",
+     "kind": "signal"
+    },
+    "pacb_s0_b": {
+     "net": "pacb_s0_b",
+     "kind": "signal"
+    },
+    "pacb_s1": {
+     "net": "pacb_s1",
+     "kind": "signal"
+    },
+    "pacb_s1_b": {
+     "net": "pacb_s1_b",
+     "kind": "signal"
+    },
+    "pacb_v0": {
+     "net": "pacb_v0",
+     "kind": "signal"
+    },
+    "pacb_v0_b": {
+     "net": "pacb_v0_b",
+     "kind": "signal"
+    },
+    "pacb_v1": {
+     "net": "pacb_v1",
+     "kind": "signal"
+    },
+    "pacb_v1_b": {
+     "net": "pacb_v1_b",
+     "kind": "signal"
+    },
+    "pacb_v2": {
+     "net": "pacb_v2",
+     "kind": "signal"
+    },
+    "pacb_v2_b": {
+     "net": "pacb_v2_b",
+     "kind": "signal"
+    }
+   }
+  },
+  "xldo": {
+   "subckt": "r2c_ldo",
+   "pins": {
+    "vcc18": {
+     "net": "vcc18_ctrl",
+     "kind": "supply"
+    },
+    "vcc": {
+     "net": "vcc33",
+     "kind": "supply"
+    },
+    "vss": {
+     "net": "0",
+     "kind": "ground"
+    },
+    "vref": {
+     "net": "vref_b",
+     "kind": "signal"
+    },
+    "out": {
+     "net": "vdd12",
+     "kind": "supply"
+    }
+   }
+  },
+  "xpok": {
+   "subckt": "r2c_pok",
+   "pins": {
+    "vdd": {
+     "net": "vdd12",
+     "kind": "supply"
+    },
+    "vcc": {
+     "net": "vcc33",
+     "kind": "supply"
+    },
+    "vss": {
+     "net": "0",
+     "kind": "ground"
+    },
+    "ok": {
+     "net": "ctrl_ok",
+     "kind": "signal"
+    },
+    "nok": {
+     "net": "ctrl_nok",
+     "kind": "signal"
+    },
+    "por_n": {
+     "net": "por_n",
+     "kind": "signal"
+    }
+   }
+  }
+ },
+ "controls": {
+  "fst": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 1,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "pa_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "pa_t": {
+   "bits": 4,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33"
+  },
+  "vco_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "vblo_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "vcm_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "lna_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "lvl": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "lna_code": {
+   "bits": 5,
+   "encoding": "binary",
+   "reset": 16,
+   "level": "vcc33"
+  },
+  "gt": {
+   "bits": 4,
+   "encoding": "binary",
+   "reset": 7,
+   "level": "vcc33"
+  },
+  "lna1_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "lna1_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 3,
+   "level": "vcc33"
+  },
+  "lna1_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 2,
+   "level": "vcc33"
+  },
+  "lna2_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "lna2_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 3,
+   "level": "vcc33"
+  },
+  "lna2_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 2,
+   "level": "vcc33"
+  },
+  "lna3_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "lna3_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 3,
+   "level": "vcc33"
+  },
+  "lna3_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 2,
+   "level": "vcc33"
+  },
+  "pa1_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "pa1_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33"
+  },
+  "pa1_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 4,
+   "level": "vcc33"
+  },
+  "pa2_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "pa2_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33"
+  },
+  "pa2_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 4,
+   "level": "vcc33"
+  },
+  "mixi_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "mixi_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33"
+  },
+  "mixi_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 4,
+   "level": "vcc33"
+  },
+  "mixq_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "mixq_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33"
+  },
+  "mixq_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 4,
+   "level": "vcc33"
+  },
+  "mixti_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "mixti_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33"
+  },
+  "mixti_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 4,
+   "level": "vcc33"
+  },
+  "mixtq_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "mixtq_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33"
+  },
+  "mixtq_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 4,
+   "level": "vcc33"
+  },
+  "vcot_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "vcot_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33"
+  },
+  "vcot_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 4,
+   "level": "vcc33"
+  },
+  "vcor_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "vcor_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33"
+  },
+  "vcor_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 4,
+   "level": "vcc33"
+  },
+  "div_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "div_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33"
+  },
+  "div_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 4,
+   "level": "vcc33"
+  },
+  "dbl_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "dbl_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 3,
+   "level": "vcc33"
+  },
+  "dbl_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 2,
+   "level": "vcc33"
+  },
+  "buf1_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "buf1_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 3,
+   "level": "vcc33"
+  },
+  "buf1_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 2,
+   "level": "vcc33"
+  },
+  "buf2_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "buf2_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 3,
+   "level": "vcc33"
+  },
+  "buf2_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 2,
+   "level": "vcc33"
+  },
+  "ifi_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "ifi_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33"
+  },
+  "ifi_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 4,
+   "level": "vcc33"
+  },
+  "ifq_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "ifq_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33"
+  },
+  "ifq_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 4,
+   "level": "vcc33"
+  },
+  "ifr_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "ifr_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33"
+  },
+  "ifr_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 4,
+   "level": "vcc33"
+  },
+  "det1_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "det1_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 3,
+   "level": "vcc33"
+  },
+  "det1_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 4,
+   "level": "vcc33"
+  },
+  "det2_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "det2_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 3,
+   "level": "vcc33"
+  },
+  "det2_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 4,
+   "level": "vcc33"
+  },
+  "tsen_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "tsen_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 3,
+   "level": "vcc33"
+  },
+  "tsen_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 4,
+   "level": "vcc33"
+  },
+  "itst_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "itst_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33"
+  },
+  "itst_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 4,
+   "level": "vcc33"
+  },
+  "pacb_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "pacb_s": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33"
+  },
+  "pacb_v": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 4,
+   "level": "vcc33"
+  },
+  "det_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "det_sel": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33"
+  },
+  "det_mux_en": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "if_set": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 1,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "if_hp": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 5,
+   "level": "vcc33"
+  },
+  "if_pga": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33"
+  },
+  "if_lt": {
+   "bits": 2,
+   "encoding": "binary",
+   "reset": 1,
+   "level": "vcc33"
+  },
+  "fs": {
+   "bits": 1,
+   "encoding": "binary",
+   "reset": 0,
+   "level": "vcc33",
+   "active": "high"
+  },
+  "vco_band": {
+   "bits": 3,
+   "encoding": "binary",
+   "reset": 3,
+   "level": "vcc33"
+  }
+ }
+}

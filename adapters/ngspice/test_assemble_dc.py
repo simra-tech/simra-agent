@@ -47,10 +47,12 @@ class Seeds(unittest.TestCase):
             json.dump(doc, fh)
 
     def test_map_filter_and_order(self):
-        self.write("a.json", {"v(x1.a)": 1.0, "V(X1.B)": 0.0, "i(vdd)": 1e-3, "v(x1.q#base)": 0.7, "v(0)": 0.0, "x": "text"})
+        self.write("a.json", {"v(x1.a)": 1.0, "V(X1.B)": 0.0, "i(vdd)": 1e-3, "v(x1.q#base)": 0.7, "v(0)": 0.0, "x": "text",
+                                "v(v-sweep)": 1.0, "v(n.x1.r#flow(b))": 0.2, "v(x1.a-b)": 0.1})
         self.write("b.json", {"nodes": {"v(xl.a)": 0.5, "v(m)": 0.3}})
         seed = ad.read_seeds([{"file": "a.json", "from_prefix": "x1.", "to_prefix": "xl."}, {"file": "b.json"}], self.root)
         self.assertEqual(seed, {"xl.a": 0.5, "xl.b": 0.0, "m": 0.3})  # later seed wins; currents and "#" nodes left out
+        self.assertEqual(ad.read_seeds.skipped, 2)  # v-sweep and x1.a-b (after the prefix change: xl.a-b)
         seed = ad.read_seeds([{"file": "b.json", "only_prefix": "xl."}], self.root)
         self.assertEqual(seed, {"xl.a": 0.5})
         seed = ad.read_seeds([{"file": "b.json", "to_prefix": "xtop."}], self.root)
@@ -71,7 +73,7 @@ class Clamp(unittest.TestCase):
         lines, n = ad.clamp_lines({"m": 0.3}, [], 12)
         self.assertEqual(n, 1)
         self.assertEqual(lines[1], "Vsimra_gcl simra_gcl 0 1")
-        self.assertRegex(lines[2], r"^Bsimra_cl0 m 0 I=exp\(27\.63\d*\*\(min\(v\(simra_gcl\),1\)-1\)\)\*\(v\(m\)-\(0\.3\)\)$")
+        self.assertRegex(lines[2], r"^Bsimra_cl0 m 0 I=exp\(27\.63\d*\*\(v\(simra_gcl\)-1\)\)\*\(v\(m\)-\(0\.3\)\)$")
 
     def test_phases(self):
         lines, n = ad.clamp_lines({"xb.n": 1.0, "xc.n": 2.0, "z": 0.0}, [["xb."], ["xc."]], 6)

@@ -461,6 +461,12 @@ def simulate(request):
         stackup = read_stackup(xml)
         cell, polygons, sigma_scale = read_polygons(gds, inputs.get("cell"), stackup, inputs.get("layers"),
                                                     inputs.get("merge_um"), check_cut(inputs.get("cut")))
+        fill = inputs.get("via_fill")
+        if fill is not None:
+            if not (isinstance(fill, dict) and all(isinstance(v, (int, float)) and not isinstance(v, bool) and 0 < v <= 1
+                                                   for v in fill.values())):
+                raise ValueError("input 'via_fill' must be {via layer: factor in (0, 1]}")
+            sigma_scale.update({k: float(v) for k, v in fill.items()})
         plan = build_plan(inputs, stackup, polygons, sigma_scale)
         check_deembed(inputs.get("deembed"), len(plan["ports"]))
     except (ValueError, KeyError, ET.ParseError) as e:

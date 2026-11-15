@@ -17,9 +17,10 @@ test("subcktPins reads the pins with continuation lines and stops at the paramet
 	assert.throws(() => subcktPins(join(fixtures, "div.spice"), "nope"), /no \.subckt nope/);
 });
 
-test("checkTable: a need without a provider, a provider with another value, an undefined control", () => {
+test("checkTable: a need without a provider, a provider with another value, an undefined control, an unused output", () => {
 	const rows = checkTable(table());
 	assert.deepEqual(rows.map((r) => [r.item, r.reason]), [
+		["table bias.spare_ref", "bias output on net spare_ref has no consumer"],
 		["table lna.ib1", "provider bias.lna_ref gives 0.000931, the need is 0.000863 +- 0.00004315"],
 		["table lna.ib2", "bias need on net lna_iref2 has no provider"],
 		["table lna.mux", "control lna_mux is not defined in controls"],
@@ -75,3 +76,20 @@ test("connection gate in a requirements check: rows per item; without a record t
 function require_(name: string): string {
 	return readFileSync(join(fixtures, name), "utf8");
 }
+
+test("checkTable and checkBlock on a 17-block chip table: one unused output; stale rows show as block mismatches", () => {
+	const t = loadConnectionTable(join(fixtures, "chip17.json"));
+	assert.deepEqual(validateTable(t), []);
+	assert.equal(Object.keys(t.blocks).length, 17);
+	assert.deepEqual(checkTable(t).map((r) => [r.item, r.reason]), [["table xbias.vref_f", "bias output on net bias_vref_f has no consumer"]]);
+	// the mixer as its own testbench used it (pins from the subcircuit line)
+	const rows = checkBlock(t, {
+		schema: "simra.block_interface/0",
+		block: "xmixi",
+		pins: ["vcc", "rfp", "lo1", "ifp", "ifn", "m1_m", "eb", "vbbuf", "vbcas", "vblo"],
+		supplies: { vcc: 3.3 },
+		bias: { m1_m: { current_a: 1.1e-3 }, eb: { current_a: 6e-3 }, vblo: { voltage_v: 1.95 } },
+	});
+	assert.deepEqual(rows.filter((r) => r.status === "fail").map((r) => r.item), ["bias m1_m", "bias vblo"]);
+	assert.equal(rows.filter((r) => r.status === "pass").length, 12);
+});

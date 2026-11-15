@@ -6,7 +6,8 @@
 // record with the table, one row per item; a block without a record cannot pass.
 //
 // The table check (checkTable) finds the problems of the table itself: a bias need without a provider, a provider that
-// is not a pin of the table, a control pin without a control definition, a supply pin on a net that is not a supply.
+// is not a pin of the table, a control pin without a control definition, a supply pin on a net that is not a supply, a
+// bias output on a net that no other pin uses.
 
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
@@ -120,11 +121,14 @@ export function loadConnectionTable(path: string): ConnectionTable {
 export function checkTable(t: ConnectionTable): ConnectionRow[] {
 	const rows: ConnectionRow[] = [];
 	const fail = (item: string, reason: string) => rows.push({ item, status: "fail", expected: null, got: null, unit: null, reason });
+	const onNet = new Map<string, number>();
+	for (const block of Object.values(t.blocks)) for (const pin of Object.values(block.pins)) onNet.set(pin.net, (onNet.get(pin.net) ?? 0) + 1);
 	for (const [b, block] of Object.entries(t.blocks)) {
 		for (const [p, pin] of Object.entries(block.pins)) {
 			const at = `table ${b}.${p}`;
 			if (pin.kind === "supply" && !t.supplies[pin.net]) fail(at, `supply pin on net ${pin.net}, which is not a supply`);
 			if (pin.kind === "control" && pin.control && !t.controls?.[pin.control]) fail(at, `control ${pin.control} is not defined in controls`);
+			if (pin.kind === "bias_out" && (onNet.get(pin.net) ?? 0) < 2) fail(at, `bias output on net ${pin.net} has no consumer`);
 			if (pin.kind === "bias") {
 				if (!pin.provider) {
 					fail(at, `bias need on net ${pin.net} has no provider`);
@@ -216,7 +220,8 @@ export function checkBlock(t: ConnectionTable, iface: BlockInterface, root = "."
 				continue;
 			}
 			add(`bias ${p}`, Math.abs(got - want) <= tol, [Number((want - tol).toPrecision(12)), Number((want + tol).toPrecision(12))], got, unit, `the block used ${g(got)} ${unit}; the table gives ${g(want)} ${unit} +- ${g(tol)}`);
-			if (pin.tc) add(`bias ${p} tc`, rec?.tc === pin.tc, pin.tc, rec?.tc ?? null, null, `the block used ${rec?.tc ?? "no stated"} temperature behaviour; the table gives ${pin.tc}`);
+			if (pin.tc && !rec?.tc) rows.push({ item: `bias ${p} tc`, status: "not_run", expected: pin.tc, got: null, unit: null, reason: `the record states no temperature behaviour for bias pin ${p}` });
+			else if (pin.tc) add(`bias ${p} tc`, rec?.tc === pin.tc, pin.tc, rec?.tc ?? null, null, `the block used ${rec?.tc} temperature behaviour; the table gives ${pin.tc}`);
 		}
 		if (pin.kind === "control" && pin.control) {
 			const ctl = t.controls?.[pin.control];

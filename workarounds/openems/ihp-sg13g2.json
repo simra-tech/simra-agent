@@ -24,11 +24,11 @@
      "simulate"
     ]
    },
-   "gap": "A TopMetal2 line of 800 um x 18 um over a 120 um Metal1 ground (SG13G2_200um.xml stackup, PML_8 sides and top, PEC bottom) does not reach the end criterion -40 dB: the energy is at -15.7 dB after 52000 time steps and -19 dB to -24 dB after 200000. The same line at 300 um and 600 um reaches -40 dB. The cause is not known.",
-   "symptom": "The port job fails with 'the end criterion -40 dB was not reached'; the energy falls slowly, it does not stop at one level.",
-   "workaround": "None proven. Candidate: simulate a 600 um section (it converges) and add the remaining length with the input deembed (a negative length_um adds a uniform line), then check against a second section length.",
-   "status": "open",
-   "evidence": "evals/em-line-s21/README.md (the task line was changed from 800 um to 600 um)"
+   "gap": "A TopMetal2 line over a 120 um Metal1 ground (SG13G2_200um.xml stackup, PML_8 on the sides and the top, PEC at the bottom, margin_um 200) stops at an energy level when the line is long: 700 um stays at -26 dB, 800 um at -20 dB; 600 um reaches -41 dB. With margin_um 400 the 800 um line reaches -40 dB in 32430 time steps; with PML at the bottom (no PEC backside) -41 dB in 16920. Probable cause: a wave guided in the PEC-backed substrate that the PML absorbs badly at 200 um of margin.",
+   "symptom": "The port job fails with 'the end criterion -40 dB was not reached'; the energy stays at -20 dB to -26 dB.",
+   "workaround": "Raise margin_um to 400 (keeps the PEC backside). PML at the bottom also converges but removes the backside metal.",
+   "status": "worked_around",
+   "evidence": "simulated, openEMS 0.37: five one-port runs of 60000 time steps (600, 700, 800 um; 800 um with margin_um 400; 800 um with PML at the bottom)"
   }
  ]
 }

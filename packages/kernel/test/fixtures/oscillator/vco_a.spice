@@ -1,0 +1,83 @@
+* Cross-coupled npn13G2 LC oscillator at 61.8 GHz (IHP SG13G2, typical, 27 C): architecture A of a 122 GHz radar VCO study
+* (varactor as a linear equivalent, EM inductor as L-R, wiring of the HBTs, divider load). Libraries are given as
+* the input libs. vcn1, vbn1 and ven1 are 0 V series sources for the noise of rc, rb and re of xq1.
+vcc vcc 0 1.8
+vctl ctl 0 2.05
+vbb vb 0 1.2
+rl1 ca la1 0.9244
+ll1 la1 vcc 5.59e-11
+rf1 ca f1 1.977
+xcf1 f1 0 cap_cmim w=4.69u l=4.69u
+cdl1 ca dl1 4e-15
+rdl1 dl1 0 10000
+rv1 ca v1 7.794
+cv1 v1 ctl 3.706e-14
+rl2 cb la2 0.9244
+ll2 la2 vcc 5.59e-11
+rf2 cb f2 1.977
+xcf2 f2 0 cap_cmim w=4.69u l=4.69u
+cdl2 cb dl2 4e-15
+rdl2 dl2 0 10000
+rv2 cb v2 7.794
+cv2 v2 ctl 3.706e-14
+xcc1 cb bq1 cap_cmim w=8.944u l=8.944u
+xcc2 ca bq2 cap_cmim w=8.944u l=8.944u
+rb1 bq1 vb 3000
+rb2 bq2 vb 3000
+rq1c ca q1c1 2.569
+lq1c q1c1 q1cx 6.217e-12
+rq1b bq1 q1b1 2.573
+lq1b q1b1 q1bx 6.243e-12
+rq1e e q1e1 0.4664
+lq1e q1e1 q1ex 2.941e-12
+cq1bg bq1 0 2.66e-15
+cq1cg ca 0 2.65e-15
+cq1bc bq1 ca 5.3e-16
+vcn1 q1cx c1i 0
+vbn1 q1bx b1i 0
+ven1 e1i q1ex 0
+xq1 c1i b1i e1i 0 npn13G2 Nx=2 selft=0
+rq2c cb q2c1 2.569
+lq2c q2c1 q2cx 6.217e-12
+rq2b bq2 q2b1 2.573
+lq2b q2b1 q2bx 6.243e-12
+rq2e e q2e1 0.4664
+lq2e q2e1 q2ex 2.941e-12
+cq2bg bq2 0 2.66e-15
+cq2cg cb 0 2.65e-15
+cq2bc bq2 cb 5.3e-16
+xq2 q2cx q2bx q2ex 0 npn13G2 Nx=2 selft=0
+itail e 0 0.005
+vbd vbd 0 0.75
+xcd1 ca db1 cap_cmim w=6.325u l=6.325u
+xcd2 cb db2 cap_cmim w=6.325u l=6.325u
+rd1 db1 vbd 3000
+rd2 db2 vbd 3000
+rld dd ld1 3.066
+lld ld1 vcc 6e-11
+cdo dd out 6e-14
+rlo out 0 50
+rq3c dd q3c1 1.095
+lq3c q3c1 q3cx 4.385e-12
+rq3b db1 q3b1 1.097
+lq3b q3b1 q3bx 4.401e-12
+rq3e 0 q3e1 0.488
+lq3e q3e1 q3ex 3.1e-12
+cq3bg db1 0 3.34e-15
+cq3cg dd 0 3.44e-15
+cq3bc db1 dd 1.31e-15
+xq3 q3cx q3bx q3ex 0 npn13G2 Nx=4 selft=0
+rq4c dd q4c1 1.095
+lq4c q4c1 q4cx 4.385e-12
+rq4b db2 q4b1 1.097
+lq4b q4b1 q4bx 4.401e-12
+rq4e 0 q4e1 0.488
+lq4e q4e1 q4ex 3.1e-12
+cq4bg db2 0 3.34e-15
+cq4cg dd 0 3.44e-15
+cq4bc db2 dd 1.31e-15
+xq4 q4cx q4bx q4ex 0 npn13G2 Nx=4 selft=0
+ikick ca 0 pulse(0 1m 1p 1p 1p 2p 1)
+
+.options reltol=1e-05 abstol=1e-15 vntol=1e-9 
+.end

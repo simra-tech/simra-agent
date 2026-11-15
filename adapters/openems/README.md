@@ -22,7 +22,7 @@ needs only the standard library.
 | metal layer | a conducting sheet at one face of the layer (input `faces`, default the bottom face Zmin), with the conductivity and the thickness of the stackup |
 | via layer | a solid conductor from the sheet of the nearest metal below to the sheet of the nearest metal above |
 | slits | with `cut`, the openings drawn on another GDS datatype (for example `{"Metal1": [24]}`, the slits of IHP SG13G2) are removed from the metal; without it the metal is the drawing (datatype 0) only |
-| via array | with `merge_um`, the vias become blocks (grow by half the distance, unite, shrink back); the block conductivity is the via conductivity times the via area over the block area (measurement `via_fill_<layer>`) |
+| via array | with `merge_um`, the vias become blocks (grow by half the distance, unite, shrink back); the block conductivity is the via conductivity times the via area over the block area (measurement `via_fill_<layer>`); input `via_fill` (`{layer: factor}`, 0 < factor <= 1) sets that factor instead, for example to match another model |
 | dielectric | a box over the domain, or over the die only (input `die`; air outside), with the permittivity and the conductivity of the stackup |
 | slab | input `slabs`: a homogenised anisotropic layer (in-plane and z permittivity, in-plane magnetic conductivity) over rectangles or the die, between two layer faces; for example metal fill |
 | port | a z-directed lumped port with a resistance (default 50 ohm), from the sheet of the layer `from` to the sheet of the layer `to`, or from the bottom of the domain (`bottom`); `x` and `y` are a point or a span `[a, b]` |

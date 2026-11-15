@@ -68,4 +68,30 @@ for (const [name, { config, skip }] of Object.entries(environments)) {
 			assert.ok(m.free_op_max_dv_v.value < 1e-3, `max change ${m.free_op_max_dv_v.value}`);
 		}
 	});
+
+	test(`ngspice assemble_dc: a free op over its time limit fails, or with accept_clamp_end gives the clamp end (${name})`, { skip, timeout: 180_000 }, async (t) => {
+		const root = mkdtempSync(join(realpathSync(tmpdir()), "simra-assemble-"));
+		t.after(() => rmSync(root, { recursive: true, force: true }));
+		writeFileSync(join(root, "simra.config.json"), JSON.stringify({ environments: { [name]: config } }));
+		cpSync(fixtures, root, { recursive: true });
+		const inputs = {
+			deck: "chip.spice",
+			seeds: [{ file: "latch_one.json", from_prefix: "x1.", to_prefix: "xl." }, { file: "div_wrong.json" }],
+			steps: 20,
+			currents: ["vdd"],
+			free_op_timeout_s: 0.001,
+		};
+		const failed = await runExperiment({ root, adapter: "ngspice", operation: "assemble_dc", environment: name, inputs });
+		assert.equal(failed.result.status, "failed");
+		assert.match(failed.result.diagnostics[0].message, /timeout after 0 s.*accept_clamp_end/);
+		const { id, result } = await runExperiment({ root, adapter: "ngspice", operation: "assemble_dc", environment: name, inputs: { ...inputs, accept_clamp_end: true } });
+		assert.equal(result.status, "completed");
+		const m = result.measurements;
+		assert.deepEqual([m.clamp_reached_end.value, m.free_op_converged.value], [1, 0]);
+		assert.ok(Math.abs(m.i_vdd_a.value + 6e-5) < 1e-9, `i(vdd) at the clamp end = ${m.i_vdd_a.value}`);
+		const work = join(root, "simra/experiments", id, "work");
+		const end = JSON.parse(readFileSync(join(work, "clamp_end.json"), "utf8")).nodes;
+		assert.deepEqual(JSON.parse(readFileSync(join(work, "dc_point.json"), "utf8")).nodes, end);
+		assert.ok(Math.abs(end["v(m)"] - 0.6) < 1e-6, "the residual clamp of 1e-12 S does not hold the wrong divider seed");
+	});
 }
