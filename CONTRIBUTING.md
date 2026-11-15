@@ -130,6 +130,8 @@ Rules:
   adapter does not write this field. The requirement kinds `s_db` and `mu` read these files. An output with the role
   `sweep` is a sweep table, JSON `{"sweep": <name>, "columns": [...], "rows": [{<name>: x, <column>: value or null}]}`,
   one row per sweep point in sweep order, with `null` at a point without a value. The requirement kind `sweep` reads it.
+  An output with the role `sparameter_columns` is the S-parameter column of each excited port of an EM run (schema
+  `simra.openems_columns/0`), with its convergence. The `merge` operation of the openems adapter reads these files.
 - A measurement with the status `failed` or `missing` can have the field `reason`. A value reduced over a sweep (an
   extremum, a crossing, a compression point) must be `failed` when a point inside its bracket has no value; the
   reason names the point (see "Sweep reducers" in README.md).

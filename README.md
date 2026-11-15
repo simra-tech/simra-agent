@@ -48,6 +48,8 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
   them, with a wall-time watchdog per job (see [Run N jobs and wait](#run-n-jobs-and-wait)).
 - The command `simra probe` runs one small deck per device class of a technology pack in ngspice and in Xyce, and
   prints the table "class x simulator: simulates / parses / fails / not run" (see [Device-class probe](#device-class-probe)).
+- The openems adapter has two operations: `simulate` and `merge`. The command `simra em` gives the S-parameters of a
+  layout cell as a Touchstone file: one openEMS job per port, then the merge (see [EM S-parameters](#em-s-parameters)).
 - Requirements can reduce a sweep table with the bracket rule (kind `sweep`), gate an RF block on mu over a band at
   each corner for each active stage (`gates.stability`), and cite assumption ids (`assumptions`); `simra assumptions`
   lists the rows of an assumption.
@@ -246,6 +248,34 @@ The table of IHP SG13G2 (ngspice 46, Xyce 7.10, simulated in the environment ima
 | HBT npn13G2, npn13G2l, npn13G2v, pnpMPA | simulates | simulates; the currents agree within 0.2 %; Xyce ignores the safe-operating parameters |
 | MIM capacitors cap_cmim, cap_rfcmim | simulates | simulates |
 | diodes dantenna, dpantenna, schottky_nbl1, diodevdd_2kv | simulates | simulates; the antenna diode currents differ by 27 % to 38 % |
+
+## EM S-parameters
+
+`npx simra em <inputs.json>` gives the S-parameters of a layout cell with openEMS. The inputs are those of the
+operation `simulate` of the [openems adapter](adapters/openems/README.md): the GDS, the cell, the openEMS stackup
+XML of the PDK, the lumped ports and the band. Add `--environment`, `--cpus` and `--timeout-s` (the wall time of each
+port job).
+
+1. The command starts one `simulate` job per port, with only that port excited, as
+   [Run N jobs and wait](#run-n-jobs-and-wait). Each job runs headless and detached on its slot of the CPU pool.
+2. When every port job is complete, a `merge` job writes `<cell>.s<N>p` (role `touchstone`). The kernel adds its
+   summary, and the requirement kinds `s_db` and `mu` can read it.
+3. A port job that failed, timed out, or did not reach the end criterion of openEMS stops the merge. The command then
+   names the job and the reason, and gives no Touchstone file.
+
+The end criterion is the check of an FDTD run: the field energy must fall by `end_criteria_db` (default -40 dB). A
+run that stops at `max_timesteps` with the energy at a plateau can give S-parameters that look correct. The adapter
+records `end_criteria_reached_p<k>` and `energy_end_db_p<k>` and reports such a run as failed.
+
+The default boundaries are PML on the sides and the top and PEC at the bottom. With first-order MUR boundaries, a
+microstrip on the IHP SG13G2 stackup stays at an energy plateau of -13 dB to -18 dB and never reaches the end
+criterion.
+
+The container test is one real run: a TopMetal2 line (300 um x 18 um) over a Metal1 ground on the IHP SG13G2 stackup,
+1 GHz to 60 GHz, two port jobs on 4 CPUs (see [test/openems-container.test.mjs](test/openems-container.test.mjs)).
+Result (openEMS 0.37, simulated): each port run reaches -40.5 dB after 16450 time steps on 68952 cells, in 16.5 s. At
+60 GHz |S11| is -32.7 dB and |S21| is -0.164 dB; S21 equals S12 within 0.05 dB over the band. The test does not
+include a via or a multi-layer structure.
 
 ## Add a PDK
 

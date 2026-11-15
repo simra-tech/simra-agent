@@ -1,0 +1,17 @@
+{
+  "contract": "simra.adapter/0",
+  "name": "openems",
+  "version": "0.1.0",
+  "command": [
+    "python3",
+    "{adapter_dir}/openems_adapter.py"
+  ],
+  "operations": {
+    "simulate": {
+      "description": "EM S-parameters of a layout cell with openEMS (FDTD), headless. Inputs: gds (relative to the design root), cell (optional when the GDS has one top cell), stackup (an openEMS stackup XML, schema 2.0; $PDK_ROOT is expanded), layers (optional list of stackup layer names; default every conductor and via layer with polygons, datatype 0), ports (required: list of {name, x, y (um), from, to (a conductor layer of the stackup, or 'bottom' for the bottom of the domain), r_ohm (default 50)}: a z-directed lumped port), band_hz [f_lo, f_hi] (required), points (default 101), excite (port numbers, default all; simra em runs one job per port), margin_um (default 200: the domain around the layout), boundaries (6 strings x-, x+, y-, y+, z-, z+; default PML_8 on the sides and the top, PEC at the bottom; first-order MUR does not absorb the quasi-static field of an on-chip line, so the run does not reach the end criterion), fine_um (default 3: mesh lines at +-fine_um around each polygon vertex), max_cell_um (default 25, and at most a 15th of the wavelength in the densest dielectric at f_hi), mesh_scale (default 1: scales all cell sizes; larger is coarser and faster), dielectric_snap_um (default 2: a dielectric interface nearer than this to another z line has no line of its own), max_cells (default 5e6: a larger mesh is refused), end_criteria_db (default -40), max_timesteps (default 200000), solve_timeout_s (per excitation, default 3000), allow_unconverged (default false). Method: metals are conducting sheets at the bottom face of the layer with its conductivity and thickness; vias are solid conductors from the sheet of the metal below to the top of the via. The solver runs in a child process with one thread per CPU of the job; its output is work/openems_p<k>.log. Outputs: work/columns.json (role sparameter_columns: the S-parameter column of each excited port, with its convergence), and when every port is excited a Touchstone file <cell>.s<N>p (role touchstone, RI, the port resistance as the reference). Measurements per excited port k: end_criteria_reached_p<k> (1 or 0), energy_end_db_p<k>, timesteps_p<k>, cells_p<k>, solve_s_p<k>; mesh_cells, runtime_s. A port run that stops at max_timesteps did not converge: the response is failed and has no Touchstone file (allow_unconverged makes it a warning)."
+    },
+    "merge": {
+      "description": "Merge the columns.json files of simulate runs (one or more excited ports each) into one Touchstone file. Inputs: columns (required: list of paths relative to the design root), allow_unconverged (default false). Refusals: files with other ports, port resistances, frequencies, cell or boundaries; a port excited in two files; a port with no column; a column that did not reach the end criterion (unless allow_unconverged, then a warning). Outputs: <cell>.s<N>p (role touchstone). Measurements: the convergence measurements of each port."
+    }
+  }
+}

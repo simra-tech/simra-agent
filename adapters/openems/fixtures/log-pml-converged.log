@@ -1,0 +1,17 @@
+FDTD simulation size: 49x51x27 --> 67473 FDTD cells 
+FDTD timestep is: 6.59997e-15 s; Nyquist rate: 1262 timesteps @6.003e+10 Hz
+openEMS::SetupFDTD: Warning, the timestep seems to be very small --> long simulation. Check your mesh!?
+Excitation signal length is: 14469 timesteps (9.5495e-11s)
+Max. number of timesteps: 60000 ( --> 4.1468 * Excitation signal length)
+Create FDTD engine (compressed SSE + multi-threading)
+Multithreaded engine using 4 threads. Utilization: (13;12;12;12)
+Setting up processing...
+Running FDTD engine... this may take a while... grab a cup of coffee?!?
+[@        4s] Timestep:         2835 || Speed:   47.0 MC/s (1.436e-03 s/TS) || Energy: ~7.13e-23 (- 0.00dB)
+[@        8s] Timestep:         5670 || Speed:   47.8 MC/s (1.412e-03 s/TS) || Energy: ~1.42e-20 (- 0.00dB)
+[@       12s] Timestep:         8505 || Speed:   47.2 MC/s (1.429e-03 s/TS) || Energy: ~6.66e-21 (-12.82dB)
+[@       16s] Timestep:        11340 || Speed:   46.3 MC/s (1.456e-03 s/TS) || Energy: ~1.29e-22 (-29.96dB)
+[@       20s] Timestep:        14175 || Speed:   45.9 MC/s (1.470e-03 s/TS) || Energy: ~1.97e-23 (-38.11dB)
+[@       24s] Timestep:        17010 || Speed:   47.7 MC/s (1.414e-03 s/TS) || Energy: ~8.12e-24 (-41.96dB)
+Time for 17010 iterations with 67473.00 cells : 24.43 sec
+Speed: 46.97 MCells/s 
