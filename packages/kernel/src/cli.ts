@@ -21,6 +21,9 @@
 //   simra assumptions [<id>] [--file <path>]
 //                             list each assumption of requirements.json (or the one given), the requirements that depend
 //                             on it, and the rows of the newest check that depend on it
+//   simra probe --pdk <name> [--environment <env>] [--cpus <list>] [--json]
+//                             device-class probe: one small deck per device class of the technology pack in ngspice and
+//                             in Xyce (two jobs); print the table class x simulator (simulates, parses, fails, not run)
 //   simra pdf <file>          print the text of a PDF with a [page N] marker before each page; option --pages <a-b>,
 //                             or --render <N> (render page N to a PNG in the cache and print its path)
 //   simra pack init --pdk <name> [--adapter <name>] [--pdk-root <dir>] [--dir <technology dir>] [--inputs <json>]
@@ -38,6 +41,7 @@ import { findRoot } from "./config.ts";
 import { createInterface } from "node:readline/promises";
 import { formatPackCheck, formatPackInit, packCheck, packInit, writeProposed } from "./packs.ts";
 import { extractPdf, pdfPages, renderPage } from "./pdf.ts";
+import { probeDevices } from "./probe.ts";
 import { formatJobs, runJobs } from "./jobs.ts";
 import { assumptionUses, latestVerdict, loadRequirements, runCheck } from "./requirements.ts";
 import { runtimeEstimate } from "./estimate.ts";
@@ -49,7 +53,7 @@ import { waitExperiments } from "./wait.ts";
 
 function usage(): never {
 	console.error(
-		"usage: simra run [--detach] <spec.json> | simra jobs <jobs.json> [--cpus <list>] [--parallel <n>] [--timeout-s <n>] | simra wait <id> [<id>...] [--timeout-s <n>] | simra show <id> [--json] | simra record [<path>...] | simra list | simra assumptions [<id>] [--file <path>] | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>] | simra pdf <file> [--pages <a-b> | --render <N>] | simra pack init --pdk <name> [--adapter <name>] [--pdk-root <dir>] [--dir <dir>] [--inputs <json>] [--write] | simra pack check --pdk <name> [--adapter <name>] [--inputs <json>]   [--root <dir>]",
+		"usage: simra run [--detach] <spec.json> | simra jobs <jobs.json> [--cpus <list>] [--parallel <n>] [--timeout-s <n>] | simra wait <id> [<id>...] [--timeout-s <n>] | simra show <id> [--json] | simra record [<path>...] | simra probe --pdk <name> [--environment <env>] [--cpus <list>] [--json] | simra list | simra assumptions [<id>] [--file <path>] | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>] | simra pdf <file> [--pages <a-b> | --render <N>] | simra pack init --pdk <name> [--adapter <name>] [--pdk-root <dir>] [--dir <dir>] [--inputs <json>] [--write] | simra pack check --pdk <name> [--adapter <name>] [--inputs <json>]   [--root <dir>]",
 	);
 	process.exit(2);
 }
@@ -72,7 +76,7 @@ async function main(argv: string[]): Promise<number> {
 			// Internal: the supervisor of a detached run (see runExperiment). The argument is the experiment directory.
 			const result = await runDetachedWorker(argv[++i] ?? usage());
 			return result.status === "completed" ? 0 : 1;
-		} else if (["--cpus", "--file", "--only", "--conditions", "--parallel", "--timeout-s", "--pages", "--render", "--pdk", "--adapter", "--pdk-root", "--dir", "--inputs"].includes(argv[i])) options[argv[i].slice(2)] = argv[++i] ?? usage();
+		} else if (["--cpus", "--environment", "--file", "--only", "--conditions", "--parallel", "--timeout-s", "--pages", "--render", "--pdk", "--adapter", "--pdk-root", "--dir", "--inputs"].includes(argv[i])) options[argv[i].slice(2)] = argv[++i] ?? usage();
 		else args.push(argv[i]);
 	}
 	root ??= findRoot(process.cwd()) ?? process.cwd();
@@ -152,6 +156,11 @@ async function main(argv: string[]): Promise<number> {
 		console.log(formatAssumptionUses(assumptionUses(file, arg), current));
 		if (verdict && !current) console.log(`the newest check ${verdict.id} used another version of the requirements file: its rows are not listed`);
 		return 0;
+	}
+	if (command === "probe") {
+		const { table, jobs, text } = await probeDevices({ root, pdk: options.pdk ?? usage(), environment: options.environment, cpus: options.cpus });
+		console.log(json ? JSON.stringify(table, null, 2) : text);
+		return jobs.every((j) => j.status === "completed") ? 0 : 1;
 	}
 	if (command === "pdf" && arg) {
 		const range = options.pages === undefined ? [] : (options.pages.match(/^(\d+)(?:-(\d+))?$/) ?? usage()).slice(1).filter(Boolean).map(Number);

@@ -46,6 +46,8 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
   [Frequency-domain requirements](#frequency-domain-requirements)).
 - The tool `run_jobs` (pi) and the command `simra jobs` (CLI) run N experiments on a CPU pool and wait for all of
   them, with a wall-time watchdog per job (see [Run N jobs and wait](#run-n-jobs-and-wait)).
+- The command `simra probe` runs one small deck per device class of a technology pack in ngspice and in Xyce, and
+  prints the table "class x simulator: simulates / parses / fails / not run" (see [Device-class probe](#device-class-probe)).
 - Requirements can reduce a sweep table with the bracket rule (kind `sweep`), gate an RF block on mu over a band at
   each corner for each active stage (`gates.stability`), and cite assumption ids (`assumptions`); `simra assumptions`
   lists the rows of an assumption.
@@ -216,6 +218,34 @@ deck. The adapter does not use `.option temp=`, because it does not replace a `.
 The design root is the nearest directory upward with `simra.config.json`. It defines the execution
 environments. Put machine-specific settings (image ID, CPU list) in `simra.local.json`, which git ignores.
 See [examples/ota-sg13g2](examples/ota-sg13g2/README.md).
+
+## Device-class probe
+
+A simulator can lack a model of a PDK, or read it with a parameter that it ignores. Find this before a campaign, not
+during it. `npx simra probe --pdk <name>` runs one small DC deck per device class of the technology pack in ngspice and
+in Xyce (two jobs of [Run N jobs and wait](#run-n-jobs-and-wait); add `--environment` and `--cpus`). It prints one
+line per class with one column per simulator:
+
+- `simulates`: the operating point converged, and the DC current of the probe source is a number;
+- `parses`: the simulator read the netlist, but the analysis gave no value;
+- `fails`: the simulator did not read the netlist (a model gap), with the first error and its file and line;
+- `not run`: the class did not end in its time.
+
+Then it lists the reasons, the classes where the simulators disagree by more than 1 % on the probe current, and the
+fidelity warnings (for example a model parameter that Xyce ignores). `--json` prints the table. The decks come from
+the section `device_probe` of the pack (see [technologies/README.md](technologies/README.md)).
+
+The table of IHP SG13G2 (ngspice 46, Xyce 7.10, simulated in the environment image) is a test fixture,
+[test/fixtures/device-probe/ihp-sg13g2.json](test/fixtures/device-probe/ihp-sg13g2.json):
+
+| Classes | ngspice | Xyce |
+| --- | --- | --- |
+| MOS LV and HV, NMOS and PMOS (PSP 103) | simulates | fails: Xyce rejects the PSP 103 card (`Unrecognized parameter D`) |
+| HV varactor | simulates | fails: the Xyce library does not define `sg13_hv_svaricap` |
+| poly resistors rsil, rppd, rhigh (r3_cmc) | simulates | fails: Xyce rejects the r3_cmc card (`Unrecognized parameter 1`) |
+| HBT npn13G2, npn13G2l, npn13G2v, pnpMPA | simulates | simulates; the currents agree within 0.2 %; Xyce ignores the safe-operating parameters |
+| MIM capacitors cap_cmim, cap_rfcmim | simulates | simulates |
+| diodes dantenna, dpantenna, schottky_nbl1, diodevdd_2kv | simulates | simulates; the antenna diode currents differ by 27 % to 38 % |
 
 ## Add a PDK
 

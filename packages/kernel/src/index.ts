@@ -3,6 +3,7 @@ export * from "./estimate.ts";
 export * from "./jobs.ts";
 export * from "./packs.ts";
 export * from "./pdf.ts";
+export * from "./probe.ts";
 export * from "./record.ts";
 export * from "./records.ts";
 export * from "./reducers.ts";

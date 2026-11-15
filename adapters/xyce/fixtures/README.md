@@ -10,3 +10,6 @@ Excerpts of Xyce 7.10 output (`Xyce Release 7.10-opensource`). The PDK paths are
 | `temp-ignored.log` | a deck with `.temp 50` and an illegal `.measure` name |
 | `hb-cubic.csv` | `.print hb_fd format=csv` of `v(out) = 2 v(a) + 0.4 v(a)^3`, `v(a) = 0.25 cos(2 pi 1e9 t)`, and `i(vcc)` of 1.5 V into 1 kohm |
 | `measure.mt0` | the `.measure` file of a transient run: one value, an `AT` outside the run, a `WHEN` that does not occur |
+| `probe-hbt_npn13G2.norun.log`, `probe-hbt_npn13G2.csv` | operation `probe_devices` on IHP SG13G2: `Xyce -norun` of the `npn13G2` deck (fidelity warnings only), and the `.print dc format=csv` file of its run |
+| `probe-res_rsil.norun.log` | `Xyce -norun` of the `rsil` deck: Xyce rejects the r3_cmc resistor card (`Unrecognized parameter 1 for device YR3_CMC!R1`) |
+| `probe-varactor_hv.norun.log` | `Xyce -norun` of the `sg13_hv_svaricap` deck: the Xyce library does not define the subcircuit |

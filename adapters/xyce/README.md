@@ -41,6 +41,11 @@ The tests in `test/xyce-pdk-container.test.mjs` run in an image with both PDKs (
 | ihp-sg13g2 | the Xyce libraries of the kit | `parse`: 1 gap, the PSP 103 MOS card (Xyce rejects its parameters). The HBT card parses; Xyce ignores its safe-operating parameters (fidelity warnings). `hb` of a common-emitter npn13G2 stage at 61 GHz converges. |
 | sky130A | the ngspice library (the kit has no Xyce library) | `parse`: no gap; Xyce replaces BSIM4 version 4.5 by 4.6.1 (fidelity warning). |
 
+The operation `probe_devices` runs one deck per device class of the technology pack (see "Device-class probe" in the
+main README). On IHP SG13G2 it adds two gaps to the table above: the r3_cmc resistor cards (rsil, rppd, rhigh) and
+the HV varactor (no subcircuit in the Xyce library). A subcircuit that the library does not define is the finding
+class `subcircuit missing` (a gap).
+
 The known-answer tests (`test/xyce.test.mjs`) use decks with ideal devices: an RC low-pass with `params` and
 `temp_c`, the refusals, a `.LIN` Touchstone output, model gaps, the harmonics of a cubic, and P1dB from a power sweep
 against the closed form. `test_xyce_adapter.py` (12 tests) needs no Xyce: it uses excerpts of Xyce 7.10 logs in

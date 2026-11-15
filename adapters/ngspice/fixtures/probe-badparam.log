@@ -1,0 +1,17 @@
+
+Note: No compatibility mode selected!
+
+
+Circuit: * bad model param
+
+Warning: Model issue on line 2 :
+  .model dd d foo=1 ...
+unrecognized parameter (foo) - ignored
+
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+No. of Data Rows : 1
+i(vprobe) = -5.67035e-03
+Note: Simulation executed from .control section 

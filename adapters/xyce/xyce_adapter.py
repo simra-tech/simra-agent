@@ -56,6 +56,7 @@ MPI_START_FAILURE = re.compile(r"orte_init|opal_init|PMIx|ORTE_ERROR|It looks li
 # (the device cannot be simulated with this model); the others are fidelity warnings.
 FINDINGS = [
     ("model_missing", re.compile(r"Model is required for device (\S+) and no valid model card found", re.I)),
+    ("subcircuit_missing", re.compile(r"Subcircuit (\S+) has not been defined for instance (\S+)", re.I)),
     ("parameter_unrecognized", re.compile(r"Unrecognized parameter (\S+) for device (\S+)", re.I)),
     ("fields_unrecognized", re.compile(r"Unrecognized fields for device (\S+)", re.I)),
     ("parameter_ignored", re.compile(r"No model parameter (\S+) found for model (\S+) of type (\S+), parameter ignored", re.I)),
@@ -63,7 +64,7 @@ FINDINGS = [
                                        r"version supported in Xyce \(([^)]+)\)", re.I)),
     ("dot_line_ignored", re.compile(r"Unrecognized dot line will be ignored", re.I)),
 ]
-GAPS = ("model_missing", "parameter_unrecognized")
+GAPS = ("model_missing", "subcircuit_missing", "parameter_unrecognized")
 
 
 # ------------------------------------------------------------------------------------------------------------ files
@@ -772,7 +773,8 @@ def main(argv):
     if request.get("contract") != CONTRACT:
         sys.stderr.write("unsupported contract: {}\n".format(request.get("contract")))
         return 2
-    operation = {"parse": parse, "simulate": simulate, "hb": hb}.get(request.get("operation"))
+    import device_probe  # here, not at the top: device_probe imports the helpers of this module
+    operation = {"parse": parse, "simulate": simulate, "hb": hb, "probe_devices": device_probe.probe_devices}.get(request.get("operation"))
     response = operation(request) if operation else failure(None, "unknown operation: {}".format(request.get("operation")))
     tmp = request["response_path"] + ".tmp"
     with open(tmp, "w") as f:

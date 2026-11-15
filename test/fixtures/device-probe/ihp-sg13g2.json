@@ -1,0 +1,409 @@
+{
+  "schema": "simra.device_probe/0",
+  "pdk": "ihp-sg13g2",
+  "pack": "ihp-sg13",
+  "simulators": {
+    "ngspice": {
+      "version": "46"
+    },
+    "xyce": {
+      "version": "7.10-opensource"
+    }
+  },
+  "classes": {
+    "mos_lv_nmos": {
+      "ngspice": {
+        "description": "1.2 V NMOS (PSP 103)",
+        "status": "simulates",
+        "value_a": -0.0000857001,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      },
+      "xyce": {
+        "description": "1.2 V NMOS (PSP 103)",
+        "status": "fails",
+        "value_a": null,
+        "reason": "parameter unrecognized: Unrecognized parameter D for device YPSP103_VA!M1 ($PDK_ROOT/ihp-sg13g2/libs.tech/xyce/models/sg13g2_moslv_mod.lib:74)",
+        "gaps": [
+          "parameter_unrecognized"
+        ],
+        "warnings": [
+          "fields unrecognized: Unrecognized fields for device YPSP103_VA!M1"
+        ]
+      }
+    },
+    "mos_lv_pmos": {
+      "ngspice": {
+        "description": "1.2 V PMOS (PSP 103)",
+        "status": "simulates",
+        "value_a": 0.0000491432,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      },
+      "xyce": {
+        "description": "1.2 V PMOS (PSP 103)",
+        "status": "fails",
+        "value_a": null,
+        "reason": "parameter unrecognized: Unrecognized parameter D for device YPSP103_VA!M1 ($PDK_ROOT/ihp-sg13g2/libs.tech/xyce/models/sg13g2_moslv_mod.lib:86)",
+        "gaps": [
+          "parameter_unrecognized"
+        ],
+        "warnings": [
+          "fields unrecognized: Unrecognized fields for device YPSP103_VA!M1"
+        ]
+      }
+    },
+    "mos_hv_nmos": {
+      "ngspice": {
+        "description": "3.3 V NMOS (PSP 103)",
+        "status": "simulates",
+        "value_a": -0.000213084,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      },
+      "xyce": {
+        "description": "3.3 V NMOS (PSP 103)",
+        "status": "fails",
+        "value_a": null,
+        "reason": "parameter unrecognized: Unrecognized parameter D for device YPSP103_VA!M1 ($PDK_ROOT/ihp-sg13g2/libs.tech/xyce/models/sg13g2_moshv_mod.lib:74)",
+        "gaps": [
+          "parameter_unrecognized"
+        ],
+        "warnings": [
+          "fields unrecognized: Unrecognized fields for device YPSP103_VA!M1"
+        ]
+      }
+    },
+    "mos_hv_pmos": {
+      "ngspice": {
+        "description": "3.3 V PMOS (PSP 103)",
+        "status": "simulates",
+        "value_a": 0.00007000569,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      },
+      "xyce": {
+        "description": "3.3 V PMOS (PSP 103)",
+        "status": "fails",
+        "value_a": null,
+        "reason": "parameter unrecognized: Unrecognized parameter D for device YPSP103_VA!M1 ($PDK_ROOT/ihp-sg13g2/libs.tech/xyce/models/sg13g2_moshv_mod.lib:87)",
+        "gaps": [
+          "parameter_unrecognized"
+        ],
+        "warnings": [
+          "fields unrecognized: Unrecognized fields for device YPSP103_VA!M1"
+        ]
+      }
+    },
+    "varactor_hv": {
+      "ngspice": {
+        "description": "HV MOS varactor",
+        "status": "simulates",
+        "value_a": 0,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      },
+      "xyce": {
+        "description": "HV MOS varactor",
+        "status": "fails",
+        "value_a": null,
+        "reason": "subcircuit missing: Subcircuit SG13_HV_SVARICAP has not been defined for instance XDUT (work/probe/varactor_hv.cir:3)",
+        "gaps": [
+          "subcircuit_missing"
+        ],
+        "warnings": []
+      }
+    },
+    "hbt_npn13G2": {
+      "ngspice": {
+        "description": "SiGe HBT npn13G2 (VBIC)",
+        "status": "simulates",
+        "value_a": -0.000592157,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      },
+      "xyce": {
+        "description": "SiGe HBT npn13G2 (VBIC)",
+        "status": "simulates",
+        "value_a": -0.000592127198,
+        "reason": null,
+        "gaps": [],
+        "warnings": [
+          "parameter ignored: No model parameter VBE_MAX found for model NPN13G2_NX_VBIC of type NPN, parameter ignored.",
+          "parameter ignored: No model parameter VBC_MAX found for model NPN13G2_NX_VBIC of type NPN, parameter ignored.",
+          "parameter ignored: No model parameter VCE_MAX found for model NPN13G2_NX_VBIC of type NPN, parameter ignored."
+        ]
+      }
+    },
+    "hbt_npn13G2l": {
+      "ngspice": {
+        "description": "SiGe HBT npn13G2l (VBIC)",
+        "status": "simulates",
+        "value_a": -0.00155324,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      },
+      "xyce": {
+        "description": "SiGe HBT npn13G2l (VBIC)",
+        "status": "simulates",
+        "value_a": -0.00155316338,
+        "reason": null,
+        "gaps": [],
+        "warnings": [
+          "parameter ignored: No model parameter VBE_MAX found for model NPN13G2L_NX_VBIC of type NPN, parameter ignored.",
+          "parameter ignored: No model parameter VBC_MAX found for model NPN13G2L_NX_VBIC of type NPN, parameter ignored.",
+          "parameter ignored: No model parameter VCE_MAX found for model NPN13G2L_NX_VBIC of type NPN, parameter ignored."
+        ]
+      }
+    },
+    "hbt_npn13G2v": {
+      "ngspice": {
+        "description": "SiGe HBT npn13G2v (VBIC)",
+        "status": "simulates",
+        "value_a": -0.00155015,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      },
+      "xyce": {
+        "description": "SiGe HBT npn13G2v (VBIC)",
+        "status": "simulates",
+        "value_a": -0.00154745385,
+        "reason": null,
+        "gaps": [],
+        "warnings": [
+          "parameter ignored: No model parameter VBE_MAX found for model NPN13G2V_NX_VBIC of type NPN, parameter ignored.",
+          "parameter ignored: No model parameter VBC_MAX found for model NPN13G2V_NX_VBIC of type NPN, parameter ignored.",
+          "parameter ignored: No model parameter VCE_MAX found for model NPN13G2V_NX_VBIC of type NPN, parameter ignored."
+        ]
+      }
+    },
+    "hbt_pnpMPA": {
+      "ngspice": {
+        "description": "lateral PNP pnpMPA",
+        "status": "simulates",
+        "value_a": -0.0000101419,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      },
+      "xyce": {
+        "description": "lateral PNP pnpMPA",
+        "status": "simulates",
+        "value_a": -0.0000101500928,
+        "reason": null,
+        "gaps": [],
+        "warnings": [
+          "parameter ignored: No model parameter TRM1 found for model PNPMPA_MOD of type PNP, parameter ignored.",
+          "parameter ignored: No model parameter TRM2 found for model PNPMPA_MOD of type PNP, parameter ignored.",
+          "parameter ignored: No model parameter TRC1 found for model PNPMPA_MOD of type PNP, parameter ignored.",
+          "parameter ignored: No model parameter TRC2 found for model PNPMPA_MOD of type PNP, parameter ignored.",
+          "parameter ignored: No model parameter TRE1 found for model PNPMPA_MOD of type PNP, parameter ignored."
+        ]
+      }
+    },
+    "res_rsil": {
+      "ngspice": {
+        "description": "silicided poly resistor rsil (r3_cmc)",
+        "status": "simulates",
+        "value_a": -0.00117223,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      },
+      "xyce": {
+        "description": "silicided poly resistor rsil (r3_cmc)",
+        "status": "fails",
+        "value_a": null,
+        "reason": "parameter unrecognized: Unrecognized parameter 1 for device YR3_CMC!R1 ($PDK_ROOT/ihp-sg13g2/libs.tech/xyce/models/resistors_mod.lib:66)",
+        "gaps": [
+          "parameter_unrecognized"
+        ],
+        "warnings": [
+          "fields unrecognized: Unrecognized fields for device YR3_CMC!R1"
+        ]
+      }
+    },
+    "res_rppd": {
+      "ngspice": {
+        "description": "p+ poly resistor rppd (r3_cmc)",
+        "status": "simulates",
+        "value_a": -0.0000373265,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      },
+      "xyce": {
+        "description": "p+ poly resistor rppd (r3_cmc)",
+        "status": "fails",
+        "value_a": null,
+        "reason": "parameter unrecognized: Unrecognized parameter 1 for device YR3_CMC!R1 ($PDK_ROOT/ihp-sg13g2/libs.tech/xyce/models/resistors_mod.lib:188)",
+        "gaps": [
+          "parameter_unrecognized"
+        ],
+        "warnings": [
+          "fields unrecognized: Unrecognized fields for device YR3_CMC!R1"
+        ]
+      }
+    },
+    "res_rhigh": {
+      "ngspice": {
+        "description": "high-resistance poly resistor rhigh (r3_cmc)",
+        "status": "simulates",
+        "value_a": -0.00000605676,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      },
+      "xyce": {
+        "description": "high-resistance poly resistor rhigh (r3_cmc)",
+        "status": "fails",
+        "value_a": null,
+        "reason": "parameter unrecognized: Unrecognized parameter 1 for device YR3_CMC!R1 ($PDK_ROOT/ihp-sg13g2/libs.tech/xyce/models/resistors_mod.lib:128)",
+        "gaps": [
+          "parameter_unrecognized"
+        ],
+        "warnings": [
+          "fields unrecognized: Unrecognized fields for device YR3_CMC!R1"
+        ]
+      }
+    },
+    "cap_cmim": {
+      "ngspice": {
+        "description": "MIM capacitor cap_cmim",
+        "status": "simulates",
+        "value_a": 0,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      },
+      "xyce": {
+        "description": "MIM capacitor cap_cmim",
+        "status": "simulates",
+        "value_a": 0,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      }
+    },
+    "cap_rfcmim": {
+      "ngspice": {
+        "description": "RF MIM capacitor cap_rfcmim",
+        "status": "simulates",
+        "value_a": 0,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      },
+      "xyce": {
+        "description": "RF MIM capacitor cap_rfcmim",
+        "status": "simulates",
+        "value_a": -5.90867397e-98,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      }
+    },
+    "dio_dantenna": {
+      "ngspice": {
+        "description": "antenna diode dantenna",
+        "status": "simulates",
+        "value_a": -6.26804e-11,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      },
+      "xyce": {
+        "description": "antenna diode dantenna",
+        "status": "simulates",
+        "value_a": -3.89483539e-11,
+        "reason": null,
+        "gaps": [],
+        "warnings": [
+          "parameter ignored: No model parameter IKFF found for model DAREA of type D, parameter ignored.",
+          "parameter ignored: No model parameter IKFF found for model DPERIM of type D, parameter ignored.",
+          "parameter ignored: No model parameter IKFF found for model DCORNER of type D, parameter ignored."
+        ]
+      }
+    },
+    "dio_dpantenna": {
+      "ngspice": {
+        "description": "antenna diode dpantenna",
+        "status": "simulates",
+        "value_a": -3.64397e-8,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      },
+      "xyce": {
+        "description": "antenna diode dpantenna",
+        "status": "simulates",
+        "value_a": -5.00317984e-8,
+        "reason": null,
+        "gaps": [],
+        "warnings": [
+          "parameter ignored: No model parameter IKFF found for model DPAREA of type D, parameter ignored.",
+          "parameter ignored: No model parameter IKFF found for model DPPERIM of type D, parameter ignored.",
+          "parameter ignored: No model parameter IKFF found for model DPCORNER of type D, parameter ignored."
+        ]
+      }
+    },
+    "dio_schottky": {
+      "ngspice": {
+        "description": "Schottky diode schottky_nbl1",
+        "status": "simulates",
+        "value_a": -0.0000061934,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      },
+      "xyce": {
+        "description": "Schottky diode schottky_nbl1",
+        "status": "simulates",
+        "value_a": -0.00000627458831,
+        "reason": null,
+        "gaps": [],
+        "warnings": [
+          "parameter ignored: No model parameter TCV found for model DSUB_MOD of type D, parameter ignored."
+        ]
+      }
+    },
+    "dio_esd_vdd": {
+      "ngspice": {
+        "description": "ESD diode diodevdd_2kv",
+        "status": "simulates",
+        "value_a": -0.0000034919,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      },
+      "xyce": {
+        "description": "ESD diode diodevdd_2kv",
+        "status": "simulates",
+        "value_a": -0.0000035048897,
+        "reason": null,
+        "gaps": [],
+        "warnings": []
+      }
+    }
+  },
+  "agreement": {
+    "hbt_npn13G2": 0.0000503278691292385,
+    "hbt_npn13G2l": 0.00004932914424043952,
+    "hbt_npn13G2v": 0.001739283295164984,
+    "hbt_pnpMPA": 0.0008071650339985396,
+    "cap_cmim": 0,
+    "cap_rfcmim": 0,
+    "dio_dantenna": 0.3786198891519517,
+    "dio_dpantenna": 0.27166919508534004,
+    "dio_schottky": 0.012939225011879756,
+    "dio_esd_vdd": 0.0037061651326716605
+  }
+}

@@ -42,6 +42,9 @@ Operation "lint". Inputs:
   files         list of netlist paths, relative to the design root. The adapter reads each file and the files
                 that it includes from the design root, and gives the same option warnings. It runs no simulation.
 
+Operation "probe_devices" (device_probe.py). One small DC deck per device class of the technology pack (section
+device_probe); a row per class: simulates, parses, fails or not run, with the reason.
+
 Operation "check_design" (design_check.py). It checks a design netlist against a design contract, with the ngspice.*
 facts of the technology pack, and runs no simulation.
 """
@@ -724,8 +727,9 @@ def main(argv):
         sys.stderr.write("unsupported contract: {}\n".format(request.get("contract")))
         return 2
     import design_check  # here, not at the top: design_check imports the helpers of this module
+    import device_probe
     operation = {"simulate": simulate, "operating_point": operating_point, "lint": lint,
-                 "check_design": design_check.check_design}.get(request.get("operation"))
+                 "check_design": design_check.check_design, "probe_devices": device_probe.probe_devices}.get(request.get("operation"))
     if operation is None:
         response = failure(None, "unknown operation: {}".format(request.get("operation")))
     else:
