@@ -316,6 +316,8 @@ def outputs_of(work_dir, root, skip=()):
             e = {"path": display_path(path, root), "sha256": sha256(path), "bytes": os.path.getsize(path)}
             if re.search(r"\.s\d+p$", name, re.I):
                 e["role"] = "touchstone"
+            elif name == "sweep.json":
+                e["role"] = "sweep"
             out.append(e)
     return out
 
@@ -694,7 +696,9 @@ def hb(request):
         for side, pick in (("min", min), ("max", max)):
             key = "{}.{}".format(name, side)
             if bad:
-                measurements[key] = {"value": None, "unit": unit, "status": "failed", "source": "work/hb.json", "at": None}
+                measurements[key] = {"value": None, "unit": unit, "status": "failed", "source": "work/hb.json", "at": None,
+                                     "reason": "{} of {} sweep points did not converge (first: {} = {:g})".format(
+                                         len(bad), len(points), sweep["param"], bad[0]["value"])}
                 continue
             p, v = pick(vals, key=lambda pv: pv[1])
             measurements[key] = {"value": v, "unit": unit, "status": "measured", "source": "work/hb.json", "at": {sweep["param"]: p["value"]}}
@@ -715,12 +719,38 @@ def hb(request):
             pin, pout, why = p1db(seq, port)
             for key, v in (("p1db_in_{}_dbm".format(port), pin), ("p1db_out_{}_dbm".format(port), pout)):
                 measurements[key] = ({"value": v, "unit": "dBm", "status": "measured", "source": "work/hb.json"} if v is not None
-                                     else {"value": None, "unit": "dBm", "status": "failed" if "converge" in why else "missing"})
+                                     else {"value": None, "unit": "dBm", "status": "failed" if "converge" in why else "missing",
+                                           "reason": why})
             if pin is None:
                 diagnostics.append({"severity": "warning" if "converge" not in why else "error", "source": "adapter",
                                     "message": "P1dB at port {}: {}".format(port, why)})
     measurements["points_converged"] = {"value": len(ok), "unit": None, "status": "measured"}
     measurements["points_total"] = {"value": len(points), "unit": None, "status": "measured"}
+    if sweep:
+        # The sweep table (role sweep) for the requirement kind "sweep": one row per point, null where the point did not
+        # converge, so that a reducer can apply the bracket rule.
+        columns = []
+        for port, _ in spec["ports"]:
+            columns += ["p_{}_{}_dbm".format(port, prod) for prod in spec["products"]]
+            if gain:
+                columns.append("gain_{}_db".format(port))
+        columns += ["i_{}_a".format(src) for src in spec["dc"]]
+
+        def cell(p, c):
+            if p["status"] != "converged":
+                return None
+            for port, _ in spec["ports"]:
+                if c == "gain_{}_db".format(port):
+                    return p["gain"][port]
+                for prod in spec["products"]:
+                    if c == "p_{}_{}_dbm".format(port, prod):
+                        return p["p"][port][prod]
+            return p["i"][c[2:-2]]
+        table = {"sweep": sweep["param"], "columns": columns,
+                 "rows": [dict([(sweep["param"], p["value"])] + [(c, cell(p, c)) for c in columns]) for p in points]}
+        with open(os.path.join(work_dir, "sweep.json"), "w") as fh:
+            json.dump(table, fh, indent=2)
+            fh.write("\n")
     with open(os.path.join(work_dir, "hb.json"), "w") as fh:
         json.dump({"tones_hz": spec["tones"], "harmonics": spec["harmonics"], "startup_periods": spec["startup"],
                    "ports": dict(spec["ports"]), "products": spec["products"], "sweep": sweep, "points": points}, fh, indent=2)

@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { formatVerdict, listExperiments, loadExperiment, runCheck, validateRequirements, type RequirementsFile, type VerdictRow } from "../src/index.ts";
+import { assumptionUses, formatAssumptionUses, formatVerdict, listExperiments, loadExperiment, runCheck, validateRequirements, type RequirementsFile, type VerdictRow } from "../src/index.ts";
 
 const fixtures = new URL("./fixtures/", import.meta.url).pathname;
+const cli = new URL("../src/cli.ts", import.meta.url).pathname;
 
 function designRoot(t: { after: (fn: () => void) => void }, requirements: unknown): string {
 	const root = mkdtempSync(join(tmpdir(), "simra-check-"));
@@ -145,7 +147,7 @@ test("a file with a top-level design section is rejected, so its design check is
 	await assert.rejects(runCheck({ root }), /invalid requirements file requirements\.json:\n- design: this field is not supported/);
 	assert.equal(existsSync(join(root, "simra")), false);
 	assert.deepEqual(validateRequirements({ ...amplifier, limits: {} } as RequirementsFile), [
-		"limits: unknown field; the fields are schema, conditions, experiments, requirements",
+		"limits: unknown field; the fields are schema, conditions, experiments, requirements, assumptions, gates",
 	]);
 });
 
@@ -414,4 +416,110 @@ test("Touchstone kinds: a file that changed after the run is not measured, and t
 	for (const text of ["remove measurement", "needs band_hz", "needs entry", "unit of kind s_db is dB", "entry is only for kind s_db", "kind is nf", "band_hz and touchstone are for the kinds"]) {
 		assert.ok(bad.some((e) => e.includes(text)), `${text}: ${bad.join("; ")}`);
 	}
+});
+
+// Kind sweep: a reducer over a column of the sweep table (role "sweep") of the experiment, with the bracket rule.
+const table = (gain: (number | null)[]) => ({ sweep: "pin_dbm", columns: ["gain_db"], rows: gain.map((g, k) => ({ pin_dbm: -10 + 5 * k, gain_db: g })) });
+const swept = {
+	schema: "simra.requirements/0",
+	conditions: { tt: { inputs: { table: table([10, 9.8, 9.4, 8.6, 7.0]) } }, ss: { inputs: { table: table([10, 9.8, null, 8.6, 7.0]) } } },
+	experiments: { hb: { adapter: "fake", operation: "run", inputs: { mode: "sweep" } } },
+	requirements: [
+		{ id: "ip1db", experiment: "hb", kind: "sweep", column: "gain_db", reduce: { kind: "compression", db: 1 }, op: ">=", limit: 0, unit: "dBm", conditions: ["tt", "ss"] },
+		{ id: "gmin", experiment: "hb", kind: "sweep", column: "gain_db", reduce: { kind: "min" }, op: ">=", limit: 6, unit: "dB", conditions: ["tt"] },
+	],
+};
+
+test("kind sweep: the reduced value of a sweep table; a failed point inside the bracket is not measured, never a value", async (t) => {
+	const root = designRoot(t, swept);
+	const { verdict } = await runCheck({ root });
+	const tt = row(verdict.rows, "ip1db", "tt");
+	assert.equal(tt.status, "pass");
+	assert.ok(Math.abs((tt.value as number) - 2.5) < 1e-12);
+	assert.deepEqual(tt.at, { pin_dbm: 2.5 });
+	assert.equal(tt.measurement, "gain_db compression");
+	const ss = row(verdict.rows, "ip1db", "ss");
+	assert.equal(ss.status, "not_measured");
+	assert.equal(ss.value, null);
+	assert.match(ss.reason as string, /^gain_db compression: failed \(the point 0 has no value and is inside the bracket of the 1 dB compression\)$/);
+	assert.deepEqual([row(verdict.rows, "gmin", "tt").value, row(verdict.rows, "gmin", "tt").at], [7, { pin_dbm: 10 }]);
+	assert.equal(verdict.status, "incomplete");
+	assert.match(formatVerdict(root, verdict), /NOT_MEASURED {1}ip1db @ ss: -, limit >= 0 \[\S+\] \(gain_db compression: failed \(the point 0 has no value/);
+	const bad = { ...swept, requirements: [{ id: "x", experiment: "hb", kind: "sweep", column: "g", reduce: { kind: "mean" }, measurement: "m", op: ">=", limit: 0 }] };
+	await assert.rejects(runCheck({ root: designRoot(t, bad) }), /remove measurement[\s\S]*reduce\.kind must be one of/);
+});
+
+// The stability gate: each listed stage needs a mu requirement over the gate band at each listed condition.
+const gated = (requirements: unknown[], band_hz?: [number, number]) => ({
+	...sparams,
+	gates: { stability: { stages: ["lna", "buf"], conditions: ["tt", "ss"], ...(band_hz ? { band_hz } : {}) } },
+	requirements,
+});
+const muReq = (id: string, stage: string, band: [number, number], conditions = ["tt", "ss"]) => ({ id, experiment: "sp", kind: "mu", stage, band_hz: band, op: ">=", limit: 1, conditions });
+
+test("stability gate: a stage without a mu record at a corner is not run, so the block cannot pass", async (t) => {
+	// The data covers 10 to 40 GHz; the gate band here is 10 to 40 GHz (the default is 1 to 300 GHz).
+	const root = designRoot(t, gated([muReq("mu_lna", "lna", [10e9, 40e9])], [10e9, 40e9]));
+	const { verdict } = await runCheck({ root });
+	const gate = verdict.rows.filter((r) => r.gate);
+	assert.equal(gate.length, 4);
+	assert.equal(row(gate, "gate stability lna", "tt").status, "pass");
+	assert.equal(row(gate, "gate stability lna", "tt").reason, "from requirement mu_lna");
+	assert.equal(row(gate, "gate stability lna", "ss").status, "fail", "mu < 1 at ss");
+	const buf = row(gate, "gate stability buf", "tt");
+	assert.equal(buf.status, "not_run");
+	assert.match(buf.reason as string, /^no mu requirement of stage buf with op >= and a limit of at least 1 covers 10000000000 to 40000000000 Hz at condition tt$/);
+	assert.equal(verdict.status, "fail");
+
+	// Only tt passes everywhere: with both stages at tt only, the gate at ss is still not run.
+	const ttOnly = designRoot(t, gated([muReq("mu_lna", "lna", [10e9, 40e9], ["tt"]), muReq("mu_buf", "buf", [10e9, 40e9], ["tt"])], [10e9, 40e9]));
+	const v2 = (await runCheck({ root: ttOnly })).verdict;
+	assert.deepEqual(v2.rows.filter((r) => r.gate).map((r) => [r.requirement, r.condition, r.status]), [
+		["gate stability lna", "tt", "pass"], ["gate stability lna", "ss", "not_run"], ["gate stability buf", "tt", "pass"], ["gate stability buf", "ss", "not_run"],
+	]);
+	assert.equal(v2.status, "incomplete");
+});
+
+test("stability gate: a narrower band than the gate (default 1 to 300 GHz) does not cover it; the file is checked", async (t) => {
+	const { verdict } = await runCheck({ root: designRoot(t, gated([muReq("mu_lna", "lna", [10e9, 40e9]), muReq("mu_buf", "buf", [10e9, 40e9])])) });
+	for (const r of verdict.rows.filter((r) => r.gate)) {
+		assert.equal(r.status, "not_run");
+		assert.match(r.reason as string, /covers 1000000000 to 300000000000 Hz/);
+	}
+	const bad = { ...gated([{ ...muReq("m", "lna", [1e9, 3e11]), kind: "s_db", entry: [2, 1] }]), gates: { stability: { stages: [], conditions: ["hot"], band_hz: [5, 1] }, other: {} } };
+	await assert.rejects(runCheck({ root: designRoot(t, bad) }), (e: Error) =>
+		["stage is for kind mu", "stages must list", 'condition "hot" is not defined', "band_hz must be", "gates.other: unknown gate"].every((m) => e.message.includes(m)));
+});
+
+// Assumption ids: rows cite them through the requirement, its experiment or its condition; a query lists the rows.
+const assumed = {
+	...amplifier,
+	assumptions: { tx_leak: { description: "TX leakage at the LNA input", value: -34, unit: "dBm", source: "system level plan" }, vdd: { description: "supply" } },
+	conditions: { ...amplifier.conditions, ss: { ...amplifier.conditions.ss, assumptions: ["vdd"] } },
+	experiments: { ac: { ...amplifier.experiments.ac, assumptions: ["tx_leak"] } },
+};
+
+test("assumptions: each row lists the assumptions it depends on, and a query lists the rows of an assumption", async (t) => {
+	const root = designRoot(t, assumed);
+	const { verdict } = await runCheck({ root });
+	assert.deepEqual(row(verdict.rows, "gain", "tt").assumptions, ["tx_leak"]);
+	assert.deepEqual(row(verdict.rows, "gain", "ss").assumptions, ["tx_leak", "vdd"]);
+	assert.match(formatVerdict(root, verdict), / \{assumes tx_leak, vdd\}\n/);
+	const uses = assumptionUses(assumed as never);
+	assert.deepEqual(uses.map((u) => [u.assumption, u.requirements.map((r) => [r.id, r.via.join("+"), r.conditions.join("+")])]), [
+		["tx_leak", [["gain", "experiment ac", "tt+ss"], ["ugf", "experiment ac", "tt+ss"]]],
+		["vdd", [["gain", "condition ss", "ss"], ["ugf", "condition ss", "ss"]]],
+	]);
+	const text = formatAssumptionUses(assumptionUses(assumed as never, "vdd"), verdict);
+	assert.match(text, /^assumption vdd: supply\n {2}requirement gain via condition ss; conditions ss\n/);
+	assert.match(text, new RegExp(`rows in check ${verdict.id}: 2\\n {4}\\S+ +gain @ ss: 55 dB\\n {4}\\S+ +ugf @ ss: `));
+	// The CLI: the newest check of the same requirements file.
+	const r = spawnSync(process.execPath, [cli, "assumptions", "tx_leak", "--root", root], { encoding: "utf8" });
+	assert.equal(r.status, 0, r.stderr);
+	assert.match(r.stdout, /^assumption tx_leak: TX leakage at the LNA input = -34 dBm \(source: system level plan\)$/m);
+	assert.match(r.stdout, new RegExp(`rows in check ${verdict.id}: 4`));
+	assert.match(spawnSync(process.execPath, [cli, "assumptions", "nope", "--root", root], { encoding: "utf8" }).stderr, /assumption "nope" is not defined/);
+	const bad = { ...assumed, requirements: [{ ...amplifier.requirements[0], assumptions: ["unknown"] }], assumptions: { "a b": { description: "" } } };
+	await assert.rejects(runCheck({ root: designRoot(t, bad) }), (e: Error) =>
+		['assumption "unknown" is not defined', 'assumption "a b": an id has', 'assumption "a b": description is required'].every((m) => e.message.includes(m)));
 });

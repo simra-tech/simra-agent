@@ -3,12 +3,12 @@
 // python3 (optional: SIMRA_TEST_ENGINE, SIMRA_TEST_CPUS). A skipped case is reported as skipped: that check did not run.
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runExperiment } from "@simra-tech/kernel";
+import { reduceSweep, runExperiment } from "@simra-tech/kernel";
 
 const works = (cmd, args) => {
 	try {
@@ -163,6 +163,13 @@ for (const [env, { config, skip }] of Object.entries(environments)) {
 		assert.ok(Math.abs(m.p1db_out_out_dbm.value - (m.p1db_in_out_dbm.value + m.gain_ss_out_db.value - 1)) < 1e-9);
 		assert.deepEqual(m["gain_out_db.min"].at, { pin_dbm: 12 });
 		assert.equal(m.points_converged.value, 45);
+		// The sweep table (role sweep) gives the same compression point through the kernel reducer.
+		const table = result.outputs.find((f) => f.role === "sweep");
+		assert.ok(table, JSON.stringify(result.outputs.map((f) => f.path)));
+		const data = JSON.parse(readFileSync(join(root, table.path), "utf8"));
+		assert.deepEqual(data.columns, ["p_out_h1_dbm", "p_out_h2_dbm", "p_out_h3_dbm", "gain_out_db"]);
+		const reduced = reduceSweep(data.rows.map((r) => ({ x: r.pin_dbm, y: r.gain_out_db })), { kind: "compression", db: 1 });
+		assert.ok(Math.abs(reduced.value - m.p1db_in_out_dbm.value) < 1e-9, `${reduced.value} vs ${m.p1db_in_out_dbm.value}`);
 	});
 
 	test(`xyce hb: a point without a result in the wall time is a timeout, never a value (${env})`, { skip, timeout: 120_000 }, async (t) => {
@@ -173,6 +180,8 @@ for (const [env, { config, skip }] of Object.entries(environments)) {
 		assert.equal(result.status, "failed");
 		assert.equal(result.measurements["p_out_h1_dbm.min"].status, "failed");
 		assert.equal(result.measurements.p1db_in_out_dbm.status, "failed");
+		assert.match(result.measurements.p1db_in_out_dbm.reason, /did not converge/);
+		assert.match(result.measurements["p_out_h1_dbm.min"].reason, /^2 of 2 sweep points did not converge \(first: pin_dbm = 0\)$/);
 		assert.ok(result.diagnostics.some((d) => d.message.includes("timeout: no result in 0.05 s")), why(result));
 	});
 }

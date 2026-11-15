@@ -30,8 +30,14 @@ import {
 	designRecord,
 	extractPdf,
 	findRoot,
+	assumptionUses,
+	formatAssumptionUses,
 	formatDesignRecord,
+	latestVerdict,
+	loadRequirements,
+	sha256File,
 	formatDiagnostic,
+	formatJobs,
 	formatOutcome,
 	formatStarted,
 	formatVerdict,
@@ -41,6 +47,7 @@ import {
 	runCheck,
 	queryAdapter,
 	runExperiment,
+	runJobs,
 	runtimeEstimate,
 	waitExperiments,
 	type AdapterManifest,
@@ -363,6 +370,75 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 	pi.registerTool({
+		name: "run_jobs",
+		label: "Run jobs and wait",
+		description: [
+			"Run N experiments (jobs) and wait for all of them in one call. Each job is a run_experiment request (adapter,",
+			"operation, inputs, purpose, environment, timeout_s). Each job runs detached and is recorded as run_experiment records it.",
+			"cpus is a CPU pool (for example \"122-125\"): it is split into slots, one job per slot at a time, and each job is pinned",
+			"to the CPUs of its slot. timeout_s of a job is its wall-time watchdog (default 3600 s): a job without a result in that",
+			"time is stopped (also its container) and has the status timeout. The call gives one line per job: status, experiment",
+			"id, exit code, runtime and log paths. Read a job's measurements with wait_experiments or simra show and its id.",
+			"wait_timeout_s ends the wait: a running job continues (wait for it with wait_experiments); a job that did not start",
+			"is not_started and never runs.",
+		].join("\n"),
+		promptSnippet: "run N simulations at the same time on a CPU pool and wait for all, with a watchdog per job",
+		promptGuidelines: [
+			"For more than one independent run (corners, sweep points, seeds), use run_jobs. Do not write shell loops that wait on process names (pgrep, ps).",
+		],
+		parameters: Type.Object({
+			jobs: Type.Array(
+				Type.Object({
+					adapter: Type.String(),
+					operation: Type.String(),
+					inputs: Type.Record(Type.String(), Type.Unknown()),
+					purpose: Type.Optional(Type.String()),
+					environment: Type.Optional(Type.String()),
+					timeout_s: Type.Optional(Type.Number({ description: "Watchdog of this job in seconds (default 3600)" })),
+				}),
+				{ minItems: 1 },
+			),
+			cpus: Type.Optional(Type.String({ description: 'CPU pool, for example "122-125"' })),
+			parallel: Type.Optional(Type.Number({ description: "Jobs at the same time (default: one per CPU of the pool, or 4)" })),
+			wait_timeout_s: Type.Optional(Type.Number({ description: "Return after this many seconds (default: when every job ended)" })),
+		}),
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+			const root = findRoot(ctx.cwd) ?? ctx.cwd;
+			const outcome = await runJobs({ root, jobs: params.jobs, cpus: params.cpus, parallel: params.parallel, waitTimeoutS: params.wait_timeout_s, signal });
+			return {
+				content: [{ type: "text", text: formatJobs(outcome) }],
+				details: { jobs: outcome.jobs.map((o) => ({ index: o.index, id: o.id, status: o.status, exit_code: o.exit_code, cpus: o.cpus })), counts: outcome.counts },
+			};
+		},
+	});
+	pi.registerTool({
+		name: "assumption_rows",
+		label: "Assumption rows",
+		description: [
+			"List the assumptions of requirements.json (or one), each requirement that depends on it (through the requirement, its",
+			"experiment or a condition), and the rows of the newest check that depend on it, with their status. Use it before you",
+			"change an assumption: every listed row must be checked again. It runs no tool.",
+		].join("\n"),
+		promptSnippet: "list the requirement rows that depend on an assumption",
+		parameters: Type.Object({
+			id: Type.Optional(Type.String({ description: "The assumption id (default: all)" })),
+			file: Type.Optional(Type.String({ description: "Requirements file relative to the design root (default requirements.json)" })),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const root = findRoot(ctx.cwd) ?? ctx.cwd;
+			const { file, path } = loadRequirements(root, params.file);
+			if (params.id !== undefined && !file.assumptions?.[params.id]) throw new Error(`assumption "${params.id}" is not defined`);
+			const verdict = latestVerdict(root);
+			const current = verdict && verdict.requirements_file.sha256 === sha256File(path) ? verdict : null;
+			const uses = assumptionUses(file, params.id);
+			const stale = verdict && !current ? `\nthe newest check ${verdict.id} used another version of the requirements file: its rows are not listed` : "";
+			return {
+				content: [{ type: "text", text: formatAssumptionUses(uses, current) + stale }],
+				details: { assumptions: uses.map((u) => ({ id: u.assumption, requirements: u.requirements.map((r) => r.id) })), check: current?.id ?? null },
+			};
+		},
+	});
+	pi.registerTool({
 		name: "design_record",
 		label: "Design record",
 		description: [
@@ -425,7 +501,15 @@ export default function (pi: ExtensionAPI) {
 			"- kind (optional, default \"measurement\"): \"s_db\" (20 log10 |S_ij|, entry [i, j]) or \"mu\" (stability factor of a",
 			"  2-port, > 1 is unconditionally stable) read a Touchstone file of the experiment (touchstone names it when there are",
 			"  several) at every data point in band_hz [f_lo, f_hi] and use the worst point (@ f_hz=<f>). They have no measurement.",
-			"  A band outside the data is not measured.",
+			"  A band outside the data is not measured. A mu requirement can name its RF stage in stage.",
+			"- kind \"sweep\": a reducer over a column of the sweep table of the experiment (output role sweep; ngspice ROW lines,",
+			"  xyce hb sweeps): column, reduce {kind: min | max | crossing (level, direction) | compression (db, default 1)}. The value",
+			"  is invalid (not measured) when a point inside the bracket of the reducer has no value.",
+			"- gates.stability (optional): {stages, conditions, band_hz (default [1e9, 300e9])}. Each stage needs a mu requirement",
+			"  (op >=, limit >= 1, stage set) whose band contains band_hz at each condition; else its gate row is not run and the",
+			"  check cannot pass.",
+			"- assumptions (optional): {id: {description, value?, unit?, source?}}. A requirement, experiment or condition cites them",
+			"  in assumptions [ids]; each row lists the assumptions it depends on. assumption_rows lists the rows of one assumption.",
 			"Example:",
 			REQUIREMENTS_EXAMPLE,
 		].join("\n"),

@@ -62,7 +62,7 @@ for (const [name, { config, skip }] of Object.entries(environments)) {
 		const work = join(root, "simra", "experiments", id, "work");
 		const table = JSON.parse(readFileSync(join(work, "sweep.json"), "utf8"));
 		assert.deepEqual([table.sweep, table.columns, table.rows.map((r) => r.r)], ["r", ["f3db_hz"], [1e3, 2e3, 4e3]]);
-		assert.ok(result.outputs.some((f) => f.path.endsWith("work/sweep.json")));
+		assert.ok(result.outputs.some((f) => f.path.endsWith("work/sweep.json") && f.role === "sweep"), "the sweep table has the role sweep");
 		// temp_c reached the simulator.
 		assert.match(readFileSync(join(work, "ngspice.log"), "utf8"), /Doing analysis at TEMP = 50\.0/);
 	});

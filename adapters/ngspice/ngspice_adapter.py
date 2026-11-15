@@ -306,8 +306,9 @@ def sweep_measurements(table, sources, wanted):
             diagnostics.append({"severity": "warning", "source": sources[empty[0]] if empty else "work/ngspice.log",
                                 "message": "{}: {} of {} sweep points have no value".format(c, len(empty), len(rows))})
             for side in ("min", "max"):
-                measurements["{}.{}".format(c, side)] = {"value": None, "unit": unit, "status": "failed",
-                                                         "source": sources[empty[0]] if empty else None, "at": None}
+                measurements["{}.{}".format(c, side)] = {
+                    "value": None, "unit": unit, "status": "failed", "source": sources[empty[0]] if empty else None, "at": None,
+                    "reason": "{} of {} sweep points have no value".format(len(empty), len(rows)) if rows else "no sweep points"}
             continue
         for side, pick in (("min", min), ("max", max)):
             i = pick(range(len(rows)), key=lambda k: rows[k][c])
@@ -504,7 +505,10 @@ def run(request, tool, top_name, deck_path, libs, wanted, extra_inputs=()):
     for name in sorted(os.listdir(work_dir)):
         path = os.path.join(work_dir, name)
         if os.path.isfile(path):
-            outputs.append({"path": display_path(path, root), "sha256": sha256(path), "bytes": os.path.getsize(path)})
+            entry = {"path": display_path(path, root), "sha256": sha256(path), "bytes": os.path.getsize(path)}
+            if name == "sweep.json" and table:
+                entry["role"] = "sweep"
+            outputs.append(entry)
 
     return {
         "contract": CONTRACT,

@@ -127,7 +127,12 @@ Rules:
   `render` writes such outputs. An output with the role `touchstone` is a Touchstone file (`.sNp`). The kernel
   reads it after the run and adds the field `touchstone` to its entry: ports, points, band, DC point, passivity and
   reciprocity numbers, or `{"error": ...}` when the file does not parse or changed after the adapter hashed it. The
-  adapter does not write this field. The requirement kinds `s_db` and `mu` read these files.
+  adapter does not write this field. The requirement kinds `s_db` and `mu` read these files. An output with the role
+  `sweep` is a sweep table, JSON `{"sweep": <name>, "columns": [...], "rows": [{<name>: x, <column>: value or null}]}`,
+  one row per sweep point in sweep order, with `null` at a point without a value. The requirement kind `sweep` reads it.
+- A measurement with the status `failed` or `missing` can have the field `reason`. A value reduced over a sweep (an
+  extremum, a crossing, a compression point) must be `failed` when a point inside its bracket has no value; the
+  reason names the point (see "Sweep reducers" in README.md).
 - A measurement that the tool did not give has status `failed` or `missing` and the value `null`. It is never
   omitted.
 - A measurement can have the optional field `at`: the sweep point where a reduced value (for example a minimum

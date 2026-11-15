@@ -7,6 +7,10 @@
 //   simra wait <id> [<id>...] [--timeout-s <n>]
 //                             wait until the experiments end (default timeout 3600 s); print one summary per id, or
 //                             "still running" for a run that did not end. Exit code 0 only when every run completed.
+//   simra jobs <jobs.json> [--cpus <list>] [--parallel <n>] [--timeout-s <n>]
+//                             run N jobs and wait: jobs.json is a list of run specs (each may have timeout_s, the
+//                             watchdog of the job). The CPU pool is split into one slot per job at a time. Print one
+//                             line per job (status, exit code, runtime, logs). Exit code 0 only when every job completed.
 //   simra show <id> [--json]  print the summary of the experiment (with a STALE line for each input file that changed
 //                             after the run); with --json, the experiment and result records
 //   simra record [<path>...]  print the design record: each file of record, its hash, and the checks that ran on it
@@ -14,6 +18,9 @@
 //   simra list                list experiments, oldest first
 //   simra check               check requirements.json; options --file <path>, --only <id,...>, --conditions <name,...>,
 //                             --parallel <n> (experiments at the same time, default 4)
+//   simra assumptions [<id>] [--file <path>]
+//                             list each assumption of requirements.json (or the one given), the requirements that depend
+//                             on it, and the rows of the newest check that depend on it
 //   simra pdf <file>          print the text of a PDF with a [page N] marker before each page; option --pages <a-b>,
 //                             or --render <N> (render page N to a PNG in the cache and print its path)
 //   simra pack init --pdk <name> [--adapter <name>] [--pdk-root <dir>] [--dir <technology dir>] [--inputs <json>]
@@ -31,17 +38,18 @@ import { findRoot } from "./config.ts";
 import { createInterface } from "node:readline/promises";
 import { formatPackCheck, formatPackInit, packCheck, packInit, writeProposed } from "./packs.ts";
 import { extractPdf, pdfPages, renderPage } from "./pdf.ts";
-import { runCheck } from "./requirements.ts";
+import { formatJobs, runJobs } from "./jobs.ts";
+import { assumptionUses, latestVerdict, loadRequirements, runCheck } from "./requirements.ts";
 import { runtimeEstimate } from "./estimate.ts";
 import { designRecord, formatDesignRecord } from "./record.ts";
 import { listExperiments, loadExperiment, readStatus } from "./records.ts";
-import { runDetachedWorker, runExperiment } from "./runner.ts";
-import { formatOutcome, formatStarted, formatVerdict, formatWait } from "./summary.ts";
+import { runDetachedWorker, runExperiment, sha256File } from "./runner.ts";
+import { formatAssumptionUses, formatOutcome, formatStarted, formatVerdict, formatWait } from "./summary.ts";
 import { waitExperiments } from "./wait.ts";
 
 function usage(): never {
 	console.error(
-		"usage: simra run [--detach] <spec.json> | simra wait <id> [<id>...] [--timeout-s <n>] | simra show <id> [--json] | simra record [<path>...] | simra list | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>] | simra pdf <file> [--pages <a-b> | --render <N>] | simra pack init --pdk <name> [--adapter <name>] [--pdk-root <dir>] [--dir <dir>] [--inputs <json>] [--write] | simra pack check --pdk <name> [--adapter <name>] [--inputs <json>]   [--root <dir>]",
+		"usage: simra run [--detach] <spec.json> | simra jobs <jobs.json> [--cpus <list>] [--parallel <n>] [--timeout-s <n>] | simra wait <id> [<id>...] [--timeout-s <n>] | simra show <id> [--json] | simra record [<path>...] | simra list | simra assumptions [<id>] [--file <path>] | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>] | simra pdf <file> [--pages <a-b> | --render <N>] | simra pack init --pdk <name> [--adapter <name>] [--pdk-root <dir>] [--dir <dir>] [--inputs <json>] [--write] | simra pack check --pdk <name> [--adapter <name>] [--inputs <json>]   [--root <dir>]",
 	);
 	process.exit(2);
 }
@@ -64,7 +72,7 @@ async function main(argv: string[]): Promise<number> {
 			// Internal: the supervisor of a detached run (see runExperiment). The argument is the experiment directory.
 			const result = await runDetachedWorker(argv[++i] ?? usage());
 			return result.status === "completed" ? 0 : 1;
-		} else if (["--file", "--only", "--conditions", "--parallel", "--timeout-s", "--pages", "--render", "--pdk", "--adapter", "--pdk-root", "--dir", "--inputs"].includes(argv[i])) options[argv[i].slice(2)] = argv[++i] ?? usage();
+		} else if (["--cpus", "--file", "--only", "--conditions", "--parallel", "--timeout-s", "--pages", "--render", "--pdk", "--adapter", "--pdk-root", "--dir", "--inputs"].includes(argv[i])) options[argv[i].slice(2)] = argv[++i] ?? usage();
 		else args.push(argv[i]);
 	}
 	root ??= findRoot(process.cwd()) ?? process.cwd();
@@ -98,6 +106,21 @@ async function main(argv: string[]): Promise<number> {
 		console.log(formatWait(r, outcomes, (Date.now() - start) / 1000, (e) => runtimeEstimate(r, e)));
 		return outcomes.every((o) => o.status === "completed") ? 0 : 1;
 	}
+	if (command === "jobs" && arg) {
+		const file = JSON.parse(readFileSync(arg, "utf8"));
+		const jobs = Array.isArray(file) ? file : file.jobs;
+		if (!Array.isArray(jobs)) throw new Error(`${arg}: expected a list of jobs, or {"jobs": [...]}`);
+		const outcome = await runJobs({
+			root,
+			jobs,
+			cpus: options.cpus,
+			parallel: options.parallel === undefined ? undefined : positive(options.parallel),
+			waitTimeoutS: options["timeout-s"] === undefined ? undefined : positive(options["timeout-s"]),
+			onEvent: ({ kind, job }) => console.error(`${kind} job ${job.index}${job.id ? ` (${job.id})` : ""}: ${job.status}`),
+		});
+		console.log(formatJobs(outcome));
+		return outcome.jobs.every((o) => o.status === "completed") ? 0 : 1;
+	}
 	if (command === "show" && arg) {
 		const { experiment, result } = loadExperiment(root, arg);
 		if (json) console.log(JSON.stringify({ experiment, result }, null, 2));
@@ -120,6 +143,15 @@ async function main(argv: string[]): Promise<number> {
 		});
 		console.log(formatVerdict(root, verdict));
 		return verdict.status === "pass" ? 0 : 1;
+	}
+	if (command === "assumptions") {
+		const { file, path } = loadRequirements(root, options.file);
+		if (arg !== undefined && !file.assumptions?.[arg]) throw new Error(`assumption "${arg}" is not defined in ${path}`);
+		const verdict = latestVerdict(root);
+		const current = verdict && verdict.requirements_file.sha256 === sha256File(path) ? verdict : null;
+		console.log(formatAssumptionUses(assumptionUses(file, arg), current));
+		if (verdict && !current) console.log(`the newest check ${verdict.id} used another version of the requirements file: its rows are not listed`);
+		return 0;
 	}
 	if (command === "pdf" && arg) {
 		const range = options.pages === undefined ? [] : (options.pages.match(/^(\d+)(?:-(\d+))?$/) ?? usage()).slice(1).filter(Boolean).map(Number);

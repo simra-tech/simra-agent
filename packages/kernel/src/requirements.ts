@@ -16,7 +16,7 @@
 // each experiment, so a failed row can show its errors with file and line. The kernel reads no netlist and holds no
 // PDK facts.
 
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import {
 	type Diagnostic,
@@ -28,6 +28,7 @@ import {
 	type ResultRecord,
 	writeJsonAtomic,
 } from "./records.ts";
+import { type ReducerSpec, reduceSweep, reducerError, type SweepPoint } from "./reducers.ts";
 import { gitState, KERNEL_VERSION, runExperiment, sha256File } from "./runner.ts";
 import { isTouchstoneEntry, readTouchstone, sDb, stabilityMu } from "./touchstone.ts";
 
@@ -46,8 +47,27 @@ export type Limit = number | [number, number];
  * worst point. s_db is 20 log10 |S_ij| (entry [i, j], ports from 1); mu is the stability factor of a 2-port
  * (Edwards and Sinsky), > 1 for an unconditionally stable 2-port.
  */
-export type RequirementKind = "measurement" | "s_db" | "mu";
-export const REQUIREMENT_KINDS: RequirementKind[] = ["measurement", "s_db", "mu"];
+export type RequirementKind = "measurement" | "s_db" | "mu" | "sweep";
+export const REQUIREMENT_KINDS: RequirementKind[] = ["measurement", "s_db", "mu", "sweep"];
+
+/** The stability gate: every listed stage needs a mu requirement over the band at every listed condition. */
+export interface StabilityGate {
+	/** The active RF stages of the block. A mu requirement names its stage in "stage". */
+	stages: string[];
+	/** Default [1e9, 300e9]. A mu requirement covers the gate when its band contains this band. */
+	band_hz?: [number, number];
+	/** The conditions (corners) of the gate. */
+	conditions: string[];
+}
+export const STABILITY_BAND_HZ: [number, number] = [1e9, 300e9];
+
+/** A stated assumption (for example a system level that no block measures). Rows that depend on it cite its id. */
+export interface Assumption {
+	description: string;
+	value?: number | string;
+	unit?: string;
+	source?: string;
+}
 
 export interface Requirement {
 	id: string;
@@ -64,6 +84,16 @@ export interface Requirement {
 	entry?: [number, number];
 	/** s_db and mu: the band [f_lo, f_hi] in Hz. Each data point in it is checked; [f, f] checks one data point. */
 	band_hz?: [number, number];
+	/** mu: the RF stage that the 2-port describes (for the stability gate). */
+	stage?: string;
+	/** sweep: the column of the sweep table (an output with the role "sweep"). */
+	column?: string;
+	/** sweep: the reducer (min, max, crossing with level and direction, compression with db). */
+	reduce?: ReducerSpec;
+	/** sweep: the sweep table, by its path or the end of its path; optional when the experiment has one. */
+	table?: string;
+	/** The ids of the assumptions that the row depends on (see "assumptions" of the file). */
+	assumptions?: string[];
 	/** Expected unit. A measurement with a different unit is not compared. */
 	unit?: string;
 	op: "<=" | ">=" | "between";
@@ -80,14 +110,18 @@ export interface ExperimentTemplate {
 	inputs: Record<string, unknown>;
 	environment?: string;
 	timeout_s?: number;
+	/** Assumptions that every row of this experiment depends on. */
+	assumptions?: string[];
 }
 
 export interface RequirementsFile {
 	schema: typeof REQUIREMENTS_SCHEMA;
 	/** Each condition adds its inputs to the experiment inputs (a condition input replaces an input of the same name). */
-	conditions: Record<string, { description?: string; inputs?: Record<string, unknown> }>;
+	conditions: Record<string, { description?: string; inputs?: Record<string, unknown>; assumptions?: string[] }>;
 	experiments: Record<string, ExperimentTemplate>;
 	requirements: Requirement[];
+	assumptions?: Record<string, Assumption>;
+	gates?: { stability?: StabilityGate };
 }
 
 /**
@@ -114,6 +148,10 @@ export interface VerdictRow {
 	reason: string | null;
 	/** The sweep point of the value, when it is the worst point of a sweep (for example {"vcm": 0.4}). */
 	at: Record<string, number> | null;
+	/** The assumptions that the row depends on (of the requirement, its experiment and its condition); absent when none. */
+	assumptions?: string[];
+	/** A gate row: the gate ("stability") and the requirements that cover it. */
+	gate?: { name: string; stage: string; covered_by: string[] };
 }
 
 export interface VerdictRecord {
@@ -156,7 +194,7 @@ function validLimit(op: Requirement["op"], limit: unknown): boolean {
 	return isNumber(limit);
 }
 
-const FIELDS = ["schema", "conditions", "experiments", "requirements"];
+const FIELDS = ["schema", "conditions", "experiments", "requirements", "assumptions", "gates"];
 /** An old file had a top-level design section. Its check would be lost without a message, so the field is an error. */
 const DESIGN_MIGRATION =
 	"design: this field is not supported. Put the design check in experiments (adapter ngspice, operation check_design, " +
@@ -172,8 +210,29 @@ export function validateRequirements(file: RequirementsFile): string[] {
 	}
 	const conditions = file.conditions ?? {};
 	const experiments = file.experiments ?? {};
+	const assumptions = file.assumptions ?? {};
+	for (const [id, a] of Object.entries(assumptions)) {
+		if (!/^[\w.-]+$/.test(id)) errors.push(`assumption "${id}": an id has letters, digits, "_", "." and "-" only`);
+		if (!a || typeof a.description !== "string" || !a.description) errors.push(`assumption "${id}": description is required`);
+	}
+	const cites = (where: string, list: unknown) => {
+		if (list === undefined) return;
+		if (!Array.isArray(list) || !list.every((x) => typeof x === "string")) errors.push(`${where}: assumptions must be a list of assumption ids`);
+		else for (const a of list) if (!assumptions[a]) errors.push(`${where}: assumption "${a}" is not defined in assumptions`);
+	};
 	for (const [name, e] of Object.entries(experiments)) {
 		if (!e.adapter || !e.operation) errors.push(`experiment "${name}": adapter and operation are required`);
+		cites(`experiment "${name}"`, e.assumptions);
+	}
+	for (const [name, c] of Object.entries(conditions)) cites(`condition "${name}"`, c?.assumptions);
+	const gate = file.gates?.stability;
+	for (const k of Object.keys(file.gates ?? {})) if (k !== "stability") errors.push(`gates.${k}: unknown gate; the gates are stability`);
+	if (gate) {
+		if (!Array.isArray(gate.stages) || !gate.stages.length || !gate.stages.every((x) => typeof x === "string" && x)) errors.push("gates.stability: stages must list the active RF stages");
+		if (!Array.isArray(gate.conditions) || !gate.conditions.length) errors.push("gates.stability: conditions must list the corners of the gate");
+		else for (const c of gate.conditions) if (!conditions[c]) errors.push(`gates.stability: condition "${c}" is not defined`);
+		const b = gate.band_hz;
+		if (b !== undefined && !(Array.isArray(b) && b.length === 2 && b.every(isNumber) && b[0] >= 0 && b[0] < b[1])) errors.push("gates.stability: band_hz must be [f_lo, f_hi] in Hz");
 	}
 	if (!Array.isArray(file.requirements) || file.requirements.length === 0) {
 		errors.push("requirements: give at least one requirement");
@@ -189,7 +248,17 @@ export function validateRequirements(file: RequirementsFile): string[] {
 		const kind = r.kind ?? "measurement";
 		if (!REQUIREMENT_KINDS.includes(kind)) errors.push(`${where}: kind is ${String(kind)}, expected ${REQUIREMENT_KINDS.join(", ")}`);
 		if (kind === "measurement" && !r.measurement) errors.push(`${where}: measurement is required`);
-		if (kind !== "measurement") {
+		cites(where, r.assumptions);
+		if (r.stage !== undefined && (kind !== "mu" || typeof r.stage !== "string")) errors.push(`${where}: stage is for kind mu (the name of an RF stage)`);
+		if (kind === "sweep") {
+			if (r.measurement !== undefined) errors.push(`${where}: kind sweep reads a sweep table; remove measurement`);
+			if (typeof r.column !== "string" || !r.column) errors.push(`${where}: kind sweep needs column (a column of the sweep table)`);
+			const e = reducerError(r.reduce);
+			if (e) errors.push(`${where}: ${e}`);
+			if (r.table !== undefined && typeof r.table !== "string") errors.push(`${where}: table must be a path`);
+			if (r.band_hz !== undefined || r.touchstone !== undefined || r.entry !== undefined) errors.push(`${where}: band_hz, touchstone and entry are for the kinds s_db and mu`);
+		} else if (r.column !== undefined || r.reduce !== undefined || r.table !== undefined) errors.push(`${where}: column, reduce and table are for kind sweep`);
+		if (kind === "s_db" || kind === "mu") {
 			if (r.measurement !== undefined) errors.push(`${where}: kind ${kind} computes its value from a Touchstone file; remove measurement`);
 			const band = r.band_hz;
 			if (!(Array.isArray(band) && band.length === 2 && band.every(isNumber) && band[0] >= 0 && band[0] <= band[1])) {
@@ -263,6 +332,7 @@ function compare(op: Requirement["op"], limit: Limit, value: number): { margin: 
 export function rowMeasurement(r: Requirement): string {
 	if (r.kind === "s_db") return `S${r.entry?.join("") ?? ""} dB`;
 	if (r.kind === "mu") return "mu";
+	if (r.kind === "sweep") return `${r.column ?? ""} ${r.reduce?.kind ?? ""}`;
 	return r.measurement ?? "";
 }
 
@@ -302,6 +372,35 @@ function touchstoneValues(r: Requirement, run: { id: string; result: ResultRecor
 	return { values: ks.map(([f, k]) => ({ value: sDb(data, k, i, j), f })) };
 }
 
+/** The points of a column of the sweep table of the run (role "sweep": {sweep, columns, rows}), or the reason why there
+ * are none. The table must still have the hash of the record. */
+function sweepPoints(r: Requirement, run: { id: string; result: ResultRecord }, root: string | undefined): { sweep: string; points: SweepPoint[] } | { reason: string } {
+	const files = run.result.outputs.filter((f) => f.role === "sweep");
+	const chosen = r.table ? files.filter((f) => f.path === r.table || f.path.endsWith(`/${r.table}`)) : files;
+	if (chosen.length === 0) return { reason: `experiment ${run.id} has no sweep table${r.table ? ` ${r.table}` : ""}` };
+	if (chosen.length > 1) return { reason: `experiment ${run.id} has ${chosen.length} sweep tables; name one in table` };
+	if (root === undefined) return { reason: "the design root is not known" };
+	const file = chosen[0];
+	const path = resolve(root, file.path);
+	let table: { sweep: string; columns: string[]; rows: Record<string, number | null>[] };
+	try {
+		if (sha256File(path) !== file.sha256) return { reason: `${file.path} changed after experiment ${run.id}` };
+		table = readJson(path);
+	} catch (e) {
+		return { reason: `${file.path}: ${(e as Error).message}` };
+	}
+	const column = r.column as string;
+	if (!table.columns?.includes(column)) return { reason: `${file.path} has no column ${column}; the columns are ${(table.columns ?? []).join(", ")}` };
+	const points = table.rows.map((row) => ({ x: row[table.sweep] as number, y: isNumber(row[column]) ? (row[column] as number) : null }));
+	return { sweep: table.sweep, points };
+}
+
+/** The assumptions of a row: of the requirement, its experiment and its condition, without repeats. */
+export function rowAssumptions(file: RequirementsFile, r: Requirement, condition: string | null): string[] {
+	const all = [...(r.assumptions ?? []), ...(file.experiments[r.experiment]?.assumptions ?? []), ...(condition ? (file.conditions[condition]?.assumptions ?? []) : [])];
+	return [...new Set(all)];
+}
+
 /** One row from the result of the experiment that measured it (null: not run). root: the design root, for the kinds
  * that read a Touchstone file. */
 export function evaluateRow(
@@ -330,6 +429,14 @@ export function evaluateRow(
 	if (!run) return { ...row, reason: notRunReason };
 	if (run.result.status !== "completed") {
 		return { ...row, reason: `experiment ${run.id} ended with status ${run.result.status}` };
+	}
+	if (r.kind === "sweep") {
+		const got = sweepPoints(r, run, root);
+		if ("reason" in got) return { ...row, status: "not_measured", reason: got.reason };
+		const reduced = reduceSweep(got.points, r.reduce as ReducerSpec);
+		if (reduced.status !== "measured") return { ...row, status: "not_measured", reason: `${r.column} ${r.reduce?.kind}: ${reduced.status} (${reduced.reason})` };
+		const value = reduced.value as number;
+		return { ...row, value, ...compare(r.op, limit, value), status: compare(r.op, limit, value).margin >= 0 ? "pass" : "fail", at: reduced.at === null ? null : { [got.sweep]: reduced.at } };
 	}
 	if (r.kind === "s_db" || r.kind === "mu") {
 		const got = touchstoneValues(r, run, root);
@@ -377,6 +484,90 @@ export function evaluateRow(
 		status: worst.margin >= 0 ? "pass" : "fail",
 		at: sweep ? (worst.m.at ?? null) : null,
 	};
+}
+
+const rank: Record<RowStatus, number> = { fail: 0, not_run: 1, not_measured: 2, pass: 3 };
+
+/**
+ * The rows of the stability gate: one per stage and condition of the gate. A gate row takes the worst of the mu rows of
+ * its stage and condition whose band contains the gate band, with op >= and a limit of at least 1. Without such a row,
+ * the gate row is not run: the block cannot pass without the record.
+ */
+export function stabilityGateRows(file: RequirementsFile, rows: VerdictRow[]): VerdictRow[] {
+	const gate = file.gates?.stability;
+	if (!gate) return [];
+	const band = gate.band_hz ?? STABILITY_BAND_HZ;
+	const out: VerdictRow[] = [];
+	for (const stage of gate.stages) {
+		for (const c of gate.conditions) {
+			const covering = file.requirements.filter((r) => {
+				if (r.kind !== "mu" || r.stage !== stage || r.op !== ">=" || !r.band_hz) return false;
+				if (r.band_hz[0] > band[0] || r.band_hz[1] < band[1]) return false;
+				const conds = r.conditions ?? [null];
+				const limit = limitFor(r, conds.includes(c) ? c : null);
+				return conds.includes(c) && isNumber(limit) && limit >= 1;
+			});
+			const found = rows.filter((row) => covering.some((r) => r.id === row.requirement) && row.condition === c);
+			const base: VerdictRow = {
+				requirement: `gate stability ${stage}`,
+				condition: c,
+				measurement: "mu",
+				op: ">=",
+				limit: 1,
+				value: null,
+				unit: null,
+				margin: null,
+				margin_rel: null,
+				status: "not_run",
+				experiment: null,
+				reason: `no mu requirement of stage ${stage} with op >= and a limit of at least 1 covers ${band[0]} to ${band[1]} Hz at condition ${c}`,
+				at: null,
+				gate: { name: "stability", stage, covered_by: covering.map((r) => r.id) },
+			};
+			if (!found.length) {
+				out.push(base);
+				continue;
+			}
+			const worst = found.reduce((a, b) => (rank[b.status] < rank[a.status] || (b.status === a.status && (b.margin ?? 0) < (a.margin ?? 0)) ? b : a));
+			out.push({ ...base, value: worst.value, limit: worst.limit, margin: worst.margin, margin_rel: worst.margin_rel, status: worst.status, experiment: worst.experiment, at: worst.at, reason: `from requirement ${worst.requirement}${worst.reason ? `: ${worst.reason}` : ""}` });
+		}
+	}
+	return out;
+}
+
+export interface AssumptionUse {
+	assumption: string;
+	definition: Assumption | null;
+	/** The requirements that depend on it, and through what (the requirement itself, its experiment or a condition). */
+	requirements: { id: string; via: string[]; conditions: (string | null)[] }[];
+}
+
+/** For each assumption (or the one given), every requirement and condition that depends on it. */
+export function assumptionUses(file: RequirementsFile, id?: string): AssumptionUse[] {
+	const ids = id === undefined ? Object.keys(file.assumptions ?? {}) : [id];
+	return ids.map((a) => {
+		const requirements: AssumptionUse["requirements"] = [];
+		for (const r of file.requirements) {
+			const via: string[] = [];
+			if (r.assumptions?.includes(a)) via.push("requirement");
+			if (file.experiments[r.experiment]?.assumptions?.includes(a)) via.push(`experiment ${r.experiment}`);
+			const all = r.conditions ?? [null];
+			const byCondition = all.filter((c) => c !== null && file.conditions[c]?.assumptions?.includes(a));
+			for (const c of byCondition) via.push(`condition ${c}`);
+			if (!via.length) continue;
+			const conditions = via.some((v) => !v.startsWith("condition ")) ? all : byCondition;
+			requirements.push({ id: r.id, via, conditions });
+		}
+		return { assumption: a, definition: file.assumptions?.[a] ?? null, requirements };
+	});
+}
+
+/** The newest verdict of the design root (by its id, which starts with the time), or null. */
+export function latestVerdict(root: string): VerdictRecord | null {
+	const dir = checksDir(root);
+	if (!existsSync(dir)) return null;
+	const ids = readdirSync(dir).filter((d) => existsSync(join(dir, d, "verdict.json"))).sort();
+	return ids.length ? readJson<VerdictRecord>(join(dir, ids[ids.length - 1], "verdict.json")) : null;
 }
 
 export function loadRequirements(root: string, file = REQUIREMENTS_FILE): { path: string; file: RequirementsFile } {
@@ -443,9 +634,12 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 		for (const c of conditionsOf(r)) {
 			// A row that is not selected stays not run, also when a selected row shares its experiment.
 			const run = selected(r, c) ? (runs.get(key(r.experiment, c)) ?? null) : null;
-			rows.push(evaluateRow(r, c, run, selected(r, c) ? "the check was cancelled before this experiment" : NOT_SELECTED, root));
+			const row = evaluateRow(r, c, run, selected(r, c) ? "the check was cancelled before this experiment" : NOT_SELECTED, root);
+			const cited = rowAssumptions(file, r, c);
+			rows.push(cited.length ? { ...row, assumptions: cited } : row);
 		}
 	}
+	rows.push(...stabilityGateRows(file, rows));
 	const counts: Record<RowStatus, number> = { pass: 0, fail: 0, not_measured: 0, not_run: 0 };
 	for (const row of rows) counts[row.status]++;
 	// A selection is never a pass, also when it happens to include every row.

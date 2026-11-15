@@ -307,3 +307,31 @@ test("design_record gives the checks of each file of record, and the guideline a
 	assert.match(text, new RegExp(`^  ${id} klayout drc completed markers=3 \\(stale: ran on sha256:aaaaaaaaaaaa\\)$`, "m"));
 	assert.deepEqual(result.details.files, [{ path: "block.gds", sha256: result.details.files[0].sha256, current: [], stale: [id] }]);
 });
+
+test("run_jobs runs N jobs and gives one line per job; assumption_rows lists the rows of an assumption", async (t) => {
+	const tools = new Map<string, any>();
+	extension({ registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand: () => {}, on: () => {} } as any);
+	const jobs = tools.get("run_jobs");
+	assert.ok(jobs, "run_jobs is not registered");
+	assert.ok(jobs.promptGuidelines.some((g: string) => /pgrep/.test(g)));
+	const root = mkdtempSync(join(tmpdir(), "simra-ext-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	writeFileSync(join(root, "simra.config.json"), JSON.stringify({ adapter_dirs: [fakeAdapters] }));
+	const ctx = { cwd: root };
+	const out = await jobs.execute("call-j", { jobs: [{ adapter: "fake", operation: "run", inputs: { mode: "ok" } }, { adapter: "fake", operation: "run", inputs: { mode: "failed" } }], parallel: 2 }, undefined, undefined, ctx);
+	assert.deepEqual(out.details.jobs.map((j: any) => j.status), ["completed", "failed"]);
+	assert.match(out.content[0].text, /^jobs: 2 \(1 completed, 1 failed\)/m);
+
+	const rows = tools.get("assumption_rows");
+	assert.ok(rows, "assumption_rows is not registered");
+	writeFileSync(join(root, "requirements.json"), JSON.stringify({
+		schema: "simra.requirements/0",
+		assumptions: { leak: { description: "leakage level", value: -34, unit: "dBm" } },
+		conditions: {},
+		experiments: { e: { adapter: "fake", operation: "run", inputs: { mode: "ok" } } },
+		requirements: [{ id: "x", experiment: "e", measurement: "x", op: ">=", limit: 1, assumptions: ["leak"] }],
+	}));
+	const listed = await rows.execute("call-a", { id: "leak" }, undefined, undefined, ctx);
+	assert.match(listed.content[0].text, /^assumption leak: leakage level = -34 dBm\n {2}requirement x via requirement; conditions \(none\)$/);
+	assert.deepEqual(listed.details.assumptions, [{ id: "leak", requirements: ["x"] }]);
+});

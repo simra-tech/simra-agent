@@ -62,6 +62,8 @@ export interface RunOptions {
 	environment?: string;
 	purpose?: string;
 	timeoutS?: number;
+	/** A CPU list ("4-7,9") that replaces the cpus of the environment for this run. */
+	cpus?: string;
 	/** Blocking run only: abort stops the adapter, and the run is recorded as cancelled. */
 	signal?: AbortSignal;
 	/** Run the experiment in a supervisor process and return at once (status "running"). */
@@ -135,6 +137,8 @@ interface Job {
 	command: string;
 	args: string[];
 	timeout_s: number;
+	/** The container engine, for a container environment: a stopped run also removes its container (by label). */
+	engine?: string | null;
 }
 
 const JOB_FILE = "job.json";
@@ -160,10 +164,12 @@ function prepareExperiment(opts: RunOptions): { job: Job; env: NodeJS.ProcessEnv
 	const root = resolve(opts.root);
 	const config = loadConfig(root);
 	const envName = opts.environment ?? "local";
-	const envConfig = config.environments[envName];
-	if (!envConfig) {
+	const configured = config.environments[envName];
+	if (!configured) {
 		throw new Error(`environment "${envName}" is not defined. Known: ${Object.keys(config.environments).join(", ")}`);
 	}
+	if (opts.cpus !== undefined) parseCpuList(opts.cpus);
+	const envConfig = opts.cpus === undefined ? configured : { ...configured, cpus: opts.cpus };
 	const { dir: adapterDir, manifest } = findAdapter(opts.adapter, [...(config.adapter_dirs ?? []), BUILTIN_ADAPTER_DIR]);
 	if (manifest.contract !== CONTRACT) {
 		throw new Error(`adapter "${opts.adapter}" uses contract ${manifest.contract}; this kernel supports ${CONTRACT}`);
@@ -207,7 +213,8 @@ function prepareExperiment(opts: RunOptions): { job: Job; env: NodeJS.ProcessEnv
 		work_dir: join(dir, "work"),
 		response_path: responsePath,
 	});
-	const job = { root, id, command: invocation.command, args: invocation.args, timeout_s: opts.timeoutS ?? 3600 };
+	const engine = invocation.record.kind === "container" ? (invocation.record as { engine: string }).engine : null;
+	const job = { root, id, command: invocation.command, args: invocation.args, timeout_s: opts.timeoutS ?? 3600, engine };
 	return { job, env: invocation.env, dir, experiment };
 }
 
@@ -227,6 +234,8 @@ async function executeJob(job: Job, env: NodeJS.ProcessEnv, signal?: AbortSignal
 		timeoutS: job.timeout_s,
 		signal,
 	});
+	// A stopped engine client can leave its container running: remove the container of this experiment by its label.
+	if ((exit.timedOut || exit.cancelled) && job.engine) removeContainers(job.engine, id);
 	const finished = new Date();
 
 	const result: ResultRecord = {
@@ -430,6 +439,29 @@ export function annotateTouchstone(root: string, result: Pick<ResultRecord, "inp
 		}
 		f.touchstone = describeTouchstone(path);
 	}
+}
+
+/** Remove the containers with the label simra.experiment=<id>. It never throws. */
+export function removeContainers(engine: string, id: string): void {
+	try {
+		const ids = execFileSync(engine, ["ps", "-q", "--filter", `label=simra.experiment=${id}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 30_000 })
+			.split("\n")
+			.filter(Boolean);
+		if (ids.length) execFileSync(engine, ["rm", "-f", ...ids], { stdio: "ignore", timeout: 60_000 });
+	} catch {}
+}
+
+/** The CPUs of a list such as "4-7,9", in order, without repeats. An invalid list is an error. */
+export function parseCpuList(list: string): number[] {
+	const out: number[] = [];
+	for (const part of list.split(",")) {
+		const m = part.trim().match(/^(\d+)(?:-(\d+))?$/);
+		if (!m) throw new Error(`invalid CPU list "${list}": use numbers and ranges, for example "4-7,9"`);
+		const [a, b] = [Number(m[1]), Number(m[2] ?? m[1])];
+		if (b < a) throw new Error(`invalid CPU list "${list}": the range ${part} goes down`);
+		for (let c = a; c <= b; c++) if (!out.includes(c)) out.push(c);
+	}
+	return out;
 }
 
 interface SpawnResult {

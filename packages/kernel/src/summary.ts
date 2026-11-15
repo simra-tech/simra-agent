@@ -6,7 +6,7 @@ import type { RuntimeEstimate } from "./estimate.ts";
 import { formatStale, staleInputs } from "./record.ts";
 import { type CommandRun, experimentDir, type ExperimentRecord, type ResultRecord } from "./records.ts";
 import { formatTouchstone } from "./touchstone.ts";
-import { checksDir, type Limit, NOT_SELECTED, type VerdictRecord, type VerdictRow } from "./requirements.ts";
+import { type AssumptionUse, checksDir, type Limit, NOT_SELECTED, type VerdictRecord, type VerdictRow } from "./requirements.ts";
 import type { WaitOutcome } from "./wait.ts";
 
 /** The lines that name the records, the adapter, the environment and the runtime estimate. */
@@ -76,7 +76,7 @@ export function formatOutcome(root: string, experiment: ExperimentRecord, result
 		lines.push("measurements:");
 		for (const name of names) {
 			const m = result.measurements[name];
-			const value = m.status === "measured" ? `${m.value}${m.unit ? ` ${m.unit}` : ""}` : m.status.toUpperCase();
+			const value = m.status === "measured" ? `${m.value}${m.unit ? ` ${m.unit}` : ""}` : `${m.status.toUpperCase()}${m.reason ? ` (${m.reason})` : ""}`;
 			lines.push(`  ${name} = ${value}`);
 		}
 	}
@@ -122,10 +122,29 @@ export function formatVerdict(root: string, verdict: VerdictRecord): string {
 		const margin = r.margin_rel === null ? (r.margin === null ? "" : ` margin ${num(r.margin)}${unit}`) : ` margin ${(r.margin_rel * 100).toFixed(1)}%`;
 		const source = r.experiment ? ` [${r.experiment}]` : "";
 		const reason = r.reason ? ` (${r.reason})` : "";
-		lines.push(`  ${r.status.toUpperCase().padEnd(12)} ${r.requirement}${r.condition === null ? "" : ` @ ${r.condition}`}: ${value}${at}, limit ${limitText(r.op, r.limit)}${margin}${source}${reason}`);
+		const cited = r.assumptions?.length ? ` {assumes ${r.assumptions.join(", ")}}` : "";
+		lines.push(`  ${r.status.toUpperCase().padEnd(12)} ${r.requirement}${r.condition === null ? "" : ` @ ${r.condition}`}: ${value}${at}, limit ${limitText(r.op, r.limit)}${margin}${source}${reason}${cited}`);
 	}
 	const unselected = verdict.rows.length - rows.length;
 	if (unselected) lines.push(`  NOT_RUN      ${unselected} more row${unselected === 1 ? "" : "s"}: ${NOT_SELECTED} (listed in verdict.json)`);
+	return lines.join("\n");
+}
+
+/** The uses of each assumption, and the rows of a verdict that depend on it (with their status). */
+export function formatAssumptionUses(uses: AssumptionUse[], verdict?: VerdictRecord | null): string {
+	const lines: string[] = [];
+	if (!uses.length) return "no assumptions are defined";
+	for (const u of uses) {
+		const d = u.definition;
+		lines.push(`assumption ${u.assumption}: ${d ? `${d.description}${d.value !== undefined ? ` = ${d.value}${d.unit ? ` ${d.unit}` : ""}` : ""}${d.source ? ` (source: ${d.source})` : ""}` : "NOT DEFINED"}`);
+		if (!u.requirements.length) lines.push("  no requirement depends on it");
+		for (const r of u.requirements) lines.push(`  requirement ${r.id} via ${r.via.join(", ")}; conditions ${r.conditions.map((c) => c ?? "(none)").join(", ")}`);
+		if (verdict) {
+			const rows = verdict.rows.filter((row) => row.assumptions?.includes(u.assumption));
+			lines.push(`  rows in check ${verdict.id}: ${rows.length}`);
+			for (const row of rows) lines.push(`    ${row.status.toUpperCase().padEnd(12)} ${row.requirement}${row.condition === null ? "" : ` @ ${row.condition}`}: ${row.value === null ? "-" : num(row.value)}${row.unit ? ` ${row.unit}` : ""}`);
+		}
+	}
 	return lines.join("\n");
 }
 

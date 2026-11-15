@@ -44,6 +44,11 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
 - An output file in Touchstone format (role `touchstone`) gets a summary from the kernel: ports, band, DC point,
   passivity and reciprocity. The requirement kinds `s_db` and `mu` read such a file (see
   [Frequency-domain requirements](#frequency-domain-requirements)).
+- The tool `run_jobs` (pi) and the command `simra jobs` (CLI) run N experiments on a CPU pool and wait for all of
+  them, with a wall-time watchdog per job (see [Run N jobs and wait](#run-n-jobs-and-wait)).
+- Requirements can reduce a sweep table with the bracket rule (kind `sweep`), gate an RF block on mu over a band at
+  each corner for each active stage (`gates.stability`), and cite assumption ids (`assumptions`); `simra assumptions`
+  lists the rows of an assumption.
 - The commands `simra pack init` and `simra pack check` add a PDK to a site: an adapter proposes a technology pack
   from the kit, the user confirms it, and the adapter checks it (see "Add a PDK").
 - One example design exists: a two-stage OTA for the open IHP SG13G2 PDK.
@@ -173,6 +178,25 @@ start time, and the pid and host of the process that runs the experiment. When t
 no `result.json`, the next wait writes `result.json` with the status `error`. The supervisor stops the adapter
 at the timeout of the run (`timeout_s`, default 3600 s). On `SIGTERM`, it stops the adapter and records the run
 as `cancelled`.
+
+### Run N jobs and wait
+
+For many independent runs (corners, sweep points, seeds), one call starts them all and waits for all of them:
+`run_jobs` (pi) or `simra jobs <jobs.json>` (CLI). `jobs.json` is a list of run specifications, the same as for
+`simra run`, or `{"jobs": [...]}`.
+
+1. Give a CPU pool with `cpus` (pi) or `--cpus` (CLI), for example `122-125`. The pool is split into slots of equal
+   size, one job per slot at a time; `parallel` sets the number of slots. Each job runs pinned to the CPUs of its slot.
+   Without a pool, `parallel` jobs (default 4) run at the same time with the CPUs of their environment.
+2. Give each job a watchdog with `timeout_s` (default 3600 s). A job without a result in that time is stopped, its
+   container is removed (by the label `simra.experiment=<id>`), and its status is `timeout`.
+3. Read the result: one line per job with its status, experiment id, CPUs, runtime, exit code and log paths, then the
+   counts. The CLI exits with 0 only when every job completed.
+
+The wait reads the experiment records (`result.json`, and `status.json` with the process id). It never matches
+process names, so it cannot wait on its own command line. `wait_timeout_s` (pi) or `--timeout-s` (CLI) ends the wait
+early: a started job continues (wait for it with `wait_experiments`), and a job that did not start is `not_started`
+and never runs.
 
 When an experiment starts, the summary gets one line with the runtimes of the earlier runs, for example
 `estimate: earlier runs of klayout drc on this design took 391.8 to 427.7 s (2 runs)`. The line uses the
@@ -492,6 +516,59 @@ no `measurement`.
 ```json
 { "id": "gain", "experiment": "sp", "kind": "s_db", "entry": [2, 1], "band_hz": [10e9, 30e9], "op": ">=", "limit": 7, "unit": "dB" }
 ```
+
+### Sweep reducers
+
+A requirement of kind `sweep` reduces one column of the sweep table of its experiment to one value. The sweep table
+is an output with the role `sweep` (`{"sweep", "columns", "rows"}`): the ngspice adapter writes it from `ROW` lines,
+and the xyce adapter writes it for an `hb` sweep, with `null` at a point that did not converge.
+
+- `column`: the column of the table.
+- `reduce`: `{"kind": "min"}`, `{"kind": "max"}`, `{"kind": "crossing", "level": <y>, "direction": "rising" |
+  "falling" | "either"}` (the sweep value of the first crossing), or `{"kind": "compression", "db": 1}` (the sweep
+  value where the column falls `db` below its first value, for example the input P1dB from a gain column).
+- `table` (optional): the path, or the end of the path, of the table.
+
+The rule for every reducer: the value is invalid when a point inside its bracket has no value. The bracket of `min`
+and `max` is every point. The bracket of `crossing` and `compression` goes from the first point to the first point
+at or beyond the level: an interpolation across a failed point can hide the real crossing. A failed point after the
+bracket does not change the value. An invalid value gives the row `not_measured` with the point in the reason. A
+level that the data does not reach is `missing`, never an extrapolated value. The measurements of the adapters
+follow the same rule (for example `p1db_in_<port>_dbm` of `hb`), and a failed measurement shows its reason in
+the summary.
+
+```json
+{ "id": "ip1db", "experiment": "hb", "kind": "sweep", "column": "gain_out_db", "reduce": { "kind": "compression", "db": 1 }, "op": ">=", "limit": -5, "unit": "dBm" }
+```
+
+### Stability gate
+
+An RF block lists its active stages in `gates.stability`. The check then adds one gate row per stage and
+condition:
+
+```json
+"gates": { "stability": { "stages": ["lna1", "lo_buffer"], "conditions": ["tt", "ss", "ff"], "band_hz": [1e9, 300e9] } }
+```
+
+1. Give each stage a requirement of kind `mu` with `stage` set to its name, `op` `>=` and a limit of at least 1.
+2. Make its `band_hz` contain the gate band (default 1 GHz to 300 GHz), and give it each condition of the gate.
+3. Run the check. A gate row takes the worst of the mu rows that cover it. Without such a row, the gate row is
+   `not_run` with the stage, band and condition in the reason, so the block cannot pass without the record.
+
+### Assumptions
+
+A row can depend on a stated assumption, for example a system level that no block measures. Define it once and
+cite its id:
+
+```json
+"assumptions": { "tx_leak": { "description": "TX leakage at the LNA input", "value": -34, "unit": "dBm", "source": "level plan" } }
+```
+
+A requirement, an experiment template or a condition cites it in `"assumptions": ["tx_leak"]`. Each verdict row
+lists the assumptions of its requirement, its experiment and its condition (`{assumes tx_leak}` in the summary). To
+see what a change of an assumption affects, run `npx simra assumptions [<id>]` or the pi tool `assumption_rows`. It
+lists each requirement that depends on the assumption, and how (requirement, experiment or condition), and the rows of
+the newest check with their status, when that check used the current requirements file.
 
 ## Read a layout
 

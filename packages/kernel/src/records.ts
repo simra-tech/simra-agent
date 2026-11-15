@@ -35,6 +35,8 @@ export interface Measurement {
 	source?: string;
 	/** For a value reduced over a sweep (for example gain_db.min): the sweep point where it occurs. */
 	at?: Record<string, number> | null;
+	/** Why a measurement has no value (for example a failed point inside the bracket of a sweep reducer). */
+	reason?: string;
 }
 
 export interface Diagnostic {
