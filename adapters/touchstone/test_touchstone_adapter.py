@@ -262,3 +262,59 @@ class TouchstoneTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def attenuator_text(f, db=6.0):
+    """A matched 50 ohm attenuator: S11 = S22 = 0, S21 = S12 = 10^(-db/20)."""
+    a = 10 ** (-db / 20)
+    s = np.zeros((len(f), 2, 2), dtype=complex)
+    s[:, 0, 1] = s[:, 1, 0] = a
+    return touchstone_text(f, s, [50, 50], "att.s2p")
+
+
+@unittest.skipIf(np is None, "numpy is not installed")
+class PortNoiseAndBandOfUse(unittest.TestCase):
+    def test_wide_noise_band_is_refused(self):
+        f = np.linspace(1e9, 2e11, 200)
+        resp, root = run({"touchstone": "att.s2p", "uses": {"band_hz": [1e9, 2e11], "noise_band_hz": [9e10, 1.1e11]},
+                          "dc_policy": "model", "verify": []}, {"att.s2p": attenuator_text(f)})
+        self.addCleanup(shutil.rmtree, root)
+        self.assertEqual(resp["status"], "failed")
+        self.assertIn("wider than 5 % of f0", resp["diagnostics"][0]["message"])
+
+    def test_error_in_the_band_of_use_and_the_header(self):
+        f = np.linspace(1e8, 2e10, 200)
+        resp, root = run({"touchstone": "lp.s2p", "uses": {"band_hz": [1e9, 2e9], "dc": False}, "verify": []},
+                         {"lp.s2p": touchstone_text(f, lowpass_2port(f), [50, 50], "lp.s2p")})
+        self.addCleanup(shutil.rmtree, root)
+        self.assertEqual(resp["status"], "completed", resp["diagnostics"])
+        m = resp["measurements"]
+        self.assertEqual(m["use_max_abs_ds"]["status"], "measured")
+        self.assertLessEqual(m["use_max_abs_ds"]["value"], m["fit_max_abs_ds"]["value"] + 1e-12)
+        self.assertEqual(m["use_max_abs_db"]["status"], "measured")
+        lib = [o for o in resp["outputs"] if o.get("role") == "subckt"][0]["path"]
+        with open(os.path.join(root, lib)) as fh:
+            text = fh.read()
+        self.assertIn("simra-fit: name=lp uses_band_hz=1e+09,2e+09 dc=0 noise_band_hz=none", text)
+
+    @unittest.skipUnless(shutil.which("ngspice"), "ngspice is not installed")
+    def test_port_noise_of_an_attenuator(self):
+        """A 6 dB matched attenuator between noiseless 50 ohm terminations at T0 has NF = 6.0 dB."""
+        f = np.linspace(1e9, 2e11, 200)
+        resp, root = run({"touchstone": "att.s2p", "uses": {"band_hz": [1e9, 2e11], "noise_band_hz": [1e11, 1.02e11]},
+                          "dc_policy": "model", "name": "att", "verify": ["ngspice"]}, {"att.s2p": attenuator_text(f)})
+        self.addCleanup(shutil.rmtree, root)
+        self.assertEqual(resp["status"], "completed", resp["diagnostics"])
+        m = resp["measurements"]
+        self.assertLess(m["noise_verify_max_rel_error"]["value"], 0.02)
+        deck = os.path.join(root, "nf.cir")
+        with open(deck, "w") as fh:
+            fh.write('* NF of the fitted attenuator\n.include "work/att.lib"\n.temp 16.85\nvs vs 0 dc 0 ac 1\nrs vs p1 50 noisy=0\nxa p1 0 p2 0 att\n'
+                     'rl p2 0 50 noisy=0\n.control\nnoise v(p2) vs lin 3 100g 102g\nsetplot noise1\n'
+                     'let nf = 10*log10(1 + inoise_spectrum^2/(4*1.380649e-23*290*50))\nprint nf\n.endc\n.end\n')
+        import subprocess
+        out = subprocess.run(["ngspice", "-b", deck], cwd=root, capture_output=True, text=True, timeout=120).stdout
+        nf = [float(ln.split()[-1]) for ln in out.splitlines() if ln.strip()[:1].isdigit() and len(ln.split()) == 3]
+        self.assertEqual(len(nf), 3, out)
+        for v in nf:
+            self.assertAlmostEqual(v, 6.0, delta=0.01)

@@ -42,10 +42,15 @@ allowed.
    stackup and fit with `fit_to_spice`. Copy the fitted subcircuit into `lna.spice`. It counts only when the records
    of the workspace show the EM run and the fit (the scorer finds the fit output by its content). The design must
    have at least one EM passive in the signal path (a matching network, a transformer, an inductor or a line
-   section).
+   section). The fit-band gate checks each bench that uses a fitted model: give `fit_to_spice` the band of use
+   `uses.band_hz` that covers the sweep of `sp.spice` (1 GHz to 300 GHz), and `uses.noise_band_hz` that covers the
+   noise band of `noise.spice` (122 GHz to 123 GHz), so that the fitted model has the port noise of its loss.
 6. Ideal R, L and C only as a model of wiring (each ideal C ≤ 50 fF, each ideal L ≤ 50 pH, each ideal R ≤ 50 Ω),
    and K couplings between the ideal L.
 7. No ideal sources in the amplifier, except inside an EM passive from `fit_to_spice`.
+8. On the PDK devices, only the instance parameters above (and `Ny`, `m`). A parameter that changes the device
+   physics (for example `selft`, `dtemp`, `mm_ok`) is a rule error. The netlist gate of `check_requirements` gives
+   the rule errors.
 
 ## Verification
 

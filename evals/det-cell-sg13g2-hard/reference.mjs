@@ -20,7 +20,7 @@ if (!file || !gds || !root) {
 	process.exit(2);
 }
 const text = readFileSync(file, "utf8");
-const errors = checkDesign(text);
+const errors = checkDesign(text, here);
 if (errors.length) throw new Error(`the reference breaks the device rules: ${errors.join("; ")}`);
 const v = await verify(here, text, resolve(root), resolve(gds));
 const expected = {

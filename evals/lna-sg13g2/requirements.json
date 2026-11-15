@@ -214,7 +214,11 @@
       ],
       "assumptions": [
         "ports_50ohm"
-      ]
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 1: 13 dB to 15 dB, revision 0.1 of the interface rows"
+      }
     },
     {
       "id": "nf_db",
@@ -229,7 +233,11 @@
       ],
       "assumptions": [
         "ports_50ohm"
-      ]
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 2: 6 dB at tt, revision 0.1"
+      }
     },
     {
       "id": "s22",
@@ -252,7 +260,11 @@
       ],
       "assumptions": [
         "ports_50ohm"
-      ]
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 3"
+      }
     },
     {
       "id": "mu",
@@ -272,7 +284,11 @@
         "slow_cold",
         "fast_hot",
         "fast_cold"
-      ]
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 4"
+      }
     },
     {
       "id": "idd_a",
@@ -288,7 +304,11 @@
         "slow_cold",
         "fast_hot",
         "fast_cold"
-      ]
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 5"
+      }
     }
   ],
   "gates": {
@@ -320,9 +340,70 @@
           "quantity": "ic_per_emitter",
           "op": "<=",
           "limit": 0.003,
-          "assumption": "ic_per_emitter_3ma"
+          "assumption": "ic_per_emitter_3ma",
+          "limit_source": {
+            "kind": "specification",
+            "ref": "row 7: 3 mA per emitter (the PDK process specification gives 3.5 mA)"
+          }
         }
       ]
+    },
+    "netlist": {
+      "file": "lna.spice",
+      "subckt": "lna",
+      "pins": [
+        "rfin",
+        "rfout",
+        "vcc18",
+        "iref1",
+        "iref2",
+        "iref3"
+      ],
+      "devices": [
+        "npn13G2",
+        "cap_cmim",
+        "rppd",
+        "rsil",
+        "rhigh"
+      ],
+      "given": {
+        "tm2_w6": {
+          "params": {
+            "len": {
+              "min": 1e-09,
+              "max": 0.001,
+              "required": true
+            }
+          }
+        },
+        "tm2_w13": {
+          "params": {
+            "len": {
+              "min": 1e-09,
+              "max": 0.001,
+              "required": true
+            }
+          }
+        },
+        "tm2_w23": {
+          "params": {
+            "len": {
+              "min": 1e-09,
+              "max": 0.001,
+              "required": true
+            }
+          }
+        }
+      },
+      "wiring": {
+        "r_ohm": 50,
+        "l_h": 5e-11,
+        "c_f": 5e-14
+      },
+      "couplings": true,
+      "fitted": true,
+      "em_passives_min": 1,
+      "technology": "ihp-sg13"
     }
   }
 }

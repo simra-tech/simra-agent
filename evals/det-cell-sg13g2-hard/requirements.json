@@ -312,7 +312,11 @@
       ],
       "assumptions": [
         "two_cells"
-      ]
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 2: 0.3 mA for two detector cells (assumption two_cells)"
+      }
     },
     {
       "id": "loss_db",
@@ -328,7 +332,11 @@
         "slow_cold",
         "fast_hot",
         "fast_cold"
-      ]
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 1: 0.3 dB reserved in the output line for the detector"
+      }
     },
     {
       "id": "vout_m10_v",
@@ -348,7 +356,11 @@
       "assumptions": [
         "meter_resolution",
         "settling_25ns"
-      ]
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 4: meter resolution about 50 uV, times 10 (assumption meter_resolution)"
+      }
     },
     {
       "id": "ratio_0_m10",
@@ -367,7 +379,11 @@
       "assumptions": [
         "rising_response",
         "settling_25ns"
-      ]
+      ],
+      "limit_source": {
+        "kind": "task",
+        "ref": "assumption rising_response: the output rises with power (a square-law detector gives 10, a peak detector about 3.2)"
+      }
     },
     {
       "id": "noise_rms_v",
@@ -386,7 +402,11 @@
       ],
       "assumptions": [
         "noise_vs_meter"
-      ]
+      ],
+      "limit_source": {
+        "kind": "task",
+        "ref": "assumption noise_vs_meter: one fifth of the meter resolution"
+      }
     },
     {
       "id": "offset_v",
@@ -405,7 +425,11 @@
       ],
       "assumptions": [
         "zero_range"
-      ]
+      ],
+      "limit_source": {
+        "kind": "task",
+        "ref": "assumption zero_range: the RF-off zero removes the offset"
+      }
     },
     {
       "id": "offset_3s",
@@ -429,7 +453,11 @@
       "assumptions": [
         "zero_range",
         "mismatch_3sigma"
-      ]
+      ],
+      "limit_source": {
+        "kind": "task",
+        "ref": "assumptions zero_range and mismatch_3sigma"
+      }
     },
     {
       "id": "tap_s21",
@@ -449,7 +477,11 @@
       "unit": "dB",
       "assumptions": [
         "tap_line_200um"
-      ]
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 1 (0.3 dB for the detector) and the line loss of the line table (about 0.2 dB for 200 um)"
+      }
     },
     {
       "id": "tap_s31",
@@ -472,7 +504,11 @@
       "unit": "dB",
       "assumptions": [
         "tap_coupling"
-      ]
+      ],
+      "limit_source": {
+        "kind": "reference_design",
+        "ref": "the coupling of a tap of about 2.5 fF, the tap capacitance of the reference cell; set after the reference cell was chosen"
+      }
     }
   ],
   "gates": {
@@ -487,9 +523,38 @@
           "quantity": "vce",
           "op": ">=",
           "limit": 0.4,
-          "assumption": "vce_min_04"
+          "assumption": "vce_min_04",
+          "limit_source": {
+            "kind": "reference_design",
+            "ref": "set after the reference run: 0.5 V fails the reference cell at slow_cold (0.409 V); the PDK gives no minimum"
+          }
         }
       ]
+    },
+    "netlist": {
+      "subckt": "det_cell",
+      "file": "det_cell.spice",
+      "pins": [
+        "lin",
+        "vcc18",
+        "outd",
+        "outr",
+        "iref"
+      ],
+      "devices": [
+        "npn13G2",
+        "cap_cmim",
+        "rppd",
+        "rsil",
+        "rhigh"
+      ],
+      "wiring": {
+        "r_ohm": 50,
+        "l_h": 5e-11,
+        "c_f": 5e-14
+      },
+      "couplings": true,
+      "technology": "ihp-sg13"
     }
   }
 }

@@ -34,6 +34,25 @@ and 0.209 mA for two cells, so the bench and the reference agree.
 - Diagnostics, no points: the reference value of each row and the verified value over it, the rows closed and
   missed, `supported`, and the reported largest V<sub>CE</sub> (the bench does not check it).
 
+The device rules of the design part are the gate `netlist` of `requirements.json` (kernel `checkNetlist`; the scorer and
+`check_requirements` use the same check). An X line of a PDK device may set only the instance parameters of the
+`instance_params` class of the device in the technology pack (for the HBT: `Nx`, `Ny`, `m`). A parameter that changes
+the device physics (for example `selft`, `dtemp`, `mm_ok`) is an error, unless the gate names it in `allow_params`.
+
+## Limit sources
+
+Each limit of `requirements.json` has `limit_source`: a row of the specification, a PDK document, a value set
+from the reference design (the reference passes it by construction), or a choice of the task author.
+
+| Limit | Value | Source | Reference |
+| --- | --- | --- | --- |
+| `idd_a` | <= 0.00015 A | specification | row 2: 0.3 mA for two detector cells (assumption two_cells) |
+| `loss_db` | <= 0.3 dB | specification | row 1: 0.3 dB reserved in the output line for the detector |
+| `vout_m10_v` | >= 0.0005 V | specification | row 4: meter resolution about 50 uV, times 10 (assumption meter_resolution) |
+| `ratio_0_m10` | >= 3 | task author | assumption rising_response: the output rises with power (a square-law detector gives 10, a peak detector about 3.2) |
+| `noise_rms_v` | <= 1e-05 V | task author | assumption noise_vs_meter: one fifth of the meter resolution |
+| `offset_v` | <= 0.02 V | task author | assumption zero_range: the RF-off zero removes the offset |
+
 ## Pilot run (one run, 2026-11-15)
 
 One run of the `simra` arm with the default model of the harness (`deepseek/deepseek-flash`), 4 CPUs, 180 min limit,

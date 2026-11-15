@@ -17,7 +17,7 @@ test("det-cell scorer: device rules", () => {
 	assert.equal(spiceNumber("2meg"), 2e6);
 	assert.deepEqual(checkDesign(".subckt det_cell lin vcc18 outd outr iref\nxq c b e 0 npn13G2 Nx=1\nxc a 0 cap_cmim w=1u l=1u\nr1 a b 11.8\nl1 b c 6p\nk1 l1 l2 0.3\n.ends\n"), []);
 	assert.deepEqual(checkDesign(".subckt det_cell lin vcc18 outr outd iref\nB1 a 0 V=1\nr1 a 0 10k\n.ends\n"), [
-		"B1: no sources in the cell",
+		"B1: no sources in the design (block det_cell is not a fitted model of a fit_to_spice record)",
 		"r1: ideal R 10k is above 50 (wiring models only)",
 		'det_cell pins are "lin vcc18 outr outd iref", expected "lin vcc18 outd outr iref"',
 	]);

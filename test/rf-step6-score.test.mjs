@@ -39,9 +39,14 @@ test("lna scorer: a fit counts only when its Touchstone input is an openEMS outp
 		outputs: [{ path: "simra/experiments/e2/work/em_match.lib", sha256: sha(FIT), role: "subckt" }],
 	});
 	writeFileSync(join(fitDir, "work", "em_match.lib"), FIT);
-	record(ws, "e3", "touchstone", "fit_to_spice", { input_files: { files: [{ path: "x.s2p", sha256: sha("other") }], complete: true } });
+	const other = FIT.replace(/em_match/g, "other_fit");
+	const otherDir = record(ws, "e3", "touchstone", "fit_to_spice", {
+		input_files: { files: [{ path: "x.s2p", sha256: sha("other") }], complete: true },
+		outputs: [{ path: "simra/experiments/e3/work/other.lib", sha256: sha(other), role: "subckt" }],
+	});
+	writeFileSync(join(otherDir, "work", "other.lib"), other);
 	const fits = emFits(ws);
-	assert.deepEqual(fits.found.map((f) => [f.name, f.fit, f.em]), [["em_match", "e2", "e1"]]);
+	assert.deepEqual(fits.found.map((f) => [f.name, f.fit, f.em]), [["em_match", "e2", "e1"], ["other_fit", "e3", null]]);
 	assert.match(fits.refused[0].reason, /not the output of an openems record/);
 	const ok = checkDesign(LNA(FIT), fits.found);
 	assert.deepEqual(ok.errors, []);
@@ -51,7 +56,7 @@ test("lna scorer: a fit counts only when its Touchstone input is an openEMS outp
 	assert.deepEqual(changed.em, []);
 	assert.ok(changed.errors.some((e) => /vsense1: no sources/.test(e)));
 	const bad = checkDesign(".subckt lna rfin rfout vcc18 iref1 iref2 iref3\nxl a b tm2_w6 len=2e-3\nl1 a b 100p\n.ends\n", []);
-	assert.deepEqual(bad.errors, ["xl: tm2_w6 needs len=<metres>, 0 < len <= 1e-3", "l1: ideal L 100p is above 5e-11 (wiring models only)"]);
+	assert.deepEqual(bad.errors, ["xl: tm2_w6 needs len from 1e-9 to 0.001, got 2e-3", "l1: ideal L 100p is above 5e-11 (wiring models only)"]);
 });
 
 test("lna scorer: gate rows count as requirements, values only for requirement rows", async (t) => {
@@ -92,5 +97,5 @@ test("lna scorer: values may be .param expressions", () => {
 	assert.ok(Math.abs(p.lc - 1.2e-4) < 1e-18 && p.le === 2e-12 && p.rd === 200);
 	assert.equal(value("{1e-3*2}"), 0.002);
 	assert.ok(Number.isNaN(value("{a;b}")));
-	assert.deepEqual(checkDesign(text, []).errors, ["lx: ideal L {le*100} is above 5e-11 (wiring models only)", "xy: tm2_w6 needs len=<metres>, 0 < len <= 1e-3"]);
+	assert.deepEqual(checkDesign(text, []).errors, ["lx: ideal L {le*100} is above 5e-11 (wiring models only)", "xy: tm2_w6 needs len from 1e-9 to 0.001, got {nope}"]);
 });

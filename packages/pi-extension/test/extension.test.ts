@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { validateRequirements } from "@simra-tech/kernel";
 import { makePdf } from "../../kernel/test/pdf-fixture.ts";
-import extension, { netlistsOf, readPath, REQUIREMENTS_EXAMPLE, sessionClock } from "../index.ts";
+import extension, { checkHints, netlistsOf, readPath, readsRecords, REQUIREMENTS_EXAMPLE, sessionClock } from "../index.ts";
 
 const fakeAdapters = new URL("../../kernel/test/fixtures/adapters", import.meta.url).pathname;
 
@@ -377,4 +377,25 @@ test("workarounds lists the registry; run_experiment shows the gaps of its adapt
 	assert.match(first.content[0].text, /xyce-sg13g2-psp103/);
 	const second = await run.execute("call-r2", { adapter: "xyce", operation: "run", inputs: { mode: "ok" }, purpose: "test" }, undefined, undefined, { cwd: root });
 	assert.doesNotMatch(second.content[0].text, /known gaps/);
+});
+
+test("readsRecords finds the calls that read record files", () => {
+	const bash = (command: string) => ({ toolName: "bash", input: { command } }) as any;
+	assert.equal(readsRecords(bash("cat simra/experiments/20261115-1/result.json | jq .measurements")), true);
+	assert.equal(readsRecords(bash("python3 -c 'import json; json.load(open(\"simra/checks/x/verdict.json\"))'")), true);
+	assert.equal(readsRecords({ toolName: "read", input: { path: "/w/simra/checks/abc/verdict.json" } } as any), true);
+	// a work file of an experiment (a log, a Touchstone file) is not a record
+	assert.equal(readsRecords(bash("tail -20 simra/experiments/20261115-1/work/ngspice.log")), false);
+	assert.equal(readsRecords(bash("ls lna.spice")), false);
+});
+
+test("checkHints names the query of the check and the stability diagnosis of a failed mu row", () => {
+	const rows = [
+		{ requirement: "mu", status: "fail", condition: "tt", experiment: "e1" },
+		{ requirement: "gain", status: "pass", condition: "tt", experiment: "e1" },
+	];
+	const text = checkHints("c1", rows);
+	assert.match(text, /query_results with source "checks", check "c1"/);
+	assert.match(text, /tt: experiment e1\): run_experiment with adapter ngspice, operation stability_diagnosis/);
+	assert.doesNotMatch(checkHints("c2", [rows[1]]), /stability_diagnosis/);
 });

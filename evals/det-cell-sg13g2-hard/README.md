@@ -48,9 +48,33 @@ What the reference values do not prove:
 ## Scoring
 
 - design (2): the subcircuit, the pin order and the device rules of `det-cell-sg13g2`.
-- requirements (72): each verified row passes, the gate rows included. Only with the design points.
+- requirements (73): each verified row passes, the gate rows included (the 72 rows and the netlist gate row). Only with the design points.
 - claim (4): `meets_spec` is the same as the verification.
 - values (37): each reported value of a requirement row is within the tolerance of the verified value.
+
+The device rules are the gate `netlist` of `requirements.json` (kernel `checkNetlist`; the scorer and
+`check_requirements` use the same check). An X line of a PDK device may set only the instance parameters of the
+`instance_params` class of the device in the technology pack (for the HBT: `Nx`, `Ny`, `m`). A parameter that changes
+the device physics (for example `selft`, `dtemp`, `mm_ok`) is an error, unless the gate names it in `allow_params`.
+
+## Limit sources
+
+Each limit of `requirements.json` has `limit_source`: a row of the specification, a PDK document, a value set
+from the reference design (the reference passes it by construction), or a choice of the task author.
+
+| Limit | Value | Source | Reference |
+| --- | --- | --- | --- |
+| `idd_a` | <= 0.00015 A | specification | row 2: 0.3 mA for two detector cells (assumption two_cells) |
+| `loss_db` | <= 0.3 dB | specification | row 1: 0.3 dB reserved in the output line for the detector |
+| `vout_m10_v` | >= 0.0005 V | specification | row 4: meter resolution about 50 uV, times 10 (assumption meter_resolution) |
+| `ratio_0_m10` | >= 3 | task author | assumption rising_response: the output rises with power (a square-law detector gives 10, a peak detector about 3.2) |
+| `noise_rms_v` | <= 1e-05 V | task author | assumption noise_vs_meter: one fifth of the meter resolution |
+| `offset_v` | <= 0.02 V | task author | assumption zero_range: the RF-off zero removes the offset |
+| `offset_3s` | <= 0.02 V | task author | assumptions zero_range and mismatch_3sigma |
+| `tap_s21` | >= -0.5 dB | specification | row 1 (0.3 dB for the detector) and the line loss of the line table (about 0.2 dB for 200 um) |
+| `tap_s31` | -33 to -27 dB | set from the reference design | the coupling of a tap of about 2.5 fF, the tap capacitance of the reference cell; set after the reference cell was chosen |
+| gate `limits` `hbt_vce_min_04` | >= 0.4 | set from the reference design | set after the reference run: 0.5 V fails the reference cell at slow_cold (0.409 V); the PDK gives no minimum |
+| gate `limits`, the other rows | the PDK limits of the pack | PDK document | each limit of the technology pack names its PDK source |
 
 ## Pilot run (one run, 2026-11-15)
 
@@ -69,6 +93,10 @@ One run of the `simra` arm with the default model (`deepseek/deepseek-flash`), i
 
 Task error found by this run: the agent sets `selft=0` (self-heating off) on its HBTs. With self-heating, one seed
 of 100 at fast_hot had no DC point; the Monte Carlo record reported it and the row was not measured, as designed.
-The agent then switched the physics off and wrote this in its notes. The device rules do not forbid instance
-parameters that change the model physics (`selft`, `dtemp`, or an explicit `mm_ok=0`, which `monte_carlo` keeps),
-so the score is full. The rows of this run are without self-heating.
+The agent then switched the physics off and wrote this in its notes. The device rules of step 6 did not forbid
+instance parameters that change the model physics (`selft`, `dtemp`, or an explicit `mm_ok=0`, which `monte_carlo`
+keeps), so the score was full. The rows of this run are without self-heating.
+
+Score again with the netlist gate (step 7): the gate rejects `selft=0` on the four HBTs (4 rule errors). The score is
+design 0/2, requirements 0/73 (the 72 rows and the netlist gate row), claim 0/4, values 37/37. The verification of
+the rows was not repeated: the score uses the verified rows of the first scoring and adds the netlist gate row.

@@ -25,10 +25,22 @@ The adapter needs Python 3.6 or later and numpy. ngspice and Xyce are necessary 
    state network of C and controlled sources. Only C, G, F and V elements occur, so one netlist works in ngspice
    and in Xyce. Each conductance is a G source controlled by its own voltage: the subcircuit is noiseless. A resistor
    of the realisation would add noise with no relation to the passive (an LNA with fitted matching networks gave a
-   noise figure of 275 dB). A noise analysis therefore leaves out the loss noise of the passive (registry entry
-   `fit-to-spice-noise`).
-6. Re-simulate the subcircuit with an AC run per port, in each simulator of `verify`. Compare with the model and
+   noise figure of 275 dB).
+6. Port noise (input `uses.noise_band_hz`, at most 5 % wide around its centre f0): the subcircuit gets noise
+   currents at the ports with the correlation matrix 4kT Re Y(f0) of the model (Twiss). Each eigenvector of Re Y
+   gives one 1 Ω noise resistor; F and G sources (and a 1/(2π f0) H inductor for an imaginary weight) carry its
+   noise to each port. The adapter checks the noise in ngspice: each port terminated in a noisy Z0 must give the
+   thermal noise 4kT Re Z of the passive (`noise_verify_max_rel_error`, error diagnostic above 0.02). Outside the
+   noise band the noise is that of f0. Without `uses.noise_band_hz` the subcircuit is noiseless, and the fit-band
+   gate of `check_requirements` fails a noise analysis that uses it (registry entry `fit-to-spice-noise`).
+7. Re-simulate the subcircuit with an AC run per port, in each simulator of `verify`. Compare with the model and
    with the data. A difference to the model above 1e-4 is an error: the subcircuit is not the model.
+8. Report the error in the band of use: `use_max_abs_ds` (largest |S_model - S_data| at the data points in
+   `uses`) and `use_max_abs_db` (largest dB error where |S| ≥ 0.1). These are the acceptance values of a fit; a
+   higher order is not a better fit when these do not fall (registry entry `fit-acceptance-error-in-band`). Limits
+   `limits.use_max_abs_ds` and `limits.use_max_abs_db` make the fit fail above them.
+9. Write the band of use in the subcircuit header (`simra-fit: ... uses_band_hz=... noise_band_hz=...`) and in the
+   record. The fit-band gate of `check_requirements` reads it from the record (registry entry `fit-band-of-use`).
 
 ## Guards
 
@@ -39,6 +51,9 @@ The adapter needs Python 3.6 or later and numpy. ngspice and Xyce are necessary 
 | `uses.dc` true, no 0 Hz point, no `dc_policy` | refused |
 | fit error above the limit at `max_order` | failed, with the best error |
 | model not passive after enforcement | failed |
+| `uses.noise_band_hz` wider than 5 % of its centre | refused |
+| error in the band of use above `limits.use_max_abs_ds` or `limits.use_max_abs_db` | failed |
+| port noise differs from 4kT Re Z by more than 2 % | error diagnostic |
 | subcircuit differs from the model in a simulator | error diagnostic for that simulator |
 
 ## Tests

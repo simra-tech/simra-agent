@@ -10,6 +10,120 @@
     },
     "size_unit_m": 1,
     "size_unit_source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_mod.lib (the subcircuit defaults are w=0.35u l=0.34u; the model files set no .option scale)",
+    "instance_params": {
+      "ihp-sg13g2": {
+        "description": "Instance parameters of the PDK subcircuits per device class. 'allowed': the geometry and multiplicity parameters a design sets. 'physics': parameters that switch or change the model physics; a netlist that sets one is rejected unless the task allows it by name. A parameter in neither list is also rejected (an unknown parameter).",
+        "classes": {
+          "hbt": {
+            "devices": [
+              "npn13g2",
+              "npn13g2l",
+              "npn13g2v"
+            ],
+            "allowed": [
+              "nx",
+              "ny",
+              "m"
+            ],
+            "allowed_per_device": {
+              "npn13g2l": [
+                "le"
+              ],
+              "npn13g2v": [
+                "le"
+              ]
+            },
+            "physics": {
+              "selft": "self-heating switch (1 on, 0 off)",
+              "dtemp": "device temperature offset",
+              "sw_nqs": "non-quasi-static switch",
+              "we": "emitter width (fixed by the device)",
+              "le": "emitter length (fixed for npn13G2)",
+              "el": "derived from le",
+              "mm_ok": "mismatch switch of the mismatch library"
+            },
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_hbt_mod.lib (.subckt npn13G2, npn13G2l, npn13G2v: .param Nx Ny le we El selft sw_nqs dtemp)"
+          },
+          "mim": {
+            "devices": [
+              "cap_cmim",
+              "cap_rfcmim"
+            ],
+            "allowed": [
+              "w",
+              "l",
+              "m"
+            ],
+            "allowed_per_device": {
+              "cap_rfcmim": [
+                "wfeed"
+              ]
+            },
+            "physics": {
+              "mm_ok": "mismatch switch",
+              "sf": "scale factor of the model",
+              "ic": "initial condition switch",
+              "cic0": "model constant"
+            },
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/capacitors_mod.lib (.subckt cap_cmim, cap_rfcmim: .param l w mm_ok sf ic wfeed cic0)"
+          },
+          "res": {
+            "devices": [
+              "rppd",
+              "rsil",
+              "rhigh"
+            ],
+            "allowed": [
+              "w",
+              "l",
+              "b",
+              "m"
+            ],
+            "physics": {
+              "mm_ok": "mismatch switch",
+              "trise": "temperature rise",
+              "sw_et": "self-heating switch",
+              "postsim": "post-layout switch",
+              "ps": "model constant",
+              "kappa": "model constant",
+              "lhead": "model constant",
+              "rzspec": "model constant",
+              "cax": "model constant",
+              "cpx": "model constant"
+            },
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/resistors_mod.lib (.subckt rppd, rsil, rhigh: .param w l mm_ok b ps trise m sw_et postsim kappa ...)"
+          },
+          "mos": {
+            "devices": [
+              "sg13_lv_nmos",
+              "sg13_lv_pmos",
+              "sg13_hv_nmos",
+              "sg13_hv_pmos"
+            ],
+            "allowed": [
+              "w",
+              "l",
+              "ng",
+              "m",
+              "as",
+              "ad",
+              "pd",
+              "ps"
+            ],
+            "physics": {
+              "mm_ok": "mismatch switch",
+              "trise": "temperature rise",
+              "rfmode": "RF model switch",
+              "pre_layout": "layout parasitics switch",
+              "z1": "layout constant",
+              "z2": "layout constant",
+              "wmin": "model constant"
+            },
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_mod.lib, sg13g2_moshv_mod.lib (.subckt sg13_lv_nmos ...: w l ng m mm_ok as ad pd ps trise z1 z2 wmin rfmode pre_layout)"
+          }
+        }
+      }
+    },
     "mismatch": {
       "ihp-sg13g2": {
         "lib_suffix": "_mismatch",

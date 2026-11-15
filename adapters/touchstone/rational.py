@@ -444,7 +444,7 @@ def _conductance(name, a, b, g):
     return "%s %s %s %s %s %.12g" % (name, a, b, a, b, g)
 
 
-def subcircuit(model, z0, name, header):
+def subcircuit(model, z0, name, header, extra=None):
     """SPICE text of the model: pins p1 p1_ref p2 p2_ref ... State nodes are inside the subcircuit, referenced to 0.
     The model has no resistor: it is noiseless (see _conductance)."""
     n = model.n
@@ -487,8 +487,49 @@ def subcircuit(model, z0, name, header):
                           "cy%d_%d %s 0 %.12g" % (q + 1, i + 1, y, c),
                           _conductance("gry%d_%d" % (q + 1, i + 1), y, "0", -p.real * c),
                           "gyx%d_%d 0 %s %s 0 %.12g" % (q + 1, i + 1, y, x, -p.imag * c)]
+    lines += extra or []
     lines.append(".ends %s" % name)
     return "\n".join(lines) + "\n"
+
+
+# ------------------------------------------------------------------------------------------------------ port noise
+def y_from_s(s, z0):
+    """The admittance matrix of one S matrix with the port resistances z0 (real)."""
+    n = s.shape[0]
+    g = np.diag(1.0 / np.sqrt(np.asarray(z0, dtype=float)))
+    eye = np.eye(n)
+    return g @ (eye - s) @ np.linalg.inv(eye + s) @ g
+
+
+def noise_sources(model, z0, f0):
+    """Port noise of the passive network at one frequency f0 (Twiss): noise currents at the ports with the correlation
+    4kT Re Y(f0), Re Y the Hermitian part of Y. Re Y = V diag(l) V^H; the current into port k is sum_j V_kj sqrt(l_j) n_j,
+    n_j the noise current of a 1 ohm resistor (PSD 4kT, at the circuit temperature). Returns (lines, eigenvalues).
+    A real gain is an F source. An imaginary gain: n_j flows into an inductor of 1 / (2 pi f0) H (v = j i at f0), and a
+    G source takes that voltage. So the correlation is exact at f0 and the imaginary terms scale with f / f0 near it."""
+    y = y_from_s(model.response(np.array([float(f0)]))[0], z0)
+    h = 0.5 * (y + y.conj().T)
+    lam, v = np.linalg.eigh(h)
+    lam = np.clip(lam.real, 0.0, None)
+    n = model.n
+    lines = ["* port noise (Twiss) at f0 = %.9g Hz: currents with the correlation 4kT Re Y(f0); exact at f0 only" % f0]
+    lind = 1.0 / (2 * math.pi * f0)
+    for j in range(n):
+        if lam[j] <= 1e-12 * float(np.max(lam)):
+            continue
+        lines += ["rnz%d nz%d 0 1" % (j + 1, j + 1), "vnz%d nz%d 0 0" % (j + 1, j + 1)]
+        amp = v[:, j] * math.sqrt(lam[j])
+        tiny = 1e-9 * float(np.max(np.abs(amp)))
+        amp = np.where(np.abs(amp.real) < tiny, 0.0, amp.real) + 1j * np.where(np.abs(amp.imag) < tiny, 0.0, amp.imag)
+        if np.any(np.abs(amp.imag) > 0):
+            lines += ["fnq%d 0 nq%d vnz%d 1" % (j + 1, j + 1, j + 1), "lnq%d nq%d 0 %.12g" % (j + 1, j + 1, lind)]
+        for k in range(n):
+            a = amp[k]
+            if a.real != 0.0:
+                lines.append("fnr%d_%d p%d_ref p%d vnz%d %.12g" % (k + 1, j + 1, k + 1, k + 1, j + 1, a.real))
+            if a.imag != 0.0:
+                lines.append("gni%d_%d p%d_ref p%d nq%d 0 %.12g" % (k + 1, j + 1, k + 1, k + 1, j + 1, a.imag))
+    return lines, lam.tolist()
 
 
 # ------------------------------------------------------------------------------------------------- derived quantities

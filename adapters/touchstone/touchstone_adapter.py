@@ -30,6 +30,22 @@ import time
 
 CONTRACT = "simra.adapter/0"
 REL_TOL = 1e-9
+NOISE_REL_BAND = 0.05
+BOLTZMANN = 1.380649e-23
+
+
+def use_points(used, f):
+    """The data points in the band of use: the points inside [low, high] of a band (at least the nearest point to each
+    end), or the nearest point to each harmonic."""
+    import numpy as np
+    mask = np.zeros(len(f), dtype=bool)
+    labels = [label for label, _ in used]
+    if labels and labels[0] == "band low end":
+        lo, hi = used[0][1], used[1][1]
+        mask |= (f >= lo * (1 - REL_TOL)) & (f <= hi * (1 + REL_TOL))
+    for _, x in used:
+        mask[int(np.argmin(np.abs(f - x)))] = True
+    return mask
 
 
 def sha256(path):
@@ -71,7 +87,8 @@ def measurement_names(n, lq):
             names += [(entry_name(i, j, n) + "_max_abs_ds", None), (entry_name(i, j, n) + "_rms_abs_ds", None)]
     if lq:
         names += [("l_max_rel_error", None), ("q_max_rel_error", None)]
-    names += [("passivity_margin", None), ("enforcement_max_abs_ds", None), ("band_min_hz", "Hz"), ("band_max_hz", "Hz")]
+    names += [("passivity_margin", None), ("enforcement_max_abs_ds", None), ("band_min_hz", "Hz"), ("band_max_hz", "Hz"),
+              ("use_max_abs_ds", None), ("use_max_abs_db", "dB"), ("noise_f0_hz", "Hz"), ("noise_verify_max_rel_error", None)]
     for sim in ("ngspice", "xyce"):
         names += [("verify_%s_max_abs_ds" % sim, None), ("verify_%s_model_max_abs_ds" % sim, None)]
     return names
@@ -199,6 +216,42 @@ def resimulate(sim, lib, name, n, z0, grid, work_dir):
     return s, commands, None
 
 
+def noise_check(lib, name, n, z0, model, f0, work_dir):
+    """Thermal equilibrium check of the port noise: every port terminated in its Z0 (noisy resistors, the same
+    temperature as the model), the noise voltage at port k must be 4kT Re Z_kk, Z the impedance matrix of the model in
+    parallel with the terminations. Returns (max relative PSD error, commands, error message or None)."""
+    import numpy as np
+    import rational
+    temp_k = 300.15
+    y = rational.y_from_s(model.response(np.array([f0]))[0], z0) + np.diag(1.0 / np.asarray(z0, dtype=float))
+    zt = np.linalg.inv(y)
+    deck = os.path.join(work_dir, "noise_check.cir")
+    body = ["* simra touchstone adapter: noise check of %s at %.9g Hz" % (name, f0), '.include "%s"' % lib]
+    for k in range(n):
+        body.append("rt%d n%d 0 %.12g" % (k + 1, k + 1, z0[k]))
+    body += ["vdum n1 nd dc 0 ac 1", "rdum nd 0 1e15 noisy=0", "xdut %s %s" % (" ".join("n%d 0" % (k + 1) for k in range(n)), name), ".control"]
+    for k in range(n):
+        # "destroy all" after each run, so the spectrum of the next run is plot noise1 again
+        body += ["noise v(n%d) vdum lin 1 %.12g %.12g" % (k + 1, f0, f0),
+                 "let onk%d = noise1.onoise_spectrum" % (k + 1), "print onk%d" % (k + 1), "destroy all"]
+    body += [".endc", ".end"]
+    with open(deck, "w") as fh:
+        fh.write("\n".join(body) + "\n")
+    t0 = time.time()
+    log = os.path.join(work_dir, "noise_check.log")
+    with open(log, "w") as fh:
+        code = subprocess.call(["ngspice", "-b", "noise_check.cir"], cwd=work_dir, stdout=fh, stderr=subprocess.STDOUT,
+                               env=dict(os.environ, OMP_NUM_THREADS="1"))
+    commands = [{"argv": ["ngspice", "-b", "noise_check.cir"], "exit_code": code, "runtime_s": round(time.time() - t0, 3)}]
+    with open(log) as fh:
+        found = dict(re.findall(r"^onk(\d+)\s*=\s*(\S+)", fh.read(), re.M))
+    values = [float(found[str(k + 1)]) for k in range(n) if str(k + 1) in found]
+    if code != 0 or len(values) != n:
+        return None, commands, "ngspice exited with code %d and gave %d of %d values (see work/noise_check.log)" % (code, len(values), n)
+    rel = max(abs(values[k] ** 2 / (4 * BOLTZMANN * temp_k * zt[k, k].real) - 1) for k in range(n))
+    return float(rel), commands, None
+
+
 # -------------------------------------------------------------------------------------------------------- operation
 def fit_to_spice(request):
     root, work_dir = request["root"], request["work_dir"]
@@ -250,6 +303,22 @@ def fit_to_spice(request):
     if error:
         return failure(tool, error, measurements, files,
                        report=["band %.6g to %.6g Hz, used up to %.6g Hz, dc %s" % (f[0], f[-1], max(x for _, x in used), dc)])
+
+    noise_band = (inputs.get("uses") or {}).get("noise_band_hz")
+    noise_f0 = None
+    if noise_band is not None:
+        if not (isinstance(noise_band, list) and len(noise_band) == 2 and all(isinstance(x, (int, float)) for x in noise_band)
+                and 0 < noise_band[0] <= noise_band[1]):
+            return failure(tool, "input 'uses.noise_band_hz' must be [f_lo, f_hi] with 0 < f_lo <= f_hi", measurements, files)
+        noise_f0 = math.sqrt(noise_band[0] * noise_band[1])
+        if (noise_band[1] - noise_band[0]) / noise_f0 > NOISE_REL_BAND:
+            return failure(tool, ("refused: the port noise of a fitted passive is exact at one frequency f0 (Twiss); "
+                                  "uses.noise_band_hz %.6g Hz to %.6g Hz is wider than %.0f %% of f0. Give a narrow band "
+                                  "around the noise frequencies, or fit one model per noise band" % (
+                                      noise_band[0], noise_band[1], 100 * NOISE_REL_BAND)), measurements, files)
+        error = coverage([("noise band low end", float(noise_band[0])), ("noise band high end", float(noise_band[1]))], False, f, dc_policy)
+        if error:
+            return failure(tool, error, measurements, files)
 
     limits = inputs.get("limits") or {}
     max_ds = float(limits.get("max_abs_ds", 0.01))
@@ -314,13 +383,24 @@ def fit_to_spice(request):
             measurements["l_max_rel_error"] = {"value": lq_err["l"], "unit": None, "status": "measured"}
             measurements["q_max_rel_error"] = {"value": lq_err["q"], "unit": None, "status": "measured"}
     s_dc = model.response(np.array([0.0]))[0]
+    # The error in the band of use: the acceptance test is the error against the data where the simulation uses the model.
+    use_mask = use_points(used, f)
+    use_err = None
+    if np.any(use_mask):
+        ue = rational.errors(s[use_mask], s_fit[use_mask])
+        mag_d, mag_m = np.abs(s[use_mask]), np.abs(s_fit[use_mask])
+        big = mag_d >= 0.1
+        db = float(np.max(np.abs(20 * np.log10(np.maximum(mag_m[big], 1e-12)) - 20 * np.log10(mag_d[big])))) if np.any(big) else 0.0
+        use_err = {"points": int(np.sum(use_mask)), "max_abs_ds": ue["max"], "max_abs_db": db}
+        measurements["use_max_abs_ds"] = {"value": ue["max"], "unit": None, "status": "measured"}
+        measurements["use_max_abs_db"] = {"value": db, "unit": "dB", "status": "measured"}
 
     poles_hz = [[float(p.real * model.w / (2 * math.pi)), float(p.imag * model.w / (2 * math.pi))] for p in model.poles]
     report_json = {
         "numbers": "simulated (a rational fit of the data)",
         "input": display_path(full, root), "nports": n, "z0_ohm": z0.tolist(),
         "band_hz": [float(f[0]), float(f[-1])], "points": int(len(f)), "dc_point_in_data": bool(f[0] == 0),
-        "uses": inputs.get("uses"), "dc_policy": dc_policy,
+        "uses": inputs.get("uses"), "dc_policy": dc_policy, "use_error": use_err,
         "fit": {"order": model.order, "poles_hz": poles_hz, "search": search, "seconds": round(fit_s, 2),
                 "error_vs_data": err, "limits": {"max_abs_ds": max_ds}, "lq": lq_err},
         "passivity": {"passive_before": bool(before is not None and not before), "enforced": enforced,
@@ -343,8 +423,14 @@ def fit_to_spice(request):
     report_path = os.path.join(work_dir, "fit.json")
     outputs = []
     problem = None
+    use_ds_limit = float(limits.get("use_max_abs_ds", max_ds))
     if err["max"] > max_ds:
         problem = "refused: the best fit has max |dS| %.3g (order %d), above the limit %.3g" % (err["max"], model.order, max_ds)
+    elif use_err and use_err["max_abs_ds"] > use_ds_limit:
+        problem = "refused: in the band of use the fit has max |dS| %.3g against the data, above the limit %.3g" % (use_err["max_abs_ds"], use_ds_limit)
+    elif use_err and "use_max_abs_db" in limits and use_err["max_abs_db"] > float(limits["use_max_abs_db"]):
+        problem = "refused: in the band of use the fit has a magnitude error of %.3g dB against the data, above the limit %.3g dB" % (
+            use_err["max_abs_db"], float(limits["use_max_abs_db"]))
     elif lq_err and "l_rel_error" in limits and lq_err["l"] > float(limits["l_rel_error"]):
         problem = "refused: the L error %.3g is above the limit %.3g" % (lq_err["l"], float(limits["l_rel_error"]))
     elif lq_err and "q_rel_error" in limits and lq_err["q"] > float(limits["q_rel_error"]):
@@ -359,10 +445,19 @@ def fit_to_spice(request):
                   "order %d; max |dS| %.3g against the data; passive (margin %.3g, sampled to %.3g Hz, Hamiltonian test)" % (
                       model.order, err["max"], margin, grid[-1]),
                   "DC: %s" % ("in the data" if f[0] == 0 else "from the model, not from the data"),
-                  "pins: p1 p1_ref p2 p2_ref ...; one netlist for ngspice and Xyce (C, G, F, V elements only; noiseless: a noise analysis leaves out the loss noise of the passive)"]
+                  "pins: p1 p1_ref p2 p2_ref ...; one netlist for ngspice and Xyce (C, G, F, L, R, V elements)",
+                  ("noise: port noise (Twiss) exact at %.9g Hz, for noise analyses from %.9g Hz to %.9g Hz" % (noise_f0, noise_band[0], noise_band[1])
+                   if noise_f0 else "noise: none (the model is noiseless; a noise analysis leaves out the loss noise of the passive)"),
+                  "simra-fit: name=%s uses_band_hz=%.9g,%.9g dc=%d noise_band_hz=%s data_band_hz=%.9g,%.9g" % (
+                      name, min(x for _, x in used), max(x for _, x in used), int(bool(dc)),
+                      ("%.9g,%.9g" % tuple(noise_band)) if noise_f0 else "none", f[0], f[-1])]
+        extra, noise_lam = (rational.noise_sources(model, z0, noise_f0) if noise_f0 else (None, None))
+        if noise_f0:
+            measurements["noise_f0_hz"] = {"value": noise_f0, "unit": "Hz", "status": "measured"}
+            report_json["noise"] = {"f0_hz": noise_f0, "band_hz": noise_band, "re_y_eigenvalues_s": noise_lam}
         lib = os.path.join(work_dir, name + ".lib")
         with open(lib, "w") as fh:
-            fh.write(rational.subcircuit(model, z0, name, header))
+            fh.write(rational.subcircuit(model, z0, name, header, extra))
         model_ts = os.path.join(work_dir, "%s.model.s%dp" % (name, n))
         rational.write_touchstone(model_ts, f, s_fit, z0, ["S of the rational model %s at the data frequencies (simulated)" % name])
         # Re-simulation of the subcircuit in each simulator, against the model and the data.
@@ -407,6 +502,24 @@ def fit_to_spice(request):
                 diagnostics.append({"severity": "error", "source": "adapter", "message": (
                     "the %s result of the subcircuit differs from the rational model by %.3g (max |dS|); the netlist or the "
                     "simulator does not reproduce the model" % (sim, vs_model["max"]))})
+        if noise_f0:
+            if "ngspice" in verify and shutil.which("ngspice"):
+                rel, cmds, why = noise_check(lib, name, n, z0, model, noise_f0, work_dir)
+                commands += cmds
+                if rel is None:
+                    report_json["noise"]["verify"] = {"status": "failed", "reason": why}
+                    diagnostics.append({"severity": "error", "source": "adapter", "message": "noise check in ngspice failed: %s" % why})
+                else:
+                    measurements["noise_verify_max_rel_error"] = {"value": rel, "unit": None, "status": "measured"}
+                    report_json["noise"]["verify"] = {"status": "completed", "max_rel_error": rel}
+                    rpt.append("noise check (thermal equilibrium at %.6g Hz, every port): max relative PSD error %.3g" % (noise_f0, rel))
+                    if rel > 0.02:
+                        diagnostics.append({"severity": "error", "source": "adapter", "message": (
+                            "the port noise of the subcircuit differs from thermal equilibrium by %.3g (relative PSD); the "
+                            "noise sources do not reproduce 4kT Re Z" % rel)})
+            else:
+                report_json["noise"]["verify"] = {"status": "not run", "reason": "ngspice not requested or not on the PATH"}
+                measurements["noise_verify_max_rel_error"]["status"] = "missing"
         outputs.append(file_entry(lib, root, "subckt"))
         outputs.append(file_entry(model_ts, root, "touchstone"))
     else:

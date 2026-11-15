@@ -1,6 +1,6 @@
 // Score a workspace of the lna-sg13g2 task (task.md, spec.md).
 //
-// The scorer does not trust the answer. It checks the device rules of spec.md on lna.spice (a text check), finds the
+// The scorer does not trust the answer. It checks the device rules of spec.md on lna.spice (the kernel netlist checker with gates.netlist), finds the
 // EM passives of lna.spice in the records of the workspace, then runs the check of requirements.json on the final
 // lna.spice through the kernel (both benches at each corner, the stability gate and the operating-limit gate).
 //
@@ -21,18 +21,13 @@
 //
 // Usage: node evals/lna-sg13g2/score.mjs <workspace>   (prints the score as JSON)
 
-import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { runCheck } from "@simra-tech/kernel";
-import { spiceNumber } from "../det-cell-sg13g2/score.mjs";
+import { checkNetlist, fittedModels, instanceParamClasses, paramTable as kernelParamTable, runCheck, spiceValue } from "@simra-tech/kernel";
 import { numbersIn, readTexts, within } from "../ota-corners/score.mjs";
 
 const here = new URL(".", import.meta.url).pathname;
 const DESIGN = "lna.spice";
-const PINS = ["rfin", "rfout", "vcc18", "iref1", "iref2", "iref3"];
-const DEVICES = ["npn13g2", "cap_cmim", "rppd", "rsil", "rhigh"];
-const LINES = ["tm2_w6", "tm2_w13", "tm2_w23"];
 const BENCH_FILES = ["simra.config.json", "simra.local.json", "sp.spice", "noise.spice", "lines.spice", "requirements.json"];
 export const TOLERANCE = {
 	gain: { abs: 0.1 },
@@ -42,190 +37,32 @@ export const TOLERANCE = {
 	idd_a: { rel: 0.02 },
 };
 
-/** The logical lines of a SPICE text: comments removed, continuations joined. */
-export function logicalLines(text) {
-	const lines = [];
-	for (const raw of text.split("\n")) {
-		const l = raw.replace(/[;$].*$/, "").trim();
-		if (!l || l.startsWith("*")) continue;
-		if (l.startsWith("+") && lines.length) lines[lines.length - 1] += ` ${l.slice(1).trim()}`;
-		else lines.push(l);
-	}
-	return lines;
-}
-
-/** The subcircuits of a SPICE text: name -> {pins, body (normalised element lines)}. */
-export function subcircuits(text) {
-	const out = new Map();
-	let current = null;
-	for (const l of logicalLines(text)) {
-		const f = l.split(/\s+/);
-		const head = f[0].toLowerCase();
-		if (head === ".subckt") {
-			current = { name: f[1].toLowerCase(), pins: f.slice(2).filter((x) => !x.includes("=")).map((x) => x.toLowerCase()), body: [] };
-			out.set(current.name, current);
-		} else if (head === ".ends") current = null;
-		else if (current) current.body.push(f.join(" ").toLowerCase());
-	}
-	return out;
-}
-
-const sha256 = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 
+/** The .param values of a SPICE text (the kernel parser). */
+export const paramTable = kernelParamTable;
+/** A number, a number with a SPICE suffix, or {expression} of .param values; else NaN (the kernel parser). */
+export const value = spiceValue;
+
 /**
- * The fitted subcircuits of the records of a workspace that come from an EM run: [{name, body, fit, em}], and the
- * refused fits with a reason. A fit counts when its input Touchstone file has the SHA-256 of a Touchstone output of a
- * completed openems experiment.
+ * The fitted subcircuits of the records of a workspace (the kernel fittedModels): [{name, body, fit, em, ...}], and
+ * the refused fits with a reason. em is the openems record whose Touchstone output (by SHA-256) is the fit input, or null.
  */
 export function emFits(ws) {
-	const dir = join(ws, "simra", "experiments");
-	const found = [];
-	const refused = [];
-	if (!existsSync(dir)) return { found, refused };
-	const records = [];
-	for (const id of readdirSync(dir).sort()) {
-		const e = join(dir, id);
-		if (!existsSync(join(e, "experiment.json")) || !existsSync(join(e, "result.json"))) continue;
-		try {
-			records.push({ id, exp: readJson(join(e, "experiment.json")), res: readJson(join(e, "result.json")) });
-		} catch {
-			// an unreadable record is not evidence
-		}
-	}
-	const emHashes = new Map();
-	for (const r of records) {
-		if (r.exp.adapter?.name !== "openems" || r.res.status !== "completed") continue;
-		for (const o of r.res.outputs ?? []) if (o.role === "touchstone" && o.sha256) emHashes.set(o.sha256, r.id);
-	}
-	for (const r of records) {
-		if (r.exp.adapter?.name !== "touchstone" || r.exp.operation !== "fit_to_spice") continue;
-		if (r.res.status !== "completed") {
-			refused.push({ fit: r.id, reason: `status ${r.res.status}` });
-			continue;
-		}
-		const inputs = r.res.input_files?.files ?? [];
-		const em = inputs.map((f) => emHashes.get(f.sha256)).find(Boolean);
-		if (!em) {
-			refused.push({ fit: r.id, reason: "its Touchstone input is not the output of an openems record" });
-			continue;
-		}
-		for (const o of r.res.outputs ?? []) {
-			if (o.role !== "subckt") continue;
-			const path = join(ws, o.path);
-			if (!existsSync(path) || sha256(path) !== o.sha256) {
-				refused.push({ fit: r.id, reason: `${o.path} is missing or changed` });
-				continue;
-			}
-			for (const s of subcircuits(readFileSync(path, "utf8")).values()) found.push({ name: s.name, body: s.body, fit: r.id, em });
-		}
-	}
+	const { found, refused } = fittedModels(ws);
+	for (const f of found) if (!f.em) refused.push({ fit: f.fit, reason: "its Touchstone input is not the output of an openems record" });
 	return { found, refused };
 }
 
-/** The .param values of a SPICE text (all scopes in one table; a later line wins). Values may use earlier names. */
-export function paramTable(text) {
-	const table = {};
-	for (const l of logicalLines(text)) {
-		if (!/^\.param\s/i.test(l)) continue;
-		for (const m of l.slice(6).matchAll(/([A-Za-z_]\w*)\s*=\s*(\{[^}]*\}|\S+)/g)) {
-			const v = value(m[2], table);
-			if (Number.isFinite(v)) table[m[1].toLowerCase()] = v;
-		}
-	}
-	return table;
-}
-
-/** A number, a number with a SPICE suffix, or {expression} of numbers, .param names and + - * / ( ); else NaN. */
-export function value(text, table = {}) {
-	if (text === undefined) return Number.NaN;
-	const m = /^\{(.*)\}$/.exec(text.trim());
-	if (!m) return spiceNumber(text);
-	let bad = false;
-	const expr = m[1].replace(/(\d+\.?\d*(?:e[+-]?\d+)?|\.\d+(?:e[+-]?\d+)?)(meg|[fpnumkgt])?(?![\w.])|([A-Za-z_]\w*)/gi, (all, num, suffix, name) => {
-		if (name !== undefined) {
-			const v = table[name.toLowerCase()];
-			if (!Number.isFinite(v)) bad = true;
-			return `(${v})`;
-		}
-		return `(${spiceNumber(num + (suffix ?? ""))})`;
-	});
-	if (bad || !/^[\d\s.eE+\-*/()]*$/.test(expr)) return Number.NaN;
-	try {
-		const v = Function(`"use strict"; return (${expr});`)();
-		return typeof v === "number" ? v : Number.NaN;
-	} catch {
-		return Number.NaN;
-	}
-}
-
-/** The device rules of spec.md on the text of lna.spice. fits: the fitted subcircuits of emFits. Returns {errors, em}. */
-export function checkDesign(text, fits = []) {
-	const errors = [];
-	const subs = subcircuits(text);
-	const params = paramTable(text);
-	const fitted = new Map();
-	for (const s of subs.values()) {
-		const f = fits.find((x) => x.body.length === s.body.length && x.body.every((b, i) => b === s.body[i]));
-		if (f) fitted.set(s.name, f);
-	}
-	let current = null;
-	for (const l of logicalLines(text)) {
-		const f = l.split(/\s+/);
-		const head = f[0].toLowerCase();
-		if (head === ".subckt") {
-			current = f[1].toLowerCase();
-			if (LINES.includes(current) || DEVICES.includes(current)) errors.push(`.subckt ${f[1]}: the name of a given device or line`);
-			continue;
-		}
-		if (head === ".ends") {
-			current = null;
-			continue;
-		}
-		if (head.startsWith(".")) {
-			if (![".param", ".end"].includes(head)) errors.push(`${f[0]}: only .subckt, .ends and .param lines are allowed`);
-			continue;
-		}
-		if (!current) {
-			errors.push(`${f[0]}: an element outside a .subckt`);
-			continue;
-		}
-		if (fitted.has(current)) continue;
-		const kind = head[0];
-		if ("vibefgh".includes(kind)) errors.push(`${f[0]}: no sources in the amplifier (subcircuit ${current} is not a recorded EM fit)`);
-		else if (kind === "c" || kind === "l" || kind === "r") {
-			const v = value(f[3], params);
-			const max = { c: 50e-15, l: 50e-12, r: 50 }[kind];
-			if (!(v > 0)) errors.push(`${f[0]}: the value must be a positive number`);
-			else if (v > max * (1 + 1e-9)) errors.push(`${f[0]}: ideal ${kind.toUpperCase()} ${f[3]} is above ${max} (wiring models only)`);
-		} else if (kind === "k") {
-			if (!(Math.abs(value(f[3], params)) <= 1)) errors.push(`${f[0]}: a coupling must be between -1 and 1`);
-		} else if (kind === "x") {
-			const name = f.filter((x) => !x.includes("=")).at(-1).toLowerCase();
-			if (LINES.includes(name)) {
-				const len = f.find((x) => /^len=/i.test(x));
-				const v = len ? value(len.slice(4), params) : Number.NaN;
-				if (!(v > 0 && v <= 1e-3 * (1 + 1e-9))) errors.push(`${f[0]}: ${name} needs len=<metres>, 0 < len <= 1e-3`);
-			} else if (!DEVICES.includes(name) && !subs.has(name)) errors.push(`${f[0]}: ${name} is not a device of spec.md`);
-		} else errors.push(`${f[0]}: element kind ${kind.toUpperCase()} is not allowed`);
-	}
-	const lna = subs.get("lna");
-	if (!lna) errors.push("no .subckt lna");
-	else if (lna.pins.join(" ") !== PINS.join(" ")) errors.push(`lna pins are "${lna.pins.join(" ")}", expected "${PINS.join(" ")}"`);
-	// the fitted subcircuits that lna uses, directly or through other subcircuits
-	const used = new Set();
-	const walk = (name, seen = new Set()) => {
-		if (seen.has(name) || !subs.has(name)) return;
-		seen.add(name);
-		for (const b of subs.get(name).body) {
-			if (!b.startsWith("x")) continue;
-			const child = b.split(" ").filter((x) => !x.includes("=")).at(-1);
-			if (fitted.has(child)) used.add(child);
-			walk(child, seen);
-		}
-	};
-	walk("lna");
-	return { errors, em: [...used].map((n) => ({ subckt: n, fit: fitted.get(n).fit, em: fitted.get(n).em })) };
+/**
+ * The device rules of spec.md on the text of lna.spice: the kernel netlist checker with gates.netlist of
+ * requirements.json (the same check as the gate row). fits: the fitted subcircuits of emFits. Returns {errors, em}.
+ */
+export function checkDesign(text, fits = [], taskDir = here) {
+	const rules = readJson(join(taskDir, "requirements.json")).gates.netlist;
+	// the EM passive is the em_passive part of the score, not a design error here (the gate row checks both)
+	const r = checkNetlist(text, { ...rules, em_passives_min: 0 }, { classes: instanceParamClasses(taskDir, rules.technology), fits });
+	return { errors: r.errors.map((e) => e.message), em: r.fitted_used.filter((x) => x.em) };
 }
 
 /** Run the check of requirements.json on the design text in root. Returns {rows: {"corner requirement": {value, pass, status}}, experiments}. */

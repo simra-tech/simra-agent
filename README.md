@@ -913,6 +913,51 @@ condition of its rows, with the same deck, libs, params and temperature:
 5. One row per limit and per experiment and condition takes the worst device and names it. A run without its limits
    table gives a row that is `not_run`, so the check cannot pass.
 
+### Netlist gate
+
+`gates.netlist` checks the design file against device rules, with the same kernel function (`checkNetlist`) that
+the evaluation scorers use. The check adds one row (`gate netlist`, the count of rule errors, limit 0):
+
+```json
+"gates": { "netlist": { "file": "lna.spice", "subckt": "lna", "pins": ["rfin", "rfout", "vcc18"],
+  "devices": ["npn13G2", "cap_cmim", "rppd"], "given": { "tm2_w6": { "params": { "len": { "min": 1e-9, "max": 1e-3, "required": true } } } },
+  "wiring": { "r_ohm": 50, "l_h": 5e-11, "c_f": 5e-14 }, "fitted": true, "em_passives_min": 1, "technology": "ihp-sg13" } }
+```
+
+1. An X line of a device of `devices` may set only the instance parameters of its class in the technology pack
+   (`ngspice.instance_params.<pdk>.classes`, taken from the PDK model cards; IHP SG13G2: HBT `Nx`, `Ny`, `m`; MIM `w`,
+   `l`, `m`; resistors `w`, `l`, `b`, `m`; MOS `w`, `l`, `ng`, `m` and the diffusion geometry). A parameter that
+   changes the device physics (for example `selft`, `dtemp`, `mm_ok`, `trise`) is an error with its meaning, unless
+   `allow_params` names it for that device.
+2. Values may be numbers, numbers with a SPICE suffix, or `{expressions}` of `.param` values of the file.
+3. A block whose element lines equal a subcircuit of a completed `fit_to_spice` record (output unchanged) is a fitted
+   model: its sources are allowed. `em_passives_min` counts the fitted models whose Touchstone input is an openEMS
+   output.
+
+### Fit-band gate
+
+When the design root has `fit_to_spice` records, the check reads the band of use of each (`uses.band_hz`,
+`uses.dc`, `uses.noise_band_hz`) and adds one row (`gate fit_band <subckt>`) per bench and fitted model that the bench
+uses. The row fails when an `ac`, `sp` or `noise` sweep goes outside the band of use (the model is an extrapolation
+there), when the fit is for AC only and the bench solves a DC point, or when a noise analysis uses a model without
+port noise or outside its noise band. A transient is not checked; the reason names it.
+
+### Limit sources
+
+A requirement or an extra limit can carry `limit_source`: `{ "kind": "specification" | "pdk" | "reference_design" |
+"task", "ref": "..." }`. The kind `reference_design` marks a limit that was set after a reference run: the reference
+passes it by construction.
+
+### Stability diagnosis
+
+When a `mu` row fails, the ngspice operation `stability_diagnosis` (inputs: the S-parameter bench, the Touchstone file
+that it wrote, and the inputs of the failed condition) gives the frequency of the worst μ, the bands with μ < 1, Zin and
+Zout of the stage, the driving-point impedance of each node of the bench and of the device blocks near that frequency
+(the RF ports as Z0 resistors, a 1 A AC current into one node at a time), the nodes with Re Z < 0 or a resonance there,
+their elements, and the pairs of an ideal L and a capacitor that resonate within ±30 %. On the failed LNA of the step-6
+pilot (μ −0.93 at 57 GHz) it gives Re Zin −34.4 Ω and a resonance at 61 GHz on the base node of the first HBT, whose
+elements include a 150 µm base-bias line: the cause that the agent found by hand.
+
 ### Query the records
 
 `npx simra query` and the pi tool `query_results` give a table of the recorded results without a script: the

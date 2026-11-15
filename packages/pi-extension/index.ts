@@ -134,6 +134,34 @@ export function netlistsOf(event: Pick<ToolResultEvent, "toolName" | "input">, c
 	return [...new Set(files)].filter((f) => existsSync(f));
 }
 
+const RECORD_FILE = /(^|\/)simra\/(experiments|checks)\/|(^|\/)(result|verdict|experiment)\.json$/;
+
+/** True when a call reads the record files of the design root (result.json, verdict.json, simra/experiments/...). */
+export function readsRecords(event: Pick<ToolResultEvent, "toolName" | "input">): boolean {
+	if (event.toolName === "read") return RECORD_FILE.test(String(event.input.path ?? ""));
+	if (event.toolName !== "bash") return false;
+	const words = String(event.input.command ?? "").match(/[^\s"'<>|;&()=]+/g) ?? [];
+	return words.some((w) => RECORD_FILE.test(w) && !/\/work\//.test(w.split("simra/experiments/")[1] ?? ""));
+}
+
+/** The next steps after a check: the query of its rows, and the stability diagnosis when a mu row fails. */
+export function checkHints(id: string, rows: { requirement: string; status: string; condition: string | null; experiment: string | null; reason?: string | null }[]): string {
+	const out = ["", `Rows of this check as a table: query_results with source "checks", check "${id}" (add status "fail" for the failed rows).`];
+	const mu = rows.filter((r) => r.status === "fail" && /(^|[_\s])mu($|[_\s])/i.test(r.requirement) && r.experiment);
+	if (mu.length)
+		out.push(
+			`A mu row fails (${mu.map((r) => `${r.condition ?? "-"}: experiment ${r.experiment}`).slice(0, 5).join(", ")}): run_experiment with adapter ngspice, operation stability_diagnosis (the deck and inputs of that experiment, and touchstone = its Touchstone output) gives the frequency, the port and node impedances near it, and the resonating elements.`,
+		);
+	return out.join("\n");
+}
+
+export const RECORD_READ_NOTE = [
+	"",
+	"Simra: this call reads record files. query_results gives the same values in one call, as a table:",
+	'- source "experiments" with measurement, condition or experiment filters (every run of a measurement, newest first);',
+	'- source "checks" with check "latest" (or an id) and status "fail": the rows of a check with limit, margin and reason.',
+].join("\n");
+
 const RESOLVED = Symbol("resolved");
 
 /**
@@ -245,6 +273,7 @@ export default function (pi: ExtensionAPI) {
 	const deadline = Date.parse(process.env.SIMRA_SESSION_DEADLINE ?? "");
 	const clock = Number.isFinite(deadline) ? sessionClock(Date.now(), deadline) : null;
 
+	let recordReads = 0;
 	async function netlistNote(event: ToolResultEvent, cwd: string): Promise<string | null> {
 		const files = netlistsOf(event, cwd);
 		if (files.length === 0) return null;
@@ -298,7 +327,13 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_result", async (event, ctx) => {
-		const notes = [await netlistNote(event, ctx.cwd), clock?.(Date.now()) ?? null].filter((n): n is string => n !== null);
+		let recordNote: string | null = null;
+		if (readsRecords(event)) {
+			recordReads++;
+			// the first three reads, then every tenth: a reminder, not a block
+			if (recordReads <= 3 || recordReads % 10 === 0) recordNote = RECORD_READ_NOTE;
+		}
+		const notes = [await netlistNote(event, ctx.cwd), recordNote, clock?.(Date.now()) ?? null].filter((n): n is string => n !== null);
 		if (notes.length === 0) return;
 		return { content: [...event.content, ...notes.map((text) => ({ type: "text" as const, text }))], structuredContent: event.structuredContent };
 	});
@@ -566,7 +601,12 @@ export default function (pi: ExtensionAPI) {
 		name: "query_results",
 		label: "Query results",
 		description: [
-			"A table of recorded results; it runs no tool. source \"experiments\" (default): one row per measurement of each",
+			"Use this tool to read results: it reads the records of the design root (every experiment and check) and gives a table,",
+			"in one call and without a script. It runs no simulation.",
+			"Examples: {measurement: \"nf_db\"} gives every run of nf_db, newest first, with its condition; {source: \"checks\",",
+			"check: \"latest\", status: \"fail\"} gives the failed rows of the last check with limit, margin and reason;",
+			"{source: \"checks\", requirement: \"mu\"} gives the mu rows of every check, to see a change between design versions.",
+			"A table of recorded results. source \"experiments\" (default): one row per measurement of each",
 			"experiment, newest first; the condition is the condition of its check, else the temperature and params of the inputs.",
 			"source \"checks\": one row per verdict row of a check (default the newest; check gives an id), with the limit, the",
 			"margin, the sweep point or seed, and the reason. A filter on check or requirement selects checks.",
@@ -576,6 +616,7 @@ export default function (pi: ExtensionAPI) {
 		promptSnippet: "table of recorded measurements or check rows, filtered by corner, measurement or requirement",
 		promptGuidelines: [
 			"To compare results over corners, seeds or runs, use query_results instead of reading result.json or verdict.json files with a script.",
+			"Do not read simra/experiments/*/result.json or simra/checks/*/verdict.json with cat, jq, grep or Python to get a value: query_results gives it with the experiment id.",
 		],
 		parameters: Type.Object({
 			source: Type.Optional(Type.Union([Type.Literal("experiments"), Type.Literal("checks")])),
@@ -635,6 +676,13 @@ export default function (pi: ExtensionAPI) {
 			"- gates.stability (optional): {stages, conditions, band_hz (default [1e9, 300e9])}. Each stage needs a mu requirement",
 			"  (op >=, limit >= 1, stage set) whose band contains band_hz at each condition; else its gate row is not run and the",
 			"  check cannot pass.",
+			"- gates.netlist (optional): {file, subckt, pins, devices, given, wiring, couplings, fitted, em_passives_min, allow_params,",
+			"  technology}: one row with the rule errors of the design file (the instance parameters of each PDK device come from the",
+			"  technology pack; a parameter that changes the device physics, for example selft or dtemp, is an error unless",
+			"  allow_params names it).",
+			"- fit_band rows (automatic): each ac, sp or noise analysis of a bench that uses a fitted model (fit_to_spice) must be",
+			"  inside the band of use of the fit record (uses.band_hz), and a noise analysis needs a fit with uses.noise_band_hz.",
+			"- limit_source (optional, on a requirement or an extra limit): {kind: specification | pdk | reference_design | task, ref}.",
 			"- assumptions (optional): {id: {description, value?, unit?, source?}}. A requirement, experiment or condition cites them",
 			"  in assumptions [ids]; each row lists the assumptions it depends on. assumption_rows lists the rows of one assumption.",
 			"Example:",
@@ -661,7 +709,7 @@ export default function (pi: ExtensionAPI) {
 				signal,
 			});
 			return {
-				content: [{ type: "text", text: formatVerdict(root, verdict) }],
+				content: [{ type: "text", text: formatVerdict(root, verdict) + checkHints(id, verdict.rows) }],
 				details: { id, status: verdict.status, counts: verdict.counts },
 			};
 		},

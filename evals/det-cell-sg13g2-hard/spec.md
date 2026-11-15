@@ -38,6 +38,9 @@ Ground is node `0`.
 4. Ideal R, L and C only as a model of wiring (each ideal C ≤ 50 fF, each ideal L ≤ 50 pH, each ideal R ≤ 50 Ω),
    and K couplings between the ideal L.
 5. No ideal sources in the cell.
+6. On the PDK devices, only the instance parameters above (and `Ny`, `m`; `b` on the resistors). A parameter that
+   changes the device physics (for example `selft`, `dtemp`, `mm_ok`) is a rule error. The netlist gate of
+   `check_requirements` gives the rule errors.
 
 ## Verification
 

@@ -59,7 +59,7 @@ export async function score(ws, expected = JSON.parse(readFileSync(join(here, "e
 	if (!existsSync(designPath)) report.errors.push(`${DESIGN} not found`);
 	else {
 		const text = readFileSync(designPath, "utf8");
-		report.design_errors = checkDesign(text);
+		report.design_errors = checkDesign(text, here);
 		if (!report.design_errors.length) report.design = 2;
 		if (!existsSync(join(ws, LAYOUT))) report.errors.push(`${LAYOUT} not found: the tap rows are not run`);
 		verified = await verifier(here, text, verifyRoot, join(ws, LAYOUT));

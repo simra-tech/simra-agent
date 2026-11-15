@@ -225,7 +225,11 @@
       ],
       "assumptions": [
         "two_cells"
-      ]
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 2: 0.3 mA for two detector cells (assumption two_cells)"
+      }
     },
     {
       "id": "loss_db",
@@ -241,7 +245,11 @@
         "slow_cold",
         "fast_hot",
         "fast_cold"
-      ]
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 1: 0.3 dB reserved in the output line for the detector"
+      }
     },
     {
       "id": "vout_m10_v",
@@ -261,7 +269,11 @@
       "assumptions": [
         "meter_resolution",
         "settling_25ns"
-      ]
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 4: meter resolution about 50 uV, times 10 (assumption meter_resolution)"
+      }
     },
     {
       "id": "ratio_0_m10",
@@ -280,7 +292,11 @@
       "assumptions": [
         "rising_response",
         "settling_25ns"
-      ]
+      ],
+      "limit_source": {
+        "kind": "task",
+        "ref": "assumption rising_response: the output rises with power (a square-law detector gives 10, a peak detector about 3.2)"
+      }
     },
     {
       "id": "noise_rms_v",
@@ -299,7 +315,11 @@
       ],
       "assumptions": [
         "noise_vs_meter"
-      ]
+      ],
+      "limit_source": {
+        "kind": "task",
+        "ref": "assumption noise_vs_meter: one fifth of the meter resolution"
+      }
     },
     {
       "id": "offset_v",
@@ -318,7 +338,38 @@
       ],
       "assumptions": [
         "zero_range"
-      ]
+      ],
+      "limit_source": {
+        "kind": "task",
+        "ref": "assumption zero_range: the RF-off zero removes the offset"
+      }
     }
-  ]
+  ],
+  "gates": {
+    "netlist": {
+      "subckt": "det_cell",
+      "file": "det_cell.spice",
+      "pins": [
+        "lin",
+        "vcc18",
+        "outd",
+        "outr",
+        "iref"
+      ],
+      "devices": [
+        "npn13G2",
+        "cap_cmim",
+        "rppd",
+        "rsil",
+        "rhigh"
+      ],
+      "wiring": {
+        "r_ohm": 50,
+        "l_h": 5e-11,
+        "c_f": 5e-14
+      },
+      "couplings": true,
+      "technology": "ihp-sg13"
+    }
+  }
 }

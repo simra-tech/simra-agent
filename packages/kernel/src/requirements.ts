@@ -17,7 +17,9 @@
 // PDK facts.
 
 import { type ConnectionRow, connectionGate } from "./connections.ts";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { checkNetlist, fitBandFindings, fittedModels, type InstanceParamClass, type NetlistRules } from "./netlist.ts";
+import { designTechnologyDirs, findPack } from "./packs.ts";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import {
 	type Diagnostic,
@@ -83,7 +85,7 @@ export interface LimitsGate {
 	technology?: string;
 	tran?: Record<string, { step_s: number; stop_s: number; start_s?: number }>;
 	/** Limits of the design (for example a minimum VCE); each cites an assumption of the file or gives a source. */
-	extra_limits?: { id: string; class: string; quantity: string; op: "<=" | ">="; limit: number; models?: string; source?: string; assumption?: string; description?: string }[];
+	extra_limits?: { id: string; class: string; quantity: string; op: "<=" | ">="; limit: number; models?: string; source?: string; assumption?: string; description?: string; limit_source?: LimitSource }[];
 }
 
 export interface StabilityGate {
@@ -140,6 +142,24 @@ export interface Requirement {
 	limit: Limit | Record<string, Limit>;
 	/** The conditions of the rows. Without conditions, the requirement has one row and its experiment runs once. */
 	conditions?: string[];
+	/** Where the limit comes from (see LimitSource). */
+	limit_source?: LimitSource;
+}
+
+/**
+ * Where a limit comes from: a row of the specification, a PDK document, a value set from the reference design (after
+ * a reference run: the reference passes it by construction), or a choice of the task author. ref names the row,
+ * document or reason.
+ */
+export interface LimitSource {
+	kind: "specification" | "pdk" | "reference_design" | "task";
+	ref: string;
+}
+export const LIMIT_SOURCE_KINDS: LimitSource["kind"][] = ["specification", "pdk", "reference_design", "task"];
+
+function validLimitSource(x: unknown): boolean {
+	const s = x as LimitSource | undefined;
+	return Boolean(s && LIMIT_SOURCE_KINDS.includes(s.kind) && typeof s.ref === "string" && s.ref.length > 0);
 }
 
 export interface ExperimentTemplate {
@@ -160,7 +180,7 @@ export interface RequirementsFile {
 	experiments: Record<string, ExperimentTemplate>;
 	requirements: Requirement[];
 	assumptions?: Record<string, Assumption>;
-	gates?: { stability?: StabilityGate; connections?: ConnectionsGate; limits?: LimitsGate };
+	gates?: { stability?: StabilityGate; connections?: ConnectionsGate; limits?: LimitsGate; netlist?: NetlistRules };
 }
 
 /**
@@ -265,7 +285,13 @@ export function validateRequirements(file: RequirementsFile): string[] {
 	}
 	for (const [name, c] of Object.entries(conditions)) cites(`condition "${name}"`, c?.assumptions);
 	const gate = file.gates?.stability;
-	for (const k of Object.keys(file.gates ?? {})) if (!["stability", "connections", "limits"].includes(k)) errors.push(`gates.${k}: unknown gate; the gates are stability, connections and limits`);
+	for (const k of Object.keys(file.gates ?? {})) if (!["stability", "connections", "limits", "netlist"].includes(k)) errors.push(`gates.${k}: unknown gate; the gates are stability, connections, limits and netlist`);
+	const ng = file.gates?.netlist;
+	if (ng !== undefined) {
+		if (!ng || typeof ng.file !== "string" || typeof ng.subckt !== "string" || !Array.isArray(ng.pins) || !Array.isArray(ng.devices))
+			errors.push("gates.netlist: file, subckt, pins and devices are required");
+		else if (ng.devices.length && typeof ng.technology !== "string") errors.push("gates.netlist: technology (the pack name) is required with devices: the pack gives the instance parameters of each device class");
+	}
 	const lg = file.gates?.limits;
 	if (lg !== undefined) {
 		if (!lg || typeof lg !== "object") errors.push("gates.limits: must be an object");
@@ -282,6 +308,7 @@ export function validateRequirements(file: RequirementsFile): string[] {
 				if (!l?.id || !l.class || !l.quantity || !["<=", ">="].includes(l.op) || !isNumber(l.limit)) errors.push(`${w}: id, class, quantity, op (<= or >=) and limit are required`);
 				if (!l?.source && !l?.assumption) errors.push(`${w}: give a source or an assumption`);
 				if (l?.assumption && !assumptions[l.assumption]) errors.push(`${w}: assumption "${l.assumption}" is not defined in assumptions`);
+				if (l?.limit_source !== undefined && !validLimitSource(l.limit_source)) errors.push(`${w}: limit_source needs kind (${LIMIT_SOURCE_KINDS.join(", ")}) and ref`);
 			}
 		}
 	}
@@ -316,6 +343,7 @@ export function validateRequirements(file: RequirementsFile): string[] {
 			if (r.min_seeds !== undefined && !(Number.isInteger(r.min_seeds) && r.min_seeds >= 2)) errors.push(`${where}: min_seeds must be an integer of at least 2`);
 		} else if (r.statistic !== undefined || r.k !== undefined || r.min_seeds !== undefined) errors.push(`${where}: statistic, k and min_seeds are for kind monte_carlo`);
 		cites(where, r.assumptions);
+		if (r.limit_source !== undefined && !validLimitSource(r.limit_source)) errors.push(`${where}: limit_source needs kind (${LIMIT_SOURCE_KINDS.join(", ")}) and ref`);
 		if (r.stage !== undefined && (kind !== "mu" || typeof r.stage !== "string")) errors.push(`${where}: stage is for kind mu (the name of an RF stage)`);
 		if (kind === "sweep") {
 			if (r.measurement !== undefined) errors.push(`${where}: kind sweep reads a sweep table; remove measurement`);
@@ -673,6 +701,57 @@ export function limitsGateRows(runs: { experiment: string; condition: string | n
 }
 
 /** The rows of the connection gate: one per item of the block against the connection table (connections.ts). */
+/** The instance-parameter classes of a technology pack (instance_params.<pdk>.classes), or {} when it has none. */
+export function instanceParamClasses(root: string, technology: string): Record<string, InstanceParamClass> {
+	const entry = findPack(designTechnologyDirs(root), technology);
+	const pack = JSON.parse(readFileSync(entry.path, "utf8")) as { ngspice?: { instance_params?: Record<string, { classes?: Record<string, InstanceParamClass> }> } };
+	const byPdk = pack.ngspice?.instance_params ?? {};
+	const key = entry.pdks.find((p) => byPdk[p]) ?? Object.keys(byPdk)[0];
+	return (key ? byPdk[key]?.classes : undefined) ?? {};
+}
+
+/** The netlist gate: one row with the number of rule errors of the design file (limit 0), and the errors in the reason. */
+export function netlistGateRows(file: RequirementsFile, root: string): VerdictRow[] {
+	const rules = file.gates?.netlist;
+	if (!rules) return [];
+	const base = { requirement: "gate netlist", condition: null, measurement: `rule errors in ${rules.file}`, op: "<=" as const, limit: 0, unit: null, at: null, experiment: null, gate: { name: "netlist", stage: rules.subckt, covered_by: [] as string[] } };
+	const path = join(root, rules.file);
+	if (!existsSync(path)) return [{ ...base, value: null, margin: null, margin_rel: null, status: "not_run", reason: `${rules.file} not found` }];
+	let classes: Record<string, InstanceParamClass> = {};
+	try {
+		if (rules.technology) classes = instanceParamClasses(root, rules.technology);
+	} catch (e) {
+		return [{ ...base, value: null, margin: null, margin_rel: null, status: "not_run", reason: (e as Error).message }];
+	}
+	const res = checkNetlist(readFileSync(path, "utf8"), rules, { classes, fits: rules.fitted ? fittedModels(root).found : [] });
+	const n = res.errors.length;
+	const shown = res.errors.slice(0, 12).map((e) => `${rules.file}${e.line ? `:${e.line}` : ""}: ${e.message}`);
+	const fits = res.fitted_used.length ? `; fitted models used: ${res.fitted_used.map((x) => `${x.subckt} (fit ${x.fit}${x.em ? `, EM ${x.em}` : ""})`).join(", ")}` : "";
+	return [{ ...base, value: n, margin: -n, margin_rel: null, status: n ? "fail" : "pass", reason: n ? `${shown.join("; ")}${n > 12 ? `; and ${n - 12} more` : ""}${fits}` : `no rule error${fits}` }];
+}
+
+/**
+ * The fit-band gate: for each ngspice or Xyce simulate experiment of the check, each fitted model that its deck uses
+ * against each analysis of the deck (netlist.ts fitBandFindings). One row per experiment and fitted model.
+ */
+export function fitBandGateRows(file: RequirementsFile, root: string, experiments: string[]): VerdictRow[] {
+	const fits = fittedModels(root).found;
+	if (!fits.length) return [];
+	const rows: VerdictRow[] = [];
+	for (const name of experiments) {
+		const t = file.experiments[name];
+		const deck = (t?.inputs as { deck?: unknown } | undefined)?.deck;
+		if (!t || t.operation !== "simulate" || !["ngspice", "xyce"].includes(t.adapter) || typeof deck !== "string" || deck.includes("{")) continue;
+		for (const f of fitBandFindings(root, deck, fits))
+			rows.push({
+				requirement: `gate fit_band ${f.subckt}`, condition: null, measurement: `band of use of fit ${f.fit} in ${deck}`, op: "<=", limit: 0,
+				value: f.pass ? 0 : 1, unit: null, margin: f.pass ? 0 : -1, margin_rel: null, status: f.pass ? "pass" : "fail", experiment: null, reason: f.reason, at: null,
+				gate: { name: "fit_band", stage: name, covered_by: [] },
+			});
+	}
+	return rows;
+}
+
 export function connectionGateRows(file: RequirementsFile, root: string): VerdictRow[] {
 	const gate = file.gates?.connections;
 	if (!gate) return [];
@@ -895,6 +974,8 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 	rows.push(...stabilityGateRows(file, rows));
 	rows.push(...connectionGateRows(file, root));
 	rows.push(...limitsGateRows(limitRuns, root));
+	rows.push(...netlistGateRows(file, root));
+	rows.push(...fitBandGateRows(file, root, [...new Set([...pairs.values()].map((p) => p.experiment))]));
 	const counts: Record<RowStatus, number> = { pass: 0, fail: 0, not_measured: 0, not_run: 0 };
 	for (const row of rows) counts[row.status]++;
 	// A selection is never a pass, also when it happens to include every row.

@@ -1,6 +1,7 @@
 // Score a workspace of the det-cell-sg13g2 task (task.md, spec.md).
 //
-// The scorer does not trust the answer. It checks the device rules of spec.md on det_cell.spice (a text check), then
+// The scorer does not trust the answer. It checks the device rules of spec.md on det_cell.spice (the kernel netlist
+// checker with gates.netlist of requirements.json, the same check as the gate row), then
 // runs the check of requirements.json on the final det_cell.spice through the kernel (the bench at each corner).
 //
 // Score:
@@ -18,13 +19,11 @@
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { runCheck } from "@simra-tech/kernel";
+import { checkNetlist, instanceParamClasses, runCheck, spiceNumber as kernelSpiceNumber } from "@simra-tech/kernel";
 import { numbersIn, readTexts, within } from "../ota-corners/score.mjs";
 
 const here = new URL(".", import.meta.url).pathname;
 const DESIGN = "det_cell.spice";
-const PINS = ["lin", "vcc18", "outd", "outr", "iref"];
-const DEVICES = ["npn13g2", "cap_cmim", "rppd", "rsil", "rhigh"];
 /** Value tolerance of a reported row: relative, or absolute in the unit of the requirement. */
 export const TOLERANCE = {
 	idd_a: { rel: 0.02 },
@@ -35,65 +34,16 @@ export const TOLERANCE = {
 	offset_v: { abs: 1e-4, rel: 0.05 },
 };
 
-const SUFFIX = { f: 1e-15, p: 1e-12, n: 1e-9, u: 1e-6, m: 1e-3, k: 1e3, meg: 1e6, g: 1e9, t: 1e12 };
-/** A SPICE number with a scale suffix, or NaN. */
-export function spiceNumber(text) {
-	const m = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)(meg|[fpnumkgt])?[a-z]*$/i.exec(text);
-	return m ? Number(m[1]) * (m[2] ? SUFFIX[m[2].toLowerCase()] : 1) : Number.NaN;
-}
+/** A SPICE number with a scale suffix, or NaN (the kernel parser). */
+export const spiceNumber = kernelSpiceNumber;
 
-/** The device rules of spec.md on the text of det_cell.spice. Returns a list of errors. */
-export function checkDesign(text) {
-	const errors = [];
-	const lines = [];
-	for (const raw of text.split("\n")) {
-		const l = raw.replace(/[;$].*$/, "").trim();
-		if (!l || l.startsWith("*")) continue;
-		if (l.startsWith("+") && lines.length) lines[lines.length - 1] += ` ${l.slice(1)}`;
-		else lines.push(l);
-	}
-	const subckts = new Map();
-	let current = null;
-	for (const l of lines) {
-		const f = l.split(/\s+/);
-		const head = f[0].toLowerCase();
-		if (head === ".subckt") {
-			current = f[1].toLowerCase();
-			subckts.set(current, f.slice(2).filter((x) => !x.includes("=")).map((x) => x.toLowerCase()));
-			continue;
-		}
-		if (head === ".ends") {
-			current = null;
-			continue;
-		}
-		if (head.startsWith(".")) {
-			if (![".param", ".end"].includes(head)) errors.push(`${f[0]}: only .subckt, .ends and .param lines are allowed`);
-			continue;
-		}
-		if (!current) {
-			errors.push(`${f[0]}: an element outside a .subckt`);
-			continue;
-		}
-		const kind = head[0];
-		if ("vibefgh".includes(kind)) errors.push(`${f[0]}: no sources in the cell`);
-		else if (kind === "c" || kind === "l" || kind === "r") {
-			const v = spiceNumber(f[3] ?? "");
-			const max = { c: 50e-15, l: 50e-12, r: 50 }[kind];
-			if (!(v > 0)) errors.push(`${f[0]}: the value must be a positive number`);
-			else if (v > max * (1 + 1e-9)) errors.push(`${f[0]}: ideal ${kind.toUpperCase()} ${f[3]} is above ${max} (wiring models only)`);
-		} else if (kind === "k") {
-			const v = spiceNumber(f[3] ?? "");
-			if (!(Math.abs(v) <= 1)) errors.push(`${f[0]}: a coupling must be between -1 and 1`);
-		} else if (kind === "x") {
-			const name = f.filter((x) => !x.includes("=")).at(-1).toLowerCase();
-			if (!DEVICES.includes(name) && !subckts.has(name) && !lines.some((x) => x.toLowerCase().startsWith(`.subckt ${name} `)))
-				errors.push(`${f[0]}: ${name} is not a device of spec.md`);
-		} else errors.push(`${f[0]}: element kind ${kind.toUpperCase()} is not allowed`);
-	}
-	const pins = subckts.get("det_cell");
-	if (!pins) errors.push("no .subckt det_cell");
-	else if (pins.join(" ") !== PINS.join(" ")) errors.push(`det_cell pins are "${pins.join(" ")}", expected "${PINS.join(" ")}"`);
-	return errors;
+/**
+ * The device rules of spec.md on the text of det_cell.spice: the kernel netlist checker with the rules of
+ * gates.netlist in requirements.json (the same check as the gate row of check_requirements). Returns a list of errors.
+ */
+export function checkDesign(text, taskDir = here) {
+	const rules = JSON.parse(readFileSync(join(taskDir, "requirements.json"), "utf8")).gates.netlist;
+	return checkNetlist(text, rules, { classes: instanceParamClasses(taskDir, rules.technology) }).errors.map((e) => e.message);
 }
 
 /** Run the check of requirements.json on the design text in root. Returns {rows: {"corner id": {value, pass}}, experiments}. */

@@ -20,7 +20,7 @@ network has S-parameters only.
 | `sp.spice` | S-parameter bench: two 50 Ω ports, the DC point (`idd_a`) and `lna.s2p`, 1 GHz to 300 GHz |
 | `noise.spice` | noise bench: noise figure with a noiseless 50 Ω source and load at 122, 122.5 and 123 GHz, gain at 122.5 GHz |
 | `lines.spice` | TopMetal2 line models (6, 13 and 23 µm) from the line table of the reference design (openEMS) |
-| `requirements.json` | five corners, five requirements (13 rows), the stability gate and the operating-limit gate |
+| `requirements.json` | five corners, five requirements (13 rows), the stability gate, the operating-limit gate and the netlist gate (the fit-band gate adds its rows) |
 | `score.mjs` | scorer: device rules, the EM passive in the records, then the check of `requirements.json` through the kernel |
 | `reference.mjs` | reference run: the reference design through the same benches and gates, writes `expected.json` |
 | `expected.json` | reference value of each row, with provenance |
@@ -30,9 +30,12 @@ network has S-parameters only.
 1. Both ports are 50 Ω (assumption `ports_50ohm`). The reference matches its input to a fitted antenna model.
 2. The gain row is the 13 dB to 15 dB row of revision 0.1 of the interface rows, at tt only. The later rows of the
    chip (a gain setting per corner) need the steering circuit of the later revisions.
-3. The noise figure leaves out the loss noise of the EM passives. `fit_to_spice` writes a noiseless subcircuit
-   (registry entry `fit-to-spice-noise`). The reference record uses port noise sources with the Twiss correlation
-   and gives 5.13 dB to 5.22 dB; this bench gives 4.99 dB for the same circuit.
+3. The reference value of the noise figure (4.99 dB) leaves out the loss noise of the EM passives: the reference
+   run used noiseless fits. The reference record uses port noise sources with the Twiss correlation and gives
+   5.13 dB to 5.22 dB. Since step 7, `fit_to_spice` writes these port noise sources when the fit has
+   `uses.noise_band_hz`, and the fit-band gate fails a noise bench whose fitted model has no port noise. The
+   reference circuit with such fits of its four EM networks gives 5.181 dB at tt (simulated, ngspice 46); the
+   reference value of `expected.json` was not computed again.
 
 ## Reference
 
@@ -59,9 +62,29 @@ resistors, the noise bench gave 275 dB.
 - em_passive (2): `lna` uses a subcircuit that is the output of a `fit_to_spice` record of the workspace, whose input
   Touchstone file is the output of an openEMS record (by SHA-256). The scorer does not repeat the EM run, and it does
   not check that the passive is in the signal path.
-- requirements (53): each verified row passes, the gate rows included. Only with the design points.
+- requirements (53 and the gate rows of step 7): each verified row passes, the gate rows included. Step 7 adds the netlist gate row and one `fit_band` row for each bench and fitted model. Only with the design points.
 - claim (4): `meets_spec` is the same as the verification (design, EM passive, every row).
 - values (13): each reported value of a requirement row is within the tolerance of the verified value.
+
+The device rules are the gate `netlist` of `requirements.json` (kernel `checkNetlist`; the scorer and
+`check_requirements` use the same check). An X line of a PDK device may set only the instance parameters of the
+`instance_params` class of the device in the technology pack (for the HBT: `Nx`, `Ny`, `m`; the line models: `len` from 1 nm to 1 mm). A parameter that changes
+the device physics (for example `selft`, `dtemp`, `mm_ok`) is an error, unless the gate names it in `allow_params`.
+
+## Limit sources
+
+Each limit of `requirements.json` has `limit_source`: a row of the specification, a PDK document, a value set
+from the reference design (the reference passes it by construction), or a choice of the task author.
+
+| Limit | Value | Source | Reference |
+| --- | --- | --- | --- |
+| `gain` | 13 to 15 dB | specification | row 1: 13 dB to 15 dB, revision 0.1 of the interface rows |
+| `nf_db` | <= 6 dB | specification | row 2: 6 dB at tt, revision 0.1 |
+| `s22` | <= -10 dB | specification | row 3 |
+| `mu` | >= 1 | specification | row 4 |
+| `idd_a` | <= 0.025 A | specification | row 5 |
+| gate `limits` `hbt_ic_per_emitter_3ma` | <= 0.003 | specification | row 7: 3 mA per emitter (the PDK process specification gives 3.5 mA) |
+| gate `limits`, the other rows | the PDK limits of the pack | PDK document | each limit of the technology pack names its PDK source |
 
 ## Pilot runs (one run per model, 2026-11-15)
 
