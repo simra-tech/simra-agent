@@ -14,9 +14,13 @@ Method:
      (psd_a2_hz for a current, psd_v2_hz for a series voltage), or the shot noise 2 q |i(tau_k)| of a vector of the
      reference run (input shot), or a list of one PSD per phase (a cyclostationary PSD from elsewhere). A shot vector
      must be a conduction current: in a transient, the terminal currents of a bipolar model (and @q[ib] of VBIC)
-     include the charge currents, which are not noise. mult counts identical sources by symmetry. The total is the sum over the sources.
+     include the charge currents, which are not noise. shot {device, current} takes the conduction current from a DC
+     table of the device (isf.devices: the device alone, a 2-D dc sweep of two node voltages; the table is interpolated
+     at the transient values of two axis vectors, for example the internal vbe and vbc, as the R2 method). mult counts identical sources by symmetry. The total is the sum over the sources.
      output_multiplier N (a frequency multiplier after the oscillator) adds 20 log10(N).
-Not included: flicker noise, noise of the bias circuits that is not a listed source, AM-to-PM conversion after the
+  4. Flicker noise of a source (input flicker {device, current, kf, af, bf}: S = kf |i|^af / df^bf) by the DC term of
+     the ISF: L(df) = mult * 1/2 * (f0/df)^2 * mean_k(v_k |i_k|^(af/2))^2 * kf / df^bf.
+Not included: noise of the bias circuits that is not a listed source, AM-to-PM conversion after the
 oscillator.
 """
 
@@ -113,7 +117,105 @@ def series_line(circuit, name):
     return None
 
 
-def check_sources(sources, circuit, phases=32):
+MODEL_LINE = re.compile(r"^\s*\.(lib|include|inc|param|model|options?|temp|global|csparam)\b", re.IGNORECASE)
+
+
+def model_lines(circuit):
+    """The lines of the deck that the device needs: library, include, parameter, model and option lines at the top
+    level, and every .subckt block."""
+    out, depth = [], 0
+    for line in circuit:
+        low = line.strip().lower()
+        if low.startswith(".subckt"):
+            depth += 1
+        if depth or MODEL_LINE.match(line):
+            out.append(line)
+        if low.startswith(".ends") and depth:
+            depth -= 1
+    return out
+
+
+def table_deck(libs, settings, dev, data, circuit=()):
+    """The DC table deck of one device: the model lines of the deck, the device lines alone, a voltage source on each
+    swept node, a 2-D dc sweep."""
+    lines = ["* simra ngspice adapter: oscillator conduction table of %s" % dev["name"]]
+    lines += ['.lib "{}"{}'.format(p, " " + s if s else "") for p, s in libs]
+    lines += model_lines(circuit) + list(dev["lines"]) + settings
+    (n1, a1, b1, s1), (n2, a2, b2, s2) = dev["sweep"]
+    lines += ["Vsimra_t1 %s 0 %g" % (n1, a1), "Vsimra_t2 %s 0 %g" % (n2, a2)]
+    vec = list(dev["axes"]) + [dev["currents"][k] for k in sorted(dev["currents"])]
+    lines += [".control", "set num_threads=1", "save " + " ".join(vec),
+              "dc Vsimra_t1 %g %g %g Vsimra_t2 %g %g %g" % (a1, b1, s1, a2, b2, s2),
+              "wrdata %s %s" % (data, " ".join(vec)), ".endc", ".end"]
+    return "\n".join(lines) + "\n", len(vec)
+
+
+def grid_shape(dev):
+    (_, a1, b1, s1), (_, a2, b2, s2) = dev["sweep"]
+    return int(round((b1 - a1) / s1)) + 1, int(round((b2 - a2) / s2)) + 1
+
+
+class Table(object):
+    """Linear interpolation on a sweep table: the points are a structured grid in the swept (external) voltages and a
+    smooth map to the axes (internal junction voltages). Each grid cell is split into two triangles; a query point is
+    found by its triangle in axis space (barycentric weights), with a bucket index of the triangle boxes."""
+
+    def __init__(self, xs, ys, values, n1, n2, bucket=0.02):
+        self.v = values
+        self.tri = []
+        self.bucket = bucket
+        self.index = {}
+        idx = lambda i, j: j * n1 + i
+        for j in range(n2 - 1):
+            for i in range(n1 - 1):
+                a, b, c, d = idx(i, j), idx(i + 1, j), idx(i, j + 1), idx(i + 1, j + 1)
+                for t in ((a, b, d), (a, d, c)):
+                    k = len(self.tri)
+                    self.tri.append(t)
+                    px = [xs[q] for q in t]
+                    py = [ys[q] for q in t]
+                    for bx in range(int(math.floor(min(px) / bucket)), int(math.floor(max(px) / bucket)) + 1):
+                        for by in range(int(math.floor(min(py) / bucket)), int(math.floor(max(py) / bucket)) + 1):
+                            self.index.setdefault((bx, by), []).append(k)
+        self.xs, self.ys = xs, ys
+
+    def __call__(self, x, y):
+        """{name: value} at (x, y), or None outside the table."""
+        best = None
+        for k in self.index.get((int(math.floor(x / self.bucket)), int(math.floor(y / self.bucket))), []):
+            a, b, c = self.tri[k]
+            x1, y1, x2, y2, x3, y3 = self.xs[a], self.ys[a], self.xs[b], self.ys[b], self.xs[c], self.ys[c]
+            det = (y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3)
+            if det == 0:
+                continue
+            l1 = ((y2 - y3) * (x - x3) + (x3 - x2) * (y - y3)) / det
+            l2 = ((y3 - y1) * (x - x3) + (x1 - x3) * (y - y3)) / det
+            l3 = 1 - l1 - l2
+            worst = min(l1, l2, l3)
+            if best is None or worst > best[0]:
+                best = (worst, a, b, c, l1, l2, l3)
+        if best is None or best[0] < -1e-9:
+            return None
+        _, a, b, c, l1, l2, l3 = best
+        return {name: l1 * v[a] + l2 * v[b] + l3 * v[c] for name, v in self.v.items()}
+
+
+def check_devices(devices):
+    if not isinstance(devices, list):
+        return "isf.devices must be a list"
+    for d in devices:
+        if not (isinstance(d, dict) and isinstance(d.get("name"), str) and isinstance(d.get("lines"), list)
+                and isinstance(d.get("sweep"), list) and len(d["sweep"]) == 2
+                and all(isinstance(x, list) and len(x) == 4 and isinstance(x[0], str) for x in d["sweep"])
+                and isinstance(d.get("axes"), list) and len(d["axes"]) == 2 and isinstance(d.get("at"), list)
+                and len(d["at"]) == 2 and isinstance(d.get("currents"), dict) and d["currents"]):
+            return ("each isf device needs name, lines (the device alone), sweep ([[node, from, to, step], [node, from, "
+                    "to, step]]), axes (two vectors of the table deck), at (the same two vectors in the oscillator deck) "
+                    "and currents ({name: vector of the table deck})")
+    return None
+
+
+def check_sources(sources, circuit, phases=32, devices=()):
     """An error message, or None. A series source must be a voltage source of the deck with value 0."""
     names = set()
     if not isinstance(sources, list) or not sources:
@@ -124,6 +226,12 @@ def check_sources(sources, circuit, phases=32):
         if s["name"] in names:
             return "isf source %s is given twice" % s["name"]
         names.add(s["name"])
+        fl = s.get("flicker")
+        if fl is not None:
+            dev = {d["name"]: d for d in devices}.get((fl or {}).get("device")) if isinstance(fl, dict) else None
+            if dev is None or fl.get("current") not in dev["currents"] or not all(
+                    isinstance(fl.get(k), (int, float)) for k in ("kf", "af", "bf")):
+                return "isf source %s: flicker needs device, current (of isf.devices), kf, af and bf" % s["name"]
         if "vsource" in s:
             if series_line(circuit, s["vsource"]) is None:
                 return "isf source %s: no voltage source %s with value 0 in the deck" % (s["name"], s["vsource"])
@@ -133,7 +241,12 @@ def check_sources(sources, circuit, phases=32):
             if len((s.get("nodes") or "").split()) != 2:
                 return "isf source %s: nodes must be two node names, 'n+ n-'" % s["name"]
             psd = s.get("psd_a2_hz")
-            if not isinstance(psd, (int, float, list)) and not isinstance(s.get("shot"), str):
+            shot = s.get("shot")
+            if isinstance(shot, dict):
+                dev = {d["name"]: d for d in devices}.get(shot.get("device"))
+                if dev is None or shot.get("current") not in dev["currents"]:
+                    return "isf source %s: shot {device, current} must name a device of isf.devices and one of its currents" % s["name"]
+            elif not isinstance(psd, (int, float, list)) and not isinstance(shot, str):
                 return "isf source %s: give psd_a2_hz or shot (a current vector of the deck)" % s["name"]
             if isinstance(psd, list) and (len(psd) != phases or not all(isinstance(x, (int, float)) for x in psd)):
                 return "isf source %s: a psd_a2_hz list needs one number per phase (%d)" % (s["name"], phases)
@@ -166,12 +279,14 @@ def oscillator(request):
     mult_out = float(inputs.get("output_multiplier", 1))
     circuit = na.circuit_lines(deck_path)
     if isf is not None:
-        error = check_sources(isf.get("sources"), circuit, int(isf.get("phases", 32)))
+        error = check_devices(isf.get("devices", [])) or check_sources(
+            isf.get("sources"), circuit, int(isf.get("phases", 32)), isf.get("devices", []))
         if error:
             return na.failure(tool, error)
     probe = ["v(%s)" % p] + (["v(%s)" % n] if n else [])
-    shots = [s["shot"] for s in (isf or {}).get("sources", []) if s.get("shot")]
-    vectors = probe + shots
+    shots = [s["shot"] for s in (isf or {}).get("sources", []) if isinstance(s.get("shot"), str)]
+    devices = (isf or {}).get("devices", [])
+    vectors = probe + shots + [x for d in devices for x in d["at"]]
 
     # 1. reference run (hashed and logged by the common runner)
     with open(os.path.join(work, "ref.cir"), "w") as fh:
@@ -226,6 +341,38 @@ def oscillator(request):
         if not settle <= t0 < ref_stop:
             return na.failure(tool, "isf.t0_s must be between settle_s and ref_stop_s")
         tstop = t0 + (win[1] + 2) * T
+        # conduction currents of each device at the phases: DC table at the transient axis values (R2 method)
+        cond = {}
+        for d in devices:
+            text, nvec = table_deck(libs, settings, d, "table_%s.dat" % d["name"], circuit)
+            with open(os.path.join(work, "table_%s.cir" % d["name"]), "w") as fh:
+                fh.write(text)
+            env = dict(os.environ, NGSPICE_INPUT_DIR=os.path.realpath(root))
+            with open(os.path.join(work, "table_%s.log" % d["name"]), "w") as log:
+                subprocess.call(["ngspice", "-b", "table_%s.cir" % d["name"]], cwd=work, env=env, stdout=log, stderr=subprocess.STDOUT)
+            data = os.path.join(work, "table_%s.dat" % d["name"])
+            n1, n2 = grid_shape(d)
+            tt, tv = read_wrdata(data, nvec) if os.path.isfile(data) else ([], [])
+            if len(tt) != n1 * n2:
+                return na.failure(tool, "the conduction table of device %s has %d points, expected %d (work/table_%s.log)" % (
+                    d["name"], len(tt), n1 * n2, d["name"]))
+            os.remove(data)
+            names = sorted(d["currents"])
+            table = Table(tv[0], tv[1], {k: tv[2 + i] for i, k in enumerate(names)}, n1, n2)
+            ja, jb = vectors.index(d["at"][0]), vectors.index(d["at"][1])
+            rows, outside = [], []
+            for k in range(nph):
+                tk = t0 + k * T / nph
+                x, yv = interp(t, vals[ja], tk), interp(t, vals[jb], tk)
+                r = table(x, yv)
+                if r is None:
+                    outside.append((k, x, yv))
+                    r = {c: float("nan") for c in names}
+                rows.append(dict(r, x=x, y=yv))
+            if outside:
+                return na.failure(tool, "device %s: %d phases are outside the conduction table (first: phase %d at %s = %.4g, %s = %.4g); widen the sweep" % (
+                    d["name"], len(outside), outside[0][0], d["at"][0], outside[0][1], d["at"][1], outside[0][2]))
+            cond[d["name"]] = rows
         jobs = []
         for s in sources:
             for k in range(nph):
@@ -245,6 +392,7 @@ def oscillator(request):
         with Pool(procs) as pool:
             runs = {name: (tt, yy) for name, tt, yy in pool.map(run_isf, jobs)}
         total = {df: 0.0 for df in offsets}
+        flick = {df: 0.0 for df in offsets}
         per_source, failed = {}, []
         for s in sources:
             q = dl if "vsource" in s else dq
@@ -268,7 +416,9 @@ def oscillator(request):
                     v.append(None)
                     continue
                 v.append(sum(d) / len(d) / q)
-            if s.get("shot"):
+            if isinstance(s.get("shot"), dict):
+                psd = [2 * Q_E * abs(r[s["shot"]["current"]]) for r in cond[s["shot"]["device"]]]
+            elif s.get("shot"):
                 j = vectors.index(s["shot"])
                 psd = [2 * Q_E * abs(interp(t, vals[j], t0 + k * T / nph)) for k in range(nph)]
             elif isinstance(s.get("psd_a2_hz"), list):
@@ -283,14 +433,31 @@ def oscillator(request):
                 lw = mult * 0.5 * (f0 / df) ** 2 * mean
                 total[df] += lw
                 rec["l_dbc_hz"]["%g" % df] = 10 * math.log10(lw) + 20 * math.log10(mult_out) if lw > 0 else None
+            fl = s.get("flicker")
+            if fl and ok:
+                # flicker by the DC term of the ISF: S = kf |i|^af / df^bf; L = mult 1/2 (f0/df)^2 mean(v |i|^(af/2))^2 kf / df^bf
+                cur = [abs(r[fl["current"]]) for r in cond[fl["device"]]]
+                c0 = sum(v[k] * cur[k] ** (fl["af"] / 2) for k in ok) / len(ok)
+                rec["flicker_isf_dc"] = c0
+                rec["flicker_l_dbc_hz"] = {}
+                for df in offsets:
+                    lf = mult * 0.5 * (f0 / df) ** 2 * c0 ** 2 * fl["kf"] / df ** fl["bf"]
+                    flick[df] += lf
+                    rec["flicker_l_dbc_hz"]["%g" % df] = 10 * math.log10(lf) + 20 * math.log10(mult_out) if lf > 0 else None
+            if isinstance(s.get("shot"), dict) or fl:
+                dn = (s.get("shot") if isinstance(s.get("shot"), dict) else fl)["device"]
+                rec["conduction"] = [{k: r[k] for k in r} for r in cond[dn]]
             per_source[s["name"]] = rec
         if failed:
             diagnostics.insert(0, {"severity": "error", "source": "adapter", "message": (
                 "%d of %d ISF runs failed or stopped early (first: %s); see work/isf_*.log" % (len(failed), len(jobs), failed[0]))})
             response["status"] = "failed"
         for df in offsets:
-            val = 10 * math.log10(total[df]) + 20 * math.log10(mult_out) if total[df] > 0 and not failed else None
+            white = 10 * math.log10(total[df]) + 20 * math.log10(mult_out) if total[df] > 0 and not failed else None
+            val = 10 * math.log10(total[df] + flick[df]) + 20 * math.log10(mult_out) if total[df] > 0 and not failed else None
             m["l_%g_hz_dbc" % df] = {"value": val, "unit": "dBc/Hz", "status": "measured" if val is not None else "missing"}
+            if any(s.get("flicker") for s in sources):
+                m["l_white_%g_hz_dbc" % df] = {"value": white, "unit": "dBc/Hz", "status": "measured" if white is not None else "missing"}
         result.update(phases=nph, window_periods=win, dq_c=dq, dl_vs=dl, pulse_s=w, output_multiplier=mult_out,
                       isf_runs=len(jobs), isf_runs_failed=len(failed), sources=per_source,
                       l_total_dbc_hz={"%g" % df: m["l_%g_hz_dbc" % df]["value"] for df in offsets})

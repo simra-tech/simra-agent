@@ -39,7 +39,11 @@
   },
   "vccpa": {
    "volts": 0.9,
-   "tolerance_rel": 0.001
+   "tolerance_rel": 0.001,
+   "range_v": [
+    0.7,
+    1.1
+   ]
   }
  },
  "blocks": {

@@ -76,9 +76,9 @@
       },
       "gap": "In a transient, the VBIC instance vectors @q[ib] (and, to a smaller part, @q[ic]) of npn13G2 include the charge currents of the junction capacitances; they are not the conduction currents.",
       "symptom": "A shot-noise PSD 2 q |i| from these vectors is too high: in a 61.8 GHz VCO the base shot noise was 24 dB and the collector shot noise 1.7 dB above the result with the conduction currents.",
-      "workaround": "Take the conduction currents from a DC table of the device at the junction voltages of the transient (@q[vbe], @q[vbc]), and give them as a psd_a2_hz list per phase of the oscillator operation.",
+      "workaround": "Take the conduction currents from a DC table of the device at the junction voltages of the transient (@q[vbe], @q[vbc]): in the oscillator operation, isf.devices and shot {device, current}.",
       "status": "worked_around",
-      "evidence": "simulated, ngspice 46: oscillator operation with shot vectors against the stored conduction-current result of the same deck"
+      "evidence": "simulated, ngspice 46: oscillator operation with shot vectors against the stored conduction-current result of the same deck; with isf.devices the result equals the stored result within 0.02 dB per source"
     }
   ]
 }

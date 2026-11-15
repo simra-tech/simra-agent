@@ -1,0 +1,43 @@
+* det-cell verification bench. The design is the subcircuit det_cell in det_cell.spice, pins lin vcc18 outd outr iref.
+* The line: a 50 ohm source and a 50 ohm load; the cell taps the line at node lin. Line power is the power in the load
+* without the cell: an amplitude of 2 x sqrt(2 x 50 ohm x P) at the source. The RF is off from 0 to 20 ns, -10 dBm from
+* 20 ns to 50 ns and 0 dBm from 50 ns to 80 ns (pwl() of a B source
+* extrapolates after its last point, so the last point is at 1 s), at 122.5 GHz. The bias reference: a current iref from vcc18 into the
+* pin iref. The model libraries, vcc, iref and the temperature come from requirements.json; the values below are tt.
+.param vcc=1.8 iref=25u
+.temp 27
+.include "det_cell.spice"
+Vvcc vcc18 0 {vcc}
+Iref vcc18 iref {iref}
+Bline s1 0 V=pwl(time, 0,0, 20n,0, 20.1n,0.2, 50n,0.2, 50.1n,0.632456, 1,0.632456) * sin(2*3.14159265358979*122.5e9*time)
+Vac s2 s1 dc 0 ac 1
+Rs s2 lin 50
+Rl lin 0 50
+Xdut lin vcc18 outd outr iref det_cell
+.control
+set num_threads=1
+op
+let idd_a = -i(vvcc)
+print idd_a
+let offset_v = abs(v(outd) - v(outr))
+print offset_v
+ac lin 1 122.5e9 122.5e9
+let loss_db = 20 * log10(0.5 / mag(v(lin)))
+print loss_db
+noise v(outd,outr) vac dec 20 1 10k
+let noise_rms_v = onoise_total
+print noise_rms_v
+save v(outd) v(outr)
+tran 0.2p 80n 0 0.2p
+let vd = v(outd) - v(outr)
+meas tran z avg vd from=15n to=20n
+meas tran a10 avg vd from=45n to=50n
+meas tran a0 avg vd from=75n to=80n
+let vout_m10_v = a10 - z
+let vout_0_v = a0 - z
+let ratio_0_m10 = vout_0_v / vout_m10_v
+print vout_m10_v
+print vout_0_v
+print ratio_0_m10
+.endc
+.end

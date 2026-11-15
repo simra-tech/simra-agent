@@ -21,14 +21,14 @@ test("checkTable: a need without a provider, a provider with another value, an u
 	const rows = checkTable(table());
 	assert.deepEqual(rows.map((r) => [r.item, r.reason]), [
 		["table bias.spare_ref", "bias output on net spare_ref has no consumer"],
-		["table lna.ib1", "provider bias.lna_ref gives 0.000931, the need is 0.000863 +- 0.00004315"],
+		["table lna.ib1", "provider bias.lna_ref gives 0.000931, the need is 0.00081985 to 0.00090615"],
 		["table lna.ib2", "bias need on net lna_iref2 has no provider"],
 		["table lna.mux", "control lna_mux is not defined in controls"],
 	]);
 	assert.ok(rows.every((r) => r.status === "fail"));
 	assert.deepEqual(validateTable({ schema: "simra.connections/0", supplies: {}, blocks: { b: { pins: { p: { net: "n", kind: "bias" } } } } } as any), [
 		"blocks.b.pins.p: give one of current_a and voltage_v",
-		"blocks.b.pins.p: tolerance_rel or tolerance_abs is required",
+		"blocks.b.pins.p: tolerance_rel, tolerance_abs or range is required",
 	]);
 });
 
@@ -46,7 +46,7 @@ test("checkBlock: the mismatch classes of a block are rows with the reason", () 
 	assert.deepEqual(Object.keys(failed).sort(), [
 		"bias vbx", "bias vbx tc", "bias vtest", "control en active", "control gain encoding", "pin gain", "pin gain_0", "supply vcc18",
 	]);
-	assert.match(failed["bias vbx"] as string, /used 0.0006 A; the table gives 0.0005 A \+- 0.000025/);
+	assert.match(failed["bias vbx"] as string, /used 0.0006 A; the table gives 0.000475 A to 0.000525 A/);
 	assert.match(failed["control gain encoding"] as string, /decodes thermometer; control div_gain is binary/);
 	assert.match(failed["bias vtest"] as string, /a need without a provider/);
 	assert.match(formatConnectionRows(rows), /^connections: \d+ rows \(\d+ pass, 8 fail, 0 not run\)/);
@@ -92,4 +92,21 @@ test("checkTable and checkBlock on a 17-block chip table: one unused output; sta
 	});
 	assert.deepEqual(rows.filter((r) => r.status === "fail").map((r) => r.item), ["bias m1_m", "bias vblo"]);
 	assert.equal(rows.filter((r) => r.status === "pass").length, 12);
+});
+
+test("ranges: a supply with range_v and a bias need with range pass inside the range and fail outside", () => {
+	const chip = JSON.parse(readFileSync(join(fixtures, "chip17.json"), "utf8"));
+	assert.deepEqual(validateTable(chip), []);
+	assert.deepEqual(chip.supplies.vccpa.range_v, [0.7, 1.1]);
+	const pa = (v: number) => checkBlock(chip, { schema: "simra.block_interface/0", block: "xpa", supplies: { vccpa: v } } as any).find((r) => r.item === "supply vccpa");
+	assert.deepEqual([pa(0.75)?.status, pa(0.75)?.expected], ["pass", [0.7, 1.1]]);
+	assert.equal(pa(1.2)?.status, "fail");
+	assert.match(pa(1.2)?.reason as string, /simulated at 1.2 V, the net vccpa is 0.7 V to 1.1 V/);
+	const t = table();
+	t.blocks.lna.pins.ib1.range = [0.0008, 0.001];
+	assert.ok(!checkTable(t).some((r) => r.item === "table lna.ib1"), "the provider value 0.000931 is in the range");
+	t.blocks.lna.pins.ib1.range = [0.001, 0.0008];
+	assert.deepEqual(validateTable(t), ["blocks.lna.pins.ib1: range must be [low, high] with low <= high"]);
+	t.supplies.vcc18.range_v = [1.9, 2.0];
+	assert.ok(validateTable(t).includes("supplies.vcc18: range_v must be [low, high] around volts"));
 });

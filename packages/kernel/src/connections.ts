@@ -27,6 +27,8 @@ export interface TablePin {
 	voltage_v?: number;
 	tolerance_rel?: number;
 	tolerance_abs?: number;
+	/** bias: a stated range [low, high] in the unit of the value; it replaces the tolerance. */
+	range?: [number, number];
 	tc?: Tc;
 	/** bias: the pin that gives it, "<block>.<pin>" (a pin of kind bias_out on the same net). */
 	provider?: string;
@@ -46,7 +48,9 @@ export interface Control {
 
 export interface ConnectionTable {
 	schema: typeof CONNECTIONS_SCHEMA;
-	supplies: Record<string, { volts: number; tolerance_rel?: number }>;
+	/** range_v: a supply with a stated range (for example a regulated, programmable supply); a block simulated at any
+	 * voltage in the range passes. */
+	supplies: Record<string, { volts: number; tolerance_rel?: number; range_v?: [number, number] }>;
 	blocks: Record<string, { subckt?: string; pins: Record<string, TablePin> }>;
 	controls?: Record<string, Control>;
 }
@@ -76,6 +80,14 @@ export interface ConnectionRow {
 }
 
 const isNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const isRange = (v: unknown): v is [number, number] => Array.isArray(v) && v.length === 2 && isNumber(v[0]) && isNumber(v[1]) && v[0] <= v[1];
+/** The accepted interval of a bias need: its range, or its value +- its tolerance. */
+function biasInterval(pin: TablePin): [number, number] {
+	if (pin.range) return pin.range;
+	const want = (pin.current_a ?? pin.voltage_v) as number;
+	const tol = pin.tolerance_abs ?? Math.abs(want) * (pin.tolerance_rel ?? 0);
+	return [Number((want - tol).toPrecision(12)), Number((want + tol).toPrecision(12))];
+}
 /** A number for a message: six significant digits. */
 const g = (v: number | undefined) => (v === undefined ? "?" : String(Number(v.toPrecision(6))));
 
@@ -89,7 +101,10 @@ export function validateTable(t: ConnectionTable): string[] {
 	if (t?.schema !== CONNECTIONS_SCHEMA) return [`schema must be ${CONNECTIONS_SCHEMA}`];
 	if (!t.supplies || typeof t.supplies !== "object") errors.push("supplies is required");
 	if (!t.blocks || typeof t.blocks !== "object") return [...errors, "blocks is required"];
-	for (const [name, s] of Object.entries(t.supplies ?? {})) if (!isNumber(s?.volts)) errors.push(`supplies.${name}: volts must be a number`);
+	for (const [name, s] of Object.entries(t.supplies ?? {})) {
+		if (!isNumber(s?.volts)) errors.push(`supplies.${name}: volts must be a number`);
+		else if (s.range_v !== undefined && (!isRange(s.range_v) || s.volts < s.range_v[0] || s.volts > s.range_v[1])) errors.push(`supplies.${name}: range_v must be [low, high] around volts`);
+	}
 	for (const [b, block] of Object.entries(t.blocks)) {
 		for (const [p, pin] of Object.entries(block.pins ?? {})) {
 			const at = `blocks.${b}.pins.${p}`;
@@ -97,7 +112,8 @@ export function validateTable(t: ConnectionTable): string[] {
 			if (!PIN_KINDS.includes(pin.kind)) errors.push(`${at}: kind must be one of ${PIN_KINDS.join(", ")}`);
 			if (pin.kind === "bias" || pin.kind === "bias_out") {
 				if (isNumber(pin.current_a) === isNumber(pin.voltage_v)) errors.push(`${at}: give one of current_a and voltage_v`);
-				if (pin.kind === "bias" && !isNumber(pin.tolerance_rel) && !isNumber(pin.tolerance_abs)) errors.push(`${at}: tolerance_rel or tolerance_abs is required`);
+				if (pin.kind === "bias" && !isNumber(pin.tolerance_rel) && !isNumber(pin.tolerance_abs) && pin.range === undefined) errors.push(`${at}: tolerance_rel, tolerance_abs or range is required`);
+				if (pin.range !== undefined && !isRange(pin.range)) errors.push(`${at}: range must be [low, high] with low <= high`);
 			}
 			if (pin.kind === "control" && typeof pin.control !== "string") errors.push(`${at}: control (a name in controls) is required`);
 		}
@@ -140,11 +156,10 @@ export function checkTable(t: ConnectionTable): ConnectionRow[] {
 				else if (prov.kind !== "bias_out") fail(at, `provider ${pin.provider} is a ${prov.kind} pin, not bias_out`);
 				else if (prov.net !== pin.net) fail(at, `provider ${pin.provider} is on net ${prov.net}, the need on net ${pin.net}`);
 				else {
-					const need = pin.current_a ?? pin.voltage_v;
-					const give = prov.current_a ?? prov.voltage_v;
-					const tol = pin.tolerance_abs ?? Math.abs(need as number) * (pin.tolerance_rel ?? 0);
+					const give = (prov.current_a ?? prov.voltage_v) as number;
+					const [lo, hi] = biasInterval(pin);
 					if (isNumber(pin.current_a) !== isNumber(prov.current_a)) fail(at, `the need is a ${isNumber(pin.current_a) ? "current" : "voltage"}, the provider gives a ${isNumber(prov.current_a) ? "current" : "voltage"}`);
-					else if (Math.abs((give as number) - (need as number)) > tol) fail(at, `provider ${pin.provider} gives ${g(give)}, the need is ${g(need)} +- ${g(tol)}`);
+					else if (give < lo || give > hi) fail(at, `provider ${pin.provider} gives ${g(give)}, the need is ${g(lo)} to ${g(hi)}`);
 					else if (pin.tc && prov.tc && pin.tc !== prov.tc) fail(at, `provider ${pin.provider} is ${prov.tc}, the need is ${pin.tc}`);
 				}
 			}
@@ -202,24 +217,27 @@ export function checkBlock(t: ConnectionTable, iface: BlockInterface, root = "."
 	}
 	for (const [p, pin] of Object.entries(block.pins)) {
 		if (pin.kind === "supply") {
-			const want = t.supplies[pin.net]?.volts;
+			const supply = t.supplies[pin.net];
+			const want = supply?.volts;
 			const got = iface.supplies?.[p];
-			const tol = Math.abs(want ?? 0) * (t.supplies[pin.net]?.tolerance_rel ?? 1e-6);
-			if (!isNumber(got)) rows.push({ item: `supply ${p}`, status: "not_run", expected: want ?? null, got: null, unit: "V", reason: `the record has no supply voltage for pin ${p}` });
-			else add(`supply ${p}`, isNumber(want) && Math.abs(got - want) <= tol, want ?? null, got, "V", `the block was simulated at ${got} V, the net ${pin.net} is ${want} V`);
+			const tol = Math.abs(want ?? 0) * (supply?.tolerance_rel ?? 1e-6);
+			const range = supply?.range_v;
+			const expected: ConnectionRow["expected"] = range ?? want ?? null;
+			if (!isNumber(got)) rows.push({ item: `supply ${p}`, status: "not_run", expected, got: null, unit: "V", reason: `the record has no supply voltage for pin ${p}` });
+			else if (range) add(`supply ${p}`, got >= range[0] && got <= range[1], range, got, "V", `the block was simulated at ${got} V, the net ${pin.net} is ${range[0]} V to ${range[1]} V`);
+			else add(`supply ${p}`, isNumber(want) && Math.abs(got - want) <= tol, expected, got, "V", `the block was simulated at ${got} V, the net ${pin.net} is ${want} V`);
 		}
 		if (pin.kind === "bias") {
 			const current = isNumber(pin.current_a);
-			const want = (current ? pin.current_a : pin.voltage_v) as number;
-			const tol = pin.tolerance_abs ?? Math.abs(want) * (pin.tolerance_rel ?? 0);
+			const [lo, hi] = biasInterval(pin);
 			const rec = iface.bias?.[p];
 			const got = current ? rec?.current_a : rec?.voltage_v;
 			const unit = current ? "A" : "V";
 			if (!isNumber(got)) {
-				rows.push({ item: `bias ${p}`, status: "not_run", expected: [want - tol, want + tol], got: null, unit, reason: `the record has no ${current ? "current" : "voltage"} for bias pin ${p}` });
+				rows.push({ item: `bias ${p}`, status: "not_run", expected: [lo, hi], got: null, unit, reason: `the record has no ${current ? "current" : "voltage"} for bias pin ${p}` });
 				continue;
 			}
-			add(`bias ${p}`, Math.abs(got - want) <= tol, [Number((want - tol).toPrecision(12)), Number((want + tol).toPrecision(12))], got, unit, `the block used ${g(got)} ${unit}; the table gives ${g(want)} ${unit} +- ${g(tol)}`);
+			add(`bias ${p}`, got >= lo && got <= hi, [lo, hi], got, unit, `the block used ${g(got)} ${unit}; the table gives ${g(lo)} ${unit} to ${g(hi)} ${unit}`);
 			if (pin.tc && !rec?.tc) rows.push({ item: `bias ${p} tc`, status: "not_run", expected: pin.tc, got: null, unit: null, reason: `the record states no temperature behaviour for bias pin ${p}` });
 			else if (pin.tc) add(`bias ${p} tc`, rec?.tc === pin.tc, pin.tc, rec?.tc ?? null, null, `the block used ${rec?.tc} temperature behaviour; the table gives ${pin.tc}`);
 		}

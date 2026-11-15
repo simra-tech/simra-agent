@@ -358,9 +358,10 @@ simulator fails in the stored device-class probe has an entry.
 Integration finds mismatches late when each block keeps its own idea of its pins, bias and controls. The connection
 table (schema `simra.connections/0`) is the interface of the chip, written before the block work:
 
-- `supplies`: name, voltage and tolerance;
+- `supplies`: name, voltage and tolerance, and `range_v` ([low, high]) for a supply with a stated range (a
+  programmable regulator); a block simulated at any voltage in the range passes;
 - `blocks.<block>.pins.<pin>`: the net and the kind (`supply`, `ground`, `bias`, `bias_out`, `control`, `signal`). A bias
-  need has its current or voltage, tolerance, temperature behaviour (`constant`, `ptat`, `ctat`) and its provider
+  need has its current or voltage, tolerance (or `range`, [low, high], which replaces it), temperature behaviour (`constant`, `ptat`, `ctat`) and its provider
   (`<block>.<pin>`, a `bias_out` pin on the same net). A control pin names a control;
 - `controls.<name>`: bits, encoding (`binary`, `thermometer`, `one_hot`, `gray`), active level, reset value and logic
   level.
@@ -389,7 +390,7 @@ value (a supply voltage, a temperature behaviour) gives a row that is not run, n
 Result on a real chip (17 instances, 919 pins, 88 control fields; fixture
 [chip17.json](packages/kernel/test/fixtures/connections/chip17.json)). The table was converted from the chip's
 interface specification (bias values, control widths) and its top netlist (pins, nets, register map); the records
-from the testbench sources of each block, its control files and its subcircuit lines. The gate gives 6 distinct
+from the testbench sources of each block, its control files and its subcircuit lines. The gate gave 6 distinct
 mismatches:
 
 | Mismatch | Instance and pin | Reading |
@@ -399,7 +400,9 @@ mismatches:
 | high-pass and gain codes: 3-bit binary in the specification, 7 and 6 one-hot lines in the block | `xif.hp0` to `hp6`, `xif.pg0` to `pg5` | stale specification row |
 | mixer reference 1.0 mA +-5 % in the specification, 1.1 mA in the block | `xmixi.m1_m`, `xmixq.m1_m` | stale specification row |
 | LO bias 2.25 V in the specification, 1.95 V in the block | `xmixi.vblo`, `xmixq.vblo` | stale specification row |
-| PA supply simulated at 0.75 V, the net is 0.90 V | `xpa.vccpa` | a range supply: the table holds one value (a limit of the format) |
+| PA supply simulated at 0.75 V, the net is 0.90 V | `xpa.vccpa` | a range supply (0.70 V to 1.10 V): with `range_v` in the table, this row passes |
+
+The first five go to the chip as stale rows of its connection file.
 
 The chip's own list of open mismatches has six items. The gate finds the unused output and the stale specification
 rows. It does not find, by design, the items that are not pins, values or encodings: an ideal source inside a cell, a
@@ -605,8 +608,8 @@ and method; the run load of the server differed, so this ratio is not a property
 
 ## Oscillator
 
-The operation `oscillator` of the ngspice adapter gives the steady-state frequency, the amplitude and the white phase
-noise of an oscillator from transients, by the impulse sensitivity function (ISF).
+The operation `oscillator` of the ngspice adapter gives the steady-state frequency, the amplitude and the phase noise
+(white and flicker) of an oscillator from transients, by the impulse sensitivity function (ISF).
 
 1. Give `deck` and `libs` as for `simulate`. The deck must start to oscillate by itself (for example with a short
    current kick). Give `output` (`{p, n}`: the output is v(p) - v(n)), `tstep_s` (a fixed step), `settle_s` and
@@ -616,15 +619,22 @@ noise of an oscillator from transients, by the impulse sensitivity function (ISF
    `{name, nodes, shot: "<current vector>", mult}` for shot noise 2 q |i(t)| of a vector of the reference run.
    `psd_a2_hz` can also be a list with one PSD per phase (a cyclostationary PSD from another run); `t0_s` then fixes
    the phase origin. A shot vector must be a conduction current: in a transient, the terminal currents of a bipolar
-   model, and `[ib]` of the ngspice VBIC model, include the charge currents. A series voltage source is `{name, vsource, psd_v2_hz, mult}`; `vsource` is a
-   voltage source of value 0 in the deck. `mult` counts identical sources by symmetry.
+   model, and `[ib]` of the ngspice VBIC model, include the charge currents. Use `shot: {device, current}` instead:
+   `isf.devices` defines a DC conduction table of the device (the device alone in `lines`, a 2-D `sweep` of two node
+   voltages, two `axes` vectors such as the internal vbe and vbc, the same two vectors `at` in the oscillator deck, and
+   the `currents`). The operation interpolates the table at the transient axis values of each phase. A series voltage
+   source is `{name, vsource, psd_v2_hz, mult}`; `vsource` is a voltage source of value 0 in the deck. `mult` counts
+   identical sources by symmetry.
+   `flicker: {device, current, kf, af, bf}` on a source adds flicker noise S = kf |i|^af / df^bf by the DC term of the
+   ISF: L(df) = mult x 1/2 x (f0/df)^2 x mean(ISF x |i|^(af/2))^2 x kf / df^bf.
 3. For each source and each of `phases` phases, two runs inject +q and -q with a short triangle pulse. The shift of
    the output zero crossings in `window_periods` (default 35 to 45 periods after the injection) gives the ISF. Then
    L(df) = mult x 1/2 x (f0/df)^2 x mean(ISF^2 x S) for each source, and the total is the sum.
 4. `output_multiplier` gives L after an ideal frequency multiplier (+20 log10 of it). The measurements are
-   `l_<offset>_hz_dbc`, for example `l_1e+06_hz_dbc`. `work/oscillator.json` has the ISF, the PSD and L of each source.
+   `l_<offset>_hz_dbc`, for example `l_1e+06_hz_dbc`, and `l_white_<offset>_hz_dbc` when a source has flicker.
+   `work/oscillator.json` has the ISF, the PSD, the conduction currents and L of each source.
 
-Flicker noise and AM-to-PM conversion after the oscillator are not included. The test
+AM-to-PM conversion after the oscillator is not included. The test
 [test/ngspice-oscillator.test.mjs](test/ngspice-oscillator.test.mjs) uses an LC oscillator with a limiting negative
 conductance: f0, the amplitude and L(1 MHz) of the tank resistor noise agree with the closed form for a sine output
 (simulated, ngspice 41 on the host: −128.92 dBc/Hz against −128.85 dBc/Hz).
@@ -645,6 +655,21 @@ The first run used `shot` with the VBIC vectors `[ic]` and `[ib]`: the ISF was t
 24 dB too high and the collector shot noise 1.7 dB too high, because in a transient these vectors include the charge
 currents. The result above uses the conduction currents of the stored run as `psd_a2_hz` lists with `t0_s` 1 ns. The
 container test runs the same deck with 8 phases and the tank source only: −96.43 dBc/Hz at 2 f0 against −96.41.
+
+With `isf.devices` (the same table sweep as the study: collector −1.0 V to 2.6 V, base −0.6 V to 1.1 V, 123101
+points) and the base flicker of the study (kf 1.2e-8, af 1.8, bf 1), the operation needs no PSD list (simulated,
+ngspice 46, 1330 s on 4 CPUs):
+
+| quantity, at 122 GHz | operation | stored | difference |
+| --- | --- | --- | --- |
+| conduction currents at the 32 phases, largest difference over the peak | collector 0.15 %, base 0.4 % | | |
+| L(1 MHz), white | −88.63 dBc/Hz | −88.635 dBc/Hz | 0.005 dB |
+| L(1 MHz), with flicker | −88.59 dBc/Hz | −88.60 dBc/Hz | 0.005 dB |
+| L(100 kHz), with flicker | −68.28 dBc/Hz | −68.28 dBc/Hz | 0.004 dB |
+| base flicker term at 1 MHz (at f0) | −115.40 dBc/Hz | −115.39 dBc/Hz | 0.01 dB |
+
+The study stores L at 1 MHz only, per source; the 100 kHz value above is derived from its white total (+20 dB per
+decade) and its flicker term (+30 dB per decade).
 
 ## Check requirements
 
