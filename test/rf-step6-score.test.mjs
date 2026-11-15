@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { score as hardScore, rowKey } from "../evals/det-cell-sg13g2-hard/score.mjs";
-import { checkDesign, emFits, score as lnaScore } from "../evals/lna-sg13g2/score.mjs";
+import { checkDesign, emFits, paramTable, score as lnaScore, value } from "../evals/lna-sg13g2/score.mjs";
 
 const FIT = ".subckt em_match p1 p1_ref p2 p2_ref\nvsense1 p1 s1 0\ngport1 s1 p1_ref s1 p1_ref 0.02\ngr1_1_1 p1_ref s1 x1_1 0 1e3\ncx1_1 x1_1 0 1e-12\n.ends em_match\n";
 const LNA = (fit) =>
@@ -83,4 +83,14 @@ test("det-cell-hard scorer: rows without a condition (the EM tap rows)", async (
 	assert.equal(s.rows.tap_s31.value, true);
 	assert.equal(s.claim, 4);
 	assert.match(s.errors.join(" "), /tap.gds not found/);
+});
+
+test("lna scorer: values may be .param expressions", () => {
+	const text = ".param le=2p lc=120u rd=200\n.subckt lna rfin rfout vcc18 iref1 iref2 iref3\nle1 a b {le}\nxl a b tm2_w13 len={lc}\nxr a b 0 rppd w=2u l={rd/260*2u}\nlx a b {le*100}\nxy a b tm2_w6 len={nope}\n.ends\n";
+	const p = paramTable(text);
+	assert.deepEqual(Object.keys(p), ["le", "lc", "rd"]);
+	assert.ok(Math.abs(p.lc - 1.2e-4) < 1e-18 && p.le === 2e-12 && p.rd === 200);
+	assert.equal(value("{1e-3*2}"), 0.002);
+	assert.ok(Number.isNaN(value("{a;b}")));
+	assert.deepEqual(checkDesign(text, []).errors, ["lx: ideal L {le*100} is above 5e-11 (wiring models only)", "xy: tm2_w6 needs len=<metres>, 0 < len <= 1e-3"]);
 });

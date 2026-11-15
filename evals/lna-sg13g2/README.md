@@ -62,3 +62,29 @@ resistors, the noise bench gave 275 dB.
 - requirements (53): each verified row passes, the gate rows included. Only with the design points.
 - claim (4): `meets_spec` is the same as the verification (design, EM passive, every row).
 - values (13): each reported value of a requirement row is within the tolerance of the verified value.
+
+## Pilot runs (one run per model, 2026-11-15)
+
+Two runs of the `simra` arm, image `simra-agent-env:82238a8`, 4 CPUs (shared with the hard detector pilot), 180 min
+limit. One sample per model, not a rate.
+
+| Item | Default model (`deepseek/deepseek-flash`) | Stronger configured model (`openai/gpt-6.1-sol`) |
+| --- | --- | --- |
+| Score | design 2/2, EM passive 2/2, requirements 43/53, claim 4/4, values 13/13 | design 2/2, EM passive 2/2, requirements 53/53, claim 4/4, values 13/13 (after the scorer fix below) |
+| Wall time, model calls | 1836 s, 270 calls | 322 s, 52 calls |
+| Tokens | 59.2 M prompt (59.1 M cached), 0.25 M completion (0.17 M reasoning) | 2.30 M prompt (2.24 M cached), 13.4 k completion (3.8 k reasoning) |
+| Design | two CE stages (Nx 9 and 6), a drawn TopMetal2 inductor (EM, fit order 2) as the stage-2 collector load | three CE stages with emitter degeneration, damped inductive loads, a 30 µm TopMetal2 output line as the EM passive |
+| Rows | gain 14.29 dB, NF 4.54 dB, S22 −15.6 dB, ≤ 23.9 mA; **μ fails at all 5 corners** (−0.93 at 57 GHz at tt) | gain 13.50 dB, NF 5.89 dB, S22 −13.6 dB, 11.5 mA to 20.0 mA, μ 1.0038 at 1 GHz at every corner |
+| EM fit band | 60 GHz to 180 GHz, used by a bench from 1 GHz to 300 GHz (nothing checks this) | 1 GHz to 300 GHz |
+| Tools | 188 bash (75 read the record JSON files), `workarounds` 1, `query_results` 0 | 12 bash, `query_results` 4, `workarounds` 1 |
+| End | stopped after 31 min with μ failing; the notes say "in the time available" | all rows pass |
+
+Cause of the failed rows of the default model: design error (a base-bias line resonates with the input capacitance:
+negative input resistance at 54 GHz to 75 GHz, found by the agent) and model error (it stopped with 150 min left). A
+possible tool gap: its EM inductor model is extrapolated below 60 GHz, where μ fails; the run does not separate the
+two.
+
+Scorer fix after the second run (task error): the device rules allowed `.param` lines but did not evaluate `{expr}`
+values, so the design of the second run had 12 false errors (for example `len={lbias}` with `lbias=300u`) and got
+design 0/2, requirements 0/53 and claim 0/4, although the check passed every row. `score.mjs` now evaluates
+`{expr}` with the `.param` values; the second workspace was scored again with the fixed scorer (full verification).

@@ -123,10 +123,47 @@ export function emFits(ws) {
 	return { found, refused };
 }
 
+/** The .param values of a SPICE text (all scopes in one table; a later line wins). Values may use earlier names. */
+export function paramTable(text) {
+	const table = {};
+	for (const l of logicalLines(text)) {
+		if (!/^\.param\s/i.test(l)) continue;
+		for (const m of l.slice(6).matchAll(/([A-Za-z_]\w*)\s*=\s*(\{[^}]*\}|\S+)/g)) {
+			const v = value(m[2], table);
+			if (Number.isFinite(v)) table[m[1].toLowerCase()] = v;
+		}
+	}
+	return table;
+}
+
+/** A number, a number with a SPICE suffix, or {expression} of numbers, .param names and + - * / ( ); else NaN. */
+export function value(text, table = {}) {
+	if (text === undefined) return Number.NaN;
+	const m = /^\{(.*)\}$/.exec(text.trim());
+	if (!m) return spiceNumber(text);
+	let bad = false;
+	const expr = m[1].replace(/(\d+\.?\d*(?:e[+-]?\d+)?|\.\d+(?:e[+-]?\d+)?)(meg|[fpnumkgt])?(?![\w.])|([A-Za-z_]\w*)/gi, (all, num, suffix, name) => {
+		if (name !== undefined) {
+			const v = table[name.toLowerCase()];
+			if (!Number.isFinite(v)) bad = true;
+			return `(${v})`;
+		}
+		return `(${spiceNumber(num + (suffix ?? ""))})`;
+	});
+	if (bad || !/^[\d\s.eE+\-*/()]*$/.test(expr)) return Number.NaN;
+	try {
+		const v = Function(`"use strict"; return (${expr});`)();
+		return typeof v === "number" ? v : Number.NaN;
+	} catch {
+		return Number.NaN;
+	}
+}
+
 /** The device rules of spec.md on the text of lna.spice. fits: the fitted subcircuits of emFits. Returns {errors, em}. */
 export function checkDesign(text, fits = []) {
 	const errors = [];
 	const subs = subcircuits(text);
+	const params = paramTable(text);
 	const fitted = new Map();
 	for (const s of subs.values()) {
 		const f = fits.find((x) => x.body.length === s.body.length && x.body.every((b, i) => b === s.body[i]));
@@ -157,17 +194,17 @@ export function checkDesign(text, fits = []) {
 		const kind = head[0];
 		if ("vibefgh".includes(kind)) errors.push(`${f[0]}: no sources in the amplifier (subcircuit ${current} is not a recorded EM fit)`);
 		else if (kind === "c" || kind === "l" || kind === "r") {
-			const v = spiceNumber(f[3] ?? "");
+			const v = value(f[3], params);
 			const max = { c: 50e-15, l: 50e-12, r: 50 }[kind];
 			if (!(v > 0)) errors.push(`${f[0]}: the value must be a positive number`);
 			else if (v > max * (1 + 1e-9)) errors.push(`${f[0]}: ideal ${kind.toUpperCase()} ${f[3]} is above ${max} (wiring models only)`);
 		} else if (kind === "k") {
-			if (!(Math.abs(spiceNumber(f[3] ?? "")) <= 1)) errors.push(`${f[0]}: a coupling must be between -1 and 1`);
+			if (!(Math.abs(value(f[3], params)) <= 1)) errors.push(`${f[0]}: a coupling must be between -1 and 1`);
 		} else if (kind === "x") {
 			const name = f.filter((x) => !x.includes("=")).at(-1).toLowerCase();
 			if (LINES.includes(name)) {
 				const len = f.find((x) => /^len=/i.test(x));
-				const v = len ? spiceNumber(len.slice(4)) : Number.NaN;
+				const v = len ? value(len.slice(4), params) : Number.NaN;
 				if (!(v > 0 && v <= 1e-3 * (1 + 1e-9))) errors.push(`${f[0]}: ${name} needs len=<metres>, 0 < len <= 1e-3`);
 			} else if (!DEVICES.includes(name) && !subs.has(name)) errors.push(`${f[0]}: ${name} is not a device of spec.md`);
 		} else errors.push(`${f[0]}: element kind ${kind.toUpperCase()} is not allowed`);

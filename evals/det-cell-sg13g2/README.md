@@ -52,3 +52,22 @@ image `simra-agent-env:db92a2b`. This is one sample, not a rate.
 The image of the run did not have the workaround registry (the runtime list of `container/build.sh` did not have
 `workarounds/`); the agent called the `workarounds` tool once and got no entries. Two of its jobs failed on an ngspice
 parse error that is now the registry entry `ngspice-bsource-pwl-bare-param`.
+
+## Repeat pilot run (one run, 2026-11-15)
+
+The same task and arm with the image `simra-agent-env:0bd3eca` (registry in the image; the tools `monte_carlo`,
+`device_limits` and `query_results` present). Default model, 4 CPUs, 180 min limit. One sample, not a rate.
+
+| Item | Result |
+| --- | --- |
+| Score | design 2/2, requirements 30/30, claim 4/4, values 30/30; 30 of 30 values supported |
+| Wall time, model calls | 2286 s, 103 calls |
+| Tokens | 23.5 M prompt (23.4 M of them cached), 0.27 M completion (0.22 M reasoning) |
+| Design | a square-law HBT detector behind a 25 fF MIM and a resistive divider, an identical replica, and two degenerated inverting stages; largest DC V<sub>CE</sub> 1.503 V (reported) |
+| Registry | the entries came to the agent with its first result (automatic, once per session); the agent did not call `workarounds` |
+| B-source error of the first run | did not return: every B source of the agent has literal numbers in `pwl`, as in `verify.spice` |
+| Failed jobs | 4 jobs with a duplicate instance name in the agent's deck (design netlist error); other errors inside completed runs: probes of devices that do not exist, a division by zero, `max` of more than two vectors in `.control` |
+| Not used | `query_results` (22 of 72 bash calls read the record JSON files), `monte_carlo`, `device_limits` (the task has no row for them) |
+
+What this run does not show: that the registry caused the missing B-source error. The agent copied the source form
+of `verify.spice`, which has literal numbers, and it never cited the entry.
