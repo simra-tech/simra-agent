@@ -1,0 +1,34 @@
+{
+ "schema": "simra.workarounds/0",
+ "simulator": "openems",
+ "pdk": "ihp-sg13g2",
+ "versions": "openEMS 0.37",
+ "entries": [
+  {
+   "id": "openems-sg13g2-slits",
+   "applies_to": {
+    "operations": [
+     "simulate"
+    ]
+   },
+   "gap": "IHP SG13G2 draws the slits of a wide metal on datatype 24 of the metal layer. The openems adapter reads datatype 0 only, so a slotted ground plane becomes a solid plane.",
+   "symptom": "No message. On a three-port junction over a slotted Metal1/Metal2 ground, the reflections differ by 1.1 dB to 1.2 dB from a model with the slits, at every frequency from 1 GHz; with the slits cut, the difference is 0.2 dB at 1 GHz.",
+   "workaround": "Give the input cut {\"Metal1\": [24], \"Metal2\": [24], ...} for each slotted layer. Check the metal area in plan.json against the drawing minus the slits.",
+   "status": "worked_around",
+   "evidence": "README.md, section EM S-parameters (validation against a stored multi-layer model)"
+  },
+  {
+   "id": "openems-sg13g2-long-line-decay",
+   "applies_to": {
+    "operations": [
+     "simulate"
+    ]
+   },
+   "gap": "A TopMetal2 line of 800 um x 18 um over a 120 um Metal1 ground (SG13G2_200um.xml stackup, PML_8 sides and top, PEC bottom) does not reach the end criterion -40 dB: the energy is at -15.7 dB after 52000 time steps and -19 dB to -24 dB after 200000. The same line at 300 um and 600 um reaches -40 dB. The cause is not known.",
+   "symptom": "The port job fails with 'the end criterion -40 dB was not reached'; the energy falls slowly, it does not stop at one level.",
+   "workaround": "None proven. Candidate: simulate a 600 um section (it converges) and add the remaining length with the input deembed (a negative length_um adds a uniform line), then check against a second section length.",
+   "status": "open",
+   "evidence": "evals/em-line-s21/README.md (the task line was changed from 800 um to 600 um)"
+  }
+ ]
+}

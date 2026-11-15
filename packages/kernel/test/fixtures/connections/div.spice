@@ -1,0 +1,5 @@
+* divider core (test fixture: only the pin list is read)
+.subckt div_core vcc vcc18 vss vbx en gain_0
++ in out params: n=64
+r1 vcc vss 1k
+.ends div_core

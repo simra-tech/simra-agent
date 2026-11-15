@@ -28,6 +28,12 @@ import {
 import {
 	BUILTIN_ADAPTER_DIR,
 	designRecord,
+	formatWorkarounds,
+	runPdk,
+	workaroundsFor,
+	emSParameters,
+	formatSPoints,
+	sParametersAt,
 	extractPdf,
 	findRoot,
 	assumptionUses,
@@ -211,6 +217,26 @@ export function chipDesignPrompt(options: BeforeAgentStartEvent["systemPromptOpt
 }
 
 export default function (pi: ExtensionAPI) {
+	// The known gaps of a simulator (workaround registry), shown with the first result of each adapter and PDK in a session.
+	const shownGaps = new Set<string>();
+	const gapNote = (root: string, adapters: string[], environment?: string, inputs?: Record<string, unknown>): string => {
+		const notes: string[] = [];
+		for (const adapter of [...new Set(adapters)]) {
+			const pdk = runPdk(root, environment, inputs);
+			const key = `${adapter}|${pdk ?? ""}`;
+			if (shownGaps.has(key)) continue;
+			shownGaps.add(key);
+			let list: ReturnType<typeof workaroundsFor> = [];
+			try {
+				list = workaroundsFor({ simulators: [adapter], pdk });
+			} catch (e) {
+				notes.push(`workaround registry: ${(e as Error).message}`);
+			}
+			if (list.length) notes.push(formatWorkarounds(list, `known gaps of ${adapter}${pdk ? ` with ${pdk}` : ""} (workaround registry; shown once per session; tool workarounds lists them again)`));
+		}
+		return notes.length ? `\n\n${notes.join("\n\n")}` : "";
+	};
+
 	// A finding is added once per session, at the first call that shows it.
 	const reported = new Set<string>();
 	const deadline = Date.parse(process.env.SIMRA_SESSION_DEADLINE ?? "");
@@ -334,12 +360,12 @@ export default function (pi: ExtensionAPI) {
 			};
 			if (params.detached) {
 				const started = await runExperiment({ ...opts, detached: true });
-				const text = `${formatStarted(root, started.experiment, started.estimate)}\nwait: wait_experiments with ids ["${started.id}"]`;
+				const text = `${formatStarted(root, started.experiment, started.estimate)}\nwait: wait_experiments with ids ["${started.id}"]${gapNote(root, [params.adapter], params.environment, params.inputs)}`;
 				return { content: [{ type: "text", text }], details: { id: started.id, status: "running" } };
 			}
 			const outcome = await runExperiment({ ...opts, signal });
 			return {
-				content: [{ type: "text", text: formatOutcome(root, outcome.experiment, outcome.result, outcome.estimate) }, ...imageParts(root, outcome.result)],
+				content: [{ type: "text", text: formatOutcome(root, outcome.experiment, outcome.result, outcome.estimate) + gapNote(root, [params.adapter], params.environment, params.inputs) }, ...imageParts(root, outcome.result)],
 				details: { id: outcome.id, status: outcome.result.status, measurements: outcome.result.measurements },
 			};
 		},
@@ -406,7 +432,7 @@ export default function (pi: ExtensionAPI) {
 			const root = findRoot(ctx.cwd) ?? ctx.cwd;
 			const outcome = await runJobs({ root, jobs: params.jobs, cpus: params.cpus, parallel: params.parallel, waitTimeoutS: params.wait_timeout_s, signal });
 			return {
-				content: [{ type: "text", text: formatJobs(outcome) }],
+				content: [{ type: "text", text: formatJobs(outcome) + params.jobs.map((j) => gapNote(root, [j.adapter], j.environment, j.inputs)).join("") }],
 				details: { jobs: outcome.jobs.map((o) => ({ index: o.index, id: o.id, status: o.status, exit_code: o.exit_code, cpus: o.cpus })), counts: outcome.counts },
 			};
 		},
@@ -436,6 +462,65 @@ export default function (pi: ExtensionAPI) {
 				content: [{ type: "text", text: formatAssumptionUses(uses, current) + stale }],
 				details: { assumptions: uses.map((u) => ({ id: u.assumption, requirements: u.requirements.map((r) => r.id) })), check: current?.id ?? null },
 			};
+		},
+	});
+	pi.registerTool({
+		name: "em_sparameters",
+		label: "EM S-parameters",
+		description: [
+			"S-parameters of a layout cell with openEMS (adapter openems): one simulate job per port (only that port excited) on a",
+			"CPU pool, then a merge to a Touchstone file <cell>.s<N>p. inputs are the inputs of the operation simulate: gds, cell,",
+			"stackup (openEMS stackup XML; for IHP SG13G2 $PDK_ROOT/ihp-sg13g2/libs.tech/openems/openems_ihp_sg13g2/workflow/SG13G2_200um.xml),",
+			"ports [{name, x, y (um, a number or [a, b]), from, to (conductor layers, or bottom), r_ohm}], band_hz [f_lo, f_hi], points,",
+			"and optional faces, layers, merge_um (via arrays), slabs, die, deembed [{port, length_um, eps_eff, loss_db_per_mm}],",
+			"mesh_scale, end_criteria_db, max_timesteps. Do not set excite. A port run that does not reach the end criterion of",
+			"openEMS (the field energy must fall by end_criteria_db) fails and gives no Touchstone file: never use such data.",
+			"report_at_hz lists every S_ij in dB and degrees at the file point nearest to each frequency.",
+			"Use inputs.dry_run with run_experiment (adapter openems, operation simulate) to see the mesh size before a long run.",
+		].join("\n"),
+		promptSnippet: "EM S-parameters (Touchstone) of a layout cell with openEMS, one job per port",
+		promptGuidelines: [
+			"For S-parameters of a layout structure, use em_sparameters; do not write your own openEMS script. Report the frequency of each value you state.",
+		],
+		parameters: Type.Object({
+			inputs: Type.Record(Type.String(), Type.Unknown()),
+			environment: Type.Optional(Type.String()),
+			cpus: Type.Optional(Type.String({ description: 'CPU pool, for example "122-125"' })),
+			parallel: Type.Optional(Type.Number({ description: "Port jobs at the same time" })),
+			timeout_s: Type.Optional(Type.Number({ description: "Watchdog of each port job in seconds (default 3600)" })),
+			report_at_hz: Type.Optional(Type.Array(Type.Number())),
+			adapter: Type.Optional(Type.String({ description: "EM adapter (default openems)" })),
+		}),
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+			const root = findRoot(ctx.cwd) ?? ctx.cwd;
+			const out = await emSParameters({ root, inputs: params.inputs, adapter: params.adapter, environment: params.environment, cpus: params.cpus, parallel: params.parallel, timeoutS: params.timeout_s, signal });
+			const points = out.touchstone && params.report_at_hz?.length ? sParametersAt(join(root, out.touchstone), params.report_at_hz) : [];
+			const text = (points.length ? `${out.text}\n\n${formatSPoints(points)}` : out.text) + gapNote(root, [params.adapter ?? "openems"], params.environment, params.inputs);
+			return {
+				content: [{ type: "text", text }],
+				details: { touchstone: out.touchstone, problems: out.problems, points, jobs: out.ports.jobs.map((o) => ({ id: o.id, status: o.status })), merge: out.merge?.id ?? null },
+			};
+		},
+	});
+	pi.registerTool({
+		name: "workarounds",
+		label: "Workarounds",
+		description: [
+			"List the known gaps of the simulators (registry workarounds/<simulator>/<pdk>.json) and the stated workaround of",
+			"each: what fails, how it shows, what to do, and the status (worked_around: used and checked; proposed: not yet",
+			"used; open: no workaround). Without pdk only the PDK-independent entries are listed. It runs no tool.",
+		].join("\n"),
+		promptSnippet: "list the known simulator gaps and their workarounds for a PDK",
+		promptGuidelines: [
+			"Before you write a deck for a simulator, check its known gaps with workarounds (simulator and PDK). Do not use a device class that a gap names without the stated workaround.",
+		],
+		parameters: Type.Object({
+			simulator: Type.Optional(Type.String({ description: "ngspice, xyce or openems (default: all)" })),
+			pdk: Type.Optional(Type.String({ description: 'PDK name, for example "ihp-sg13g2"' })),
+		}),
+		async execute(_toolCallId, params) {
+			const list = workaroundsFor({ simulators: params.simulator ? [params.simulator] : undefined, pdk: params.pdk ?? null });
+			return { content: [{ type: "text", text: formatWorkarounds(list) }], details: { ids: list.map((w) => w.id) } };
 		},
 	});
 	pi.registerTool({

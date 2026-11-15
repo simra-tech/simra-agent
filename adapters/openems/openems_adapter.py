@@ -114,31 +114,68 @@ def metal_layers(stackup):
             and l["zmin"] >= 0]
 
 
-def sheet_z(layer):
-    return layer["zmin"]
+def sheet_z(layer, faces=None):
+    """The z of the conducting sheet of a metal layer: its bottom face (Zmin) unless faces names it "top"."""
+    return layer["zmax"] if (faces or {}).get(layer["name"], "bottom") == "top" else layer["zmin"]
 
 
-def via_z(via, stackup):
-    """A via is a solid from the sheet of the metal below (its Zmin) to the top of the via."""
-    below = [l for l in metal_layers(stackup) if l["type"] == "conductor" and l["zmax"] <= via["zmin"] + 1e-9]
-    z0 = max((sheet_z(l) for l in below), default=via["zmin"])
-    return z0, via["zmax"]
+def via_z(via, stackup, faces=None):
+    """A via is a solid from the sheet of the nearest metal below to the sheet of the nearest metal above."""
+    metals = [l for l in metal_layers(stackup) if l["type"] == "conductor"]
+    below = [l for l in metals if l["zmax"] <= via["zmin"] + 1e-9]
+    above = [l for l in metals if l["zmin"] >= via["zmax"] - 1e-9]
+    z0 = sheet_z(max(below, key=lambda l: l["zmax"]), faces) if below else via["zmin"]
+    z1 = sheet_z(min(above, key=lambda l: l["zmin"]), faces) if above else via["zmax"]
+    return z0, z1
 
 
-def port_z(ref, stackup):
+def port_z(ref, stackup, faces=None):
     if ref == "bottom":
         return 0.0
     for l in metal_layers(stackup):
         if l["name"] == ref and l["type"] == "conductor":
-            return sheet_z(l)
+            return sheet_z(l, faces)
     return None
 
 
+def face_z(ref, stackup):
+    """z of [layer, "top" | "bottom"]: a layer of the stackup (metal or via) or a dielectric."""
+    if not (isinstance(ref, list) and len(ref) == 2 and ref[1] in ("top", "bottom")):
+        raise ValueError("a slab z must be [layer, \"top\" or \"bottom\"] (got %r)" % (ref,))
+    for l in list(stackup["layers"]) + list(stackup["dielectrics"]):
+        if l["name"] == ref[0]:
+            return l["zmax"] if ref[1] == "top" else l["zmin"]
+    raise ValueError("slab z: %s is not a layer or a dielectric of the stackup" % ref[0])
+
+
+def span(v, what):
+    """A number or [a, b] as (a, b)."""
+    if isinstance(v, (int, float)):
+        return float(v), float(v)
+    if isinstance(v, list) and len(v) == 2 and all(isinstance(x, (int, float)) for x in v) and v[0] <= v[1]:
+        return float(v[0]), float(v[1])
+    raise ValueError("%s must be a number or [a, b] with a <= b (um)" % what)
+
+
 # ------------------------------------------------------------------------------------------------------------ mesh
-def smooth_lines(fixed, max_cell, ratio=1.4):
+def smooth_lines(fixed, max_cell, ratio=1.4, min_cell=0.0, keep=()):
     """Mesh lines through every fixed line, no cell above max_cell. Between two fixed lines the cells start at the
-    smallest neighbour gap of each end and grow by ratio toward the middle (a graded mesh)."""
+    smallest neighbour gap of each end and grow by ratio toward the middle (a graded mesh). A fixed line nearer than
+    min_cell to a line already kept is dropped (the geometry snaps to the nearest line), except the lines in keep."""
     fixed = sorted(set(round(x, 6) for x in fixed))
+    if min_cell > 0 and fixed:
+        must = set(round(x, 6) for x in keep)
+        kept = [fixed[0]]
+        for x in fixed[1:]:
+            if x - kept[-1] >= min_cell:
+                kept.append(x)
+            elif x in must and kept[-1] not in must:
+                kept[-1] = x
+            elif x in must:
+                kept.append(x)
+        if fixed[-1] not in kept and kept[-1] not in must:
+            kept[-1] = fixed[-1]
+        fixed = kept
     if len(fixed) < 2:
         return fixed
     gaps = [b - a for a, b in zip(fixed, fixed[1:])]
@@ -159,9 +196,13 @@ def smooth_lines(fixed, max_cell, ratio=1.4):
     return lines
 
 
-def build_plan(inputs, stackup, polygons):
+def build_plan(inputs, stackup, polygons, sigma_scale=None):
     """The solver plan: materials, boxes, polygons, ports, mesh lines, excitation. polygons: {layer name: [[(x, y)...]]}
-    in um. Raises ValueError with the reason for a bad input."""
+    in um; sigma_scale: {layer name: factor} for merged via arrays. Raises ValueError with the reason for a bad input."""
+    sigma_scale = sigma_scale or {}
+    faces = inputs.get("faces") or {}
+    if not (isinstance(faces, dict) and all(v in ("top", "bottom") for v in faces.values())):
+        raise ValueError("input 'faces' must be {layer: \"top\" or \"bottom\"}")
     ports = inputs.get("ports")
     if not isinstance(ports, list) or not ports:
         raise ValueError("input 'ports' is required: a list of {name, x, y, from, to, r_ohm} (um, layer names or 'bottom')")
@@ -174,20 +215,33 @@ def build_plan(inputs, stackup, polygons):
         raise ValueError("input 'excite' must be a list of port numbers from 1 to %d" % len(ports))
     plan_ports = []
     for k, p in enumerate(ports, 1):
-        z0, z1 = port_z(p.get("from"), stackup), port_z(p.get("to"), stackup)
+        z0, z1 = port_z(p.get("from"), stackup, faces), port_z(p.get("to"), stackup, faces)
         if z0 is None or z1 is None:
             raise ValueError("port %d: 'from' and 'to' must be conductor layers of the stackup or 'bottom' (got %r, %r)"
                              % (k, p.get("from"), p.get("to")))
         if abs(z1 - z0) < 1e-9:
             raise ValueError("port %d: 'from' and 'to' are at the same height" % k)
-        plan_ports.append({"name": p.get("name", "p%d" % k), "x": float(p["x"]), "y": float(p["y"]),
+        (x0, x1), (y0, y1) = span(p.get("x"), "port %d: x" % k), span(p.get("y"), "port %d: y" % k)
+        plan_ports.append({"name": p.get("name", "p%d" % k), "x": [x0, x1], "y": [y0, y1],
                            "z0": min(z0, z1), "z1": max(z0, z1), "r_ohm": float(p.get("r_ohm", 50.0))})
     if not any(polygons.values()):
         raise ValueError("the cell has no polygons on the selected layers")
-    xs = [pt[0] for polys in polygons.values() for poly in polys for pt in poly] + [p["x"] for p in plan_ports]
-    ys = [pt[1] for polys in polygons.values() for poly in polys for pt in poly] + [p["y"] for p in plan_ports]
+    xs = [pt[0] for polys in polygons.values() for poly in polys for pt in poly] + [x for p in plan_ports for x in p["x"]]
+    ys = [pt[1] for polys in polygons.values() for poly in polys for pt in poly] + [y for p in plan_ports for y in p["y"]]
     margin = float(inputs.get("margin_um", 200.0))
-    box = [min(xs) - margin, max(xs) + margin, min(ys) - margin, max(ys) + margin]
+    die = inputs.get("die")
+    if die is not None:
+        if not (isinstance(die, dict) and isinstance(die.get("size_um"), list) and len(die["size_um"]) == 2):
+            raise ValueError("input 'die' must be {size_um: [w, h], center_um: [x, y] (default [0, 0])}")
+        cx, cy = die.get("center_um", [0.0, 0.0])
+        w, h = die["size_um"]
+        die_box = [cx - w / 2, cx + w / 2, cy - h / 2, cy + h / 2]
+        if min(xs) < die_box[0] or max(xs) > die_box[1] or min(ys) < die_box[2] or max(ys) > die_box[3]:
+            raise ValueError("the layout or a port is outside the die")
+    else:
+        die_box = [min(xs), max(xs), min(ys), max(ys)]
+    box = [die_box[0] - margin, die_box[1] + margin, die_box[2] - margin, die_box[3] + margin]
+    diel_box = die_box if die is not None else box
     mats = stackup["materials"]
     eps_max = max(mats[d["material"]]["eps"] for d in stackup["dielectrics"])
     scale = float(inputs.get("mesh_scale", 1.0))
@@ -195,8 +249,12 @@ def build_plan(inputs, stackup, polygons):
     lam = C0 / band[1] * 1e6
     max_xy = min(float(inputs.get("max_cell_um", 25.0)), lam / math.sqrt(eps_max) / 15) * scale
     max_z = min(40.0, lam / 12) * scale
-    fx = [box[0], box[1]] + [p["x"] for p in plan_ports]
-    fy = [box[2], box[3]] + [p["y"] for p in plan_ports]
+    min_xy = float(inputs.get("min_cell_um", 1.0)) * scale
+    fx = [box[0], box[1]] + [x for p in plan_ports for x in p["x"]]
+    fy = [box[2], box[3]] + [y for p in plan_ports for y in p["y"]]
+    if die is not None:
+        fx += die_box[:2]
+        fy += die_box[2:]
     for polys in polygons.values():
         for poly in polys:
             for x, y in poly:
@@ -206,9 +264,27 @@ def build_plan(inputs, stackup, polygons):
     layers = [l for l in metal_layers(stackup) if l["name"] in used]
     fz = [0.0, stackup["top"]]
     for l in layers:
-        fz += [sheet_z(l)] if l["type"] == "conductor" else list(via_z(l, stackup))
+        fz += [sheet_z(l, faces)] if l["type"] == "conductor" else list(via_z(l, stackup, faces))
     for p in plan_ports:
         fz += [p["z0"] + (p["z1"] - p["z0"]) * k / 3 for k in range(4)]
+    slabs = []
+    for n, sl in enumerate(inputs.get("slabs") or [], 1):
+        if not isinstance(sl, dict) or "z" not in sl or "eps" not in sl:
+            raise ValueError("slab %d: needs z [[layer, face], [layer, face]] and eps (a number or [in-plane, z])" % n)
+        za, zb = face_z(sl["z"][0], stackup), face_z(sl["z"][1], stackup)
+        eps = sl["eps"] if isinstance(sl["eps"], list) else [sl["eps"], sl["eps"]]
+        sm = float(sl.get("sigma_m", 0.0))
+        rects = sl.get("rects", "die")
+        rects = [[diel_box[0], diel_box[2], diel_box[1], diel_box[3]]] if rects == "die" else rects
+        if not (isinstance(rects, list) and all(isinstance(r, list) and len(r) == 4 for r in rects)):
+            raise ValueError("slab %d: rects must be [[x0, y0, x1, y1], ...] or \"die\"" % n)
+        slabs.append({"name": sl.get("name", "slab%d" % n), "eps": [eps[0], eps[0], eps[1]], "sigma_m": [sm, sm, 0.0],
+                      "priority": int(sl.get("priority", 20)),
+                      "boxes": [[r[0], r[1], min(za, zb), r[2], r[3], max(za, zb)] for r in rects]})
+        fz += [za, zb]
+        for r in rects:
+            fx += [r[0], r[2]]
+            fy += [r[1], r[3]]
     # a dielectric interface gets its own z line only when it is at least dielectric_snap_um from every other line: a
     # thin layer (for example a 0.4 um passivation) would set a small cell and a small time step for the whole run
     snap = float(inputs.get("dielectric_snap_um", 2.0))
@@ -218,30 +294,45 @@ def build_plan(inputs, stackup, polygons):
     boundaries = inputs.get("boundaries", DEFAULT_BOUNDARIES)
     if not (isinstance(boundaries, list) and len(boundaries) == 6):
         raise ValueError("input 'boundaries' must be 6 strings: x-, x+, y-, y+, z-, z+ (for example PML_8, MUR, PEC)")
+    f_hi = band[1]
     plan = {
         "dielectrics": [{"name": d["name"], "eps": mats[d["material"]]["eps"], "sigma": mats[d["material"]]["sigma"],
-                         "box": [box[0], box[2], d["zmin"], box[1], box[3], d["zmax"]]} for d in stackup["dielectrics"]],
-        "metals": [], "ports": plan_ports, "excite": excite, "boundaries": boundaries,
+                         "box": [diel_box[0], diel_box[2], d["zmin"], diel_box[1], diel_box[3], d["zmax"]]}
+                        for d in stackup["dielectrics"] if not (die is not None and mats[d["material"]]["eps"] == 1.0
+                                                                 and mats[d["material"]]["sigma"] == 0.0)],
+        "metals": [], "slabs": slabs, "ports": plan_ports, "excite": excite, "boundaries": boundaries,
         "f_hz": [band[0] + (band[1] - band[0]) * k / (points - 1) for k in range(points)] if points > 1 else [band[1]],
-        "f0_hz": band[1] / 2, "fc_hz": band[1] / 2,
+        "f0_hz": float(inputs.get("excite_f0_hz", f_hi / 2)), "fc_hz": float(inputs.get("excite_fc_hz", f_hi / 2)),
         "end_criteria_db": float(inputs.get("end_criteria_db", -40.0)),
         "max_timesteps": int(inputs.get("max_timesteps", 200000)),
-        "mesh": {"x": smooth_lines(fx, max_xy), "y": smooth_lines(fy, max_xy), "z": smooth_lines(fz, max_z)},
+        "mesh": {"x": smooth_lines(fx, max_xy, min_cell=min_xy, keep=[x for p in plan_ports for x in p["x"]] + box[:2]),
+                 "y": smooth_lines(fy, max_xy, min_cell=min_xy, keep=[y for p in plan_ports for y in p["y"]] + box[2:]),
+                 "z": smooth_lines(fz, max_z)},
     }
     for l in layers:
-        sigma = mats[l["material"]]["sigma"]
+        sigma = mats[l["material"]]["sigma"] * float(sigma_scale.get(l["name"], 1.0))
         if l["type"] == "conductor":
-            plan["metals"].append({"name": l["name"], "kind": "sheet", "z": sheet_z(l), "sigma": sigma,
+            plan["metals"].append({"name": l["name"], "kind": "sheet", "z": sheet_z(l, faces), "sigma": sigma,
                                    "thickness_um": l["zmax"] - l["zmin"], "polygons": polygons[l["name"]]})
         else:
-            z0, z1 = via_z(l, stackup)
+            z0, z1 = via_z(l, stackup, faces)
             plan["metals"].append({"name": l["name"], "kind": "solid", "z0": z0, "z1": z1, "sigma": sigma,
                                    "polygons": polygons[l["name"]]})
     plan["cells"] = (len(plan["mesh"]["x"]) - 1) * (len(plan["mesh"]["y"]) - 1) * (len(plan["mesh"]["z"]) - 1)
     return plan
 
 
-def read_polygons(gds, cell_name, stackup, layer_names):
+def check_cut(cut):
+    """The input cut: {layer name: [GDS datatype, ...]}; raises ValueError."""
+    if cut is None:
+        return None
+    if not (isinstance(cut, dict) and all(isinstance(v, list) and v and all(isinstance(d, int) and not isinstance(d, bool)
+                                                                           and d >= 0 for d in v) for v in cut.values())):
+        raise ValueError("input 'cut' must be {layer name: [GDS datatype, ...]}, for example {\"Metal1\": [24]}")
+    return cut
+
+
+def read_polygons(gds, cell_name, stackup, layer_names, merge_um=None, cut=None):
     import gdstk
     lib = gdstk.read_gds(gds)
     tops = lib.top_level()
@@ -255,14 +346,29 @@ def read_polygons(gds, cell_name, stackup, layer_names):
     else:
         raise ValueError("the GDS has %d top cells; give input 'cell'" % len(tops))
     um = lib.unit / 1e-6
-    out = {}
+    out, scale = {}, {}
+    merge_um = merge_um or {}
+    cut = cut or {}
     for l in metal_layers(stackup):
         if layer_names is not None and l["name"] not in layer_names:
             continue
         polys = cell.get_polygons(layer=l["gds"], datatype=0)
+        holes = [h for dt in cut.get(l["name"], []) for h in cell.get_polygons(layer=l["gds"], datatype=int(dt))]
+        if polys and holes:
+            # drawn openings on another datatype (for example the slits of a wide metal): the metal is drawing - cut
+            polys = gdstk.boolean(polys, holes, "not")
+        if polys and l["name"] in merge_um:
+            # a via array becomes blocks: grow each via by half the merge distance, unite, shrink back; the
+            # conductivity of the blocks is scaled by the via area over the block area
+            d = float(merge_um[l["name"]]) / um
+            area = sum(p.area() for p in polys)
+            grown = gdstk.offset(polys, d / 2, join="miter", use_union=True)
+            polys = gdstk.offset(grown, -d / 2, join="miter", use_union=True)
+            merged = sum(p.area() for p in polys)
+            scale[l["name"]] = area / merged if merged > 0 else 1.0
         if polys:
             out[l["name"]] = [[(float(x) * um, float(y) * um) for x, y in p.points] for p in polys]
-    return cell.name, out
+    return cell.name, out, scale
 
 
 # --------------------------------------------------------------------------------------------------------- logs
@@ -353,8 +459,10 @@ def simulate(request):
         return failure("numpy and gdstk are required: %s" % e, input_files=files)
     try:
         stackup = read_stackup(xml)
-        cell, polygons = read_polygons(gds, inputs.get("cell"), stackup, inputs.get("layers"))
-        plan = build_plan(inputs, stackup, polygons)
+        cell, polygons, sigma_scale = read_polygons(gds, inputs.get("cell"), stackup, inputs.get("layers"),
+                                                    inputs.get("merge_um"), check_cut(inputs.get("cut")))
+        plan = build_plan(inputs, stackup, polygons, sigma_scale)
+        check_deembed(inputs.get("deembed"), len(plan["ports"]))
     except (ValueError, KeyError, ET.ParseError) as e:
         return failure(str(e), input_files=files)
     max_cells = int(inputs.get("max_cells", 5_000_000))
@@ -364,6 +472,18 @@ def simulate(request):
     allow = bool(inputs.get("allow_unconverged", False))
     outputs, diagnostics, conv, columns, commands = [], [], {}, {}, []
     plan_path = os.path.join(work, "plan.json")
+    if inputs.get("dry_run"):
+        with open(plan_path, "w") as fh:
+            json.dump(plan, fh)
+        m = {"mesh_cells": measured(plan["cells"])}
+        for a in "xyz":
+            m["mesh_lines_%s" % a] = measured(len(plan["mesh"][a]))
+            m["min_cell_%s_um" % a] = measured(round(min(b - c for c, b in zip(plan["mesh"][a], plan["mesh"][a][1:])), 4), "um")
+        for name, f in sorted(sigma_scale.items()):
+            m["via_fill_%s" % name] = measured(round(f, 6))
+        return {"contract": CONTRACT, "status": "completed", "tool": dict(TOOL), "input_files": files,
+                "outputs": [file_entry(plan_path, root, "plan")], "measurements": m, "diagnostics": [],
+                "report": ["dry run: cell %s, %d cells %s, no solver run" % (cell, plan["cells"], [len(plan["mesh"][a]) for a in "xyz"])]}
     timeout = float(inputs.get("solve_timeout_s", 3000))
     t_start = time.time()
     for k in plan["excite"]:
@@ -408,10 +528,12 @@ def simulate(request):
     outputs.append(file_entry(plan_path, root, "plan"))
     measurements = column_measurements(conv, allow)
     measurements["mesh_cells"] = measured(plan["cells"])
+    for name, f in sorted(sigma_scale.items()):
+        measurements["via_fill_%s" % name] = measured(round(f, 6))
     measurements["runtime_s"] = measured(round(time.time() - t_start, 2), "s")
     errors = any(d["severity"] == "error" for d in diagnostics)
     if len(columns) == n and not errors:
-        ts = write_from_columns(doc, work, cell)
+        ts = write_from_columns(doc, work, cell, inputs.get("deembed"))
         outputs.append(file_entry(ts, root, "touchstone"))
     elif len(columns) == n:
         diagnostics.append({"severity": "info", "source": "adapter", "message": "no Touchstone file: a run did not converge"})
@@ -422,15 +544,59 @@ def simulate(request):
                                                                      c["energy_end_db"], c["timesteps"], c["solve_s"]) for k, c in conv.items()]}
 
 
-def write_from_columns(doc, work, cell):
+def check_deembed(deembed, n):
+    """Validate the input deembed: a list of {port, length_um, eps_eff, loss_db_per_mm (default 0)}. Returns the list
+    of (port index from 0, length um, eps_eff, loss dB/mm) or raises ValueError."""
+    if deembed is None:
+        return []
+    if not isinstance(deembed, list):
+        raise ValueError("input 'deembed' must be a list of {port, length_um, eps_eff, loss_db_per_mm}")
+    out, seen = [], set()
+    for d in deembed:
+        k = d.get("port") if isinstance(d, dict) else None
+        if not (isinstance(k, int) and 1 <= k <= n) or k in seen:
+            raise ValueError("deembed: port must be a port number from 1 to %d, once each (got %r)" % (n, k))
+        seen.add(k)
+        length, eps, loss = d.get("length_um"), d.get("eps_eff"), d.get("loss_db_per_mm", 0.0)
+        if not isinstance(length, (int, float)) or not isinstance(eps, (int, float)) or eps < 1 or not isinstance(loss, (int, float)) or loss < 0:
+            raise ValueError("deembed port %d: length_um (a number), eps_eff (>= 1) and loss_db_per_mm (>= 0) are needed" % k)
+        out.append((k - 1, float(length), float(eps), float(loss)))
+    return out
+
+
+def shift_reference(s, f_hz, shifts):
+    """Move the reference plane of each port by a length of uniform line: S'_ij = S_ij exp(gamma (l_i + l_j)), with
+    gamma = alpha + j beta, beta = 2 pi f sqrt(eps_eff) / c, alpha from loss_db_per_mm (frequency independent).
+    A positive length moves the plane into the structure (it removes a line of that length); a negative one adds it.
+    s: [f][i][j] complex; shifts: from check_deembed."""
+    n = len(s[0])
+    g = []
+    for k, f in enumerate(f_hz):
+        row = [0j] * n
+        for i, length, eps, loss in shifts:
+            l_m = length * 1e-6
+            alpha = loss / 8.685889638 * 1e3
+            beta = 2 * math.pi * f * math.sqrt(eps) / C0
+            row[i] = complex(alpha, beta) * l_m
+        g.append(row)
+    return [[[s[k][i][j] * cmath.exp(g[k][i] + g[k][j]) for j in range(n)] for i in range(n)] for k in range(len(f_hz))]
+
+
+def write_from_columns(doc, work, cell, deembed=None):
     n = len(doc["ports"])
     r = set(doc["r_ohm"])
     if len(r) != 1:
         raise ValueError("the ports have different r_ohm; Touchstone needs one reference impedance")
+    shifts = check_deembed(deembed, n)
+    s = s_matrix(doc["columns"], n)
+    comments = ["simra openems adapter, cell %s, ports %s" % (cell, " ".join(doc["ports"])),
+                "boundaries %s, %d cells, end criterion %g dB" % (" ".join(doc["boundaries"]), doc["cells"], doc["end_criteria_db"])]
+    if shifts:
+        s = shift_reference(s, doc["f_hz"], shifts)
+        comments.append("reference planes moved: " + ", ".join("port %d by %g um (eps_eff %g, %g dB/mm)" % (i + 1, l, e, a)
+                                                             for i, l, e, a in shifts))
     path = os.path.join(work, "%s.s%dp" % (re.sub(r"[^A-Za-z0-9_.-]", "_", cell), n))
-    write_touchstone(path, doc["f_hz"], s_matrix(doc["columns"], n), r.pop(),
-                     ["simra openems adapter, cell %s, ports %s" % (cell, " ".join(doc["ports"])),
-                      "boundaries %s, %d cells, end criterion %g dB" % (" ".join(doc["boundaries"]), doc["cells"], doc["end_criteria_db"])])
+    write_touchstone(path, doc["f_hz"], s, r.pop(), comments)
     return path
 
 
@@ -480,7 +646,10 @@ def merge(request):
         if not allow:
             return dict(failure(diagnostics[0]["message"], measurements, files))
     doc = dict(first, columns=columns, convergence=conv)
-    ts = write_from_columns(doc, work, first["cell"])
+    try:
+        ts = write_from_columns(doc, work, first["cell"], inputs.get("deembed"))
+    except ValueError as e:
+        return failure(str(e), measurements, files)
     return {"contract": CONTRACT, "status": "completed", "tool": dict(TOOL), "input_files": files,
             "outputs": [file_entry(ts, root, "touchstone")], "measurements": measurements, "diagnostics": diagnostics,
             "report": ["merged %d columns of cell %s into %s" % (n, first["cell"], os.path.basename(ts))]}
@@ -516,9 +685,15 @@ def solve(plan_path):
             for poly in m["polygons"]:
                 p = np.array(poly)
                 prop.AddLinPoly([p[:, 0], p[:, 1]], "z", m["z0"], m["z1"] - m["z0"], priority=110)
+    for sl in plan.get("slabs", []):
+        prop = csx.AddMaterial(sl["name"])
+        prop.SetIsotropy(False)
+        prop.SetMaterialProperty(epsilon=sl["eps"], sigma=sl["sigma_m"])
+        for b in sl["boxes"]:
+            prop.AddBox(b[:3], b[3:], priority=sl["priority"])
     ports = []
     for k, p in enumerate(plan["ports"], 1):
-        ports.append(fdtd.AddLumpedPort(k, p["r_ohm"], [p["x"], p["y"], p["z0"]], [p["x"], p["y"], p["z1"]], "z",
+        ports.append(fdtd.AddLumpedPort(k, p["r_ohm"], [p["x"][0], p["y"][0], p["z0"]], [p["x"][1], p["y"][1], p["z1"]], "z",
                                         excite=1 if k == exc else 0, priority=150))
     for axis in "xyz":
         grid.SetLines(axis, plan["mesh"][axis])

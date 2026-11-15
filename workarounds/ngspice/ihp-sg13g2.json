@@ -1,0 +1,71 @@
+{
+  "schema": "simra.workarounds/0",
+  "simulator": "ngspice",
+  "pdk": "ihp-sg13g2",
+  "versions": "ngspice 46, IHP SG13G2 ngspice models",
+  "entries": [
+    {
+      "id": "ngspice-sg13g2-klu-large-deck",
+      "applies_to": {
+        "analyses": [
+          "op",
+          "dc"
+        ]
+      },
+      "gap": "KLU fails on a large mixed deck (17 block instances, HBT and PSP MOS): the singular pivots change from run to run (PSP noise nodes).",
+      "symptom": "The operating point falls back to a transient op and fails.",
+      "workaround": "Use the sparse solver (.options klu off) for whole-chip DC points. The same blocks pass with KLU alone.",
+      "status": "worked_around",
+      "evidence": "whole-chip DC point of a reference design (sparse passes at three corners, KLU fails)"
+    },
+    {
+      "id": "ngspice-sg13g2-mc-reltol",
+      "applies_to": {
+        "analyses": [
+          "op",
+          "montecarlo"
+        ]
+      },
+      "gap": "Monte Carlo DC points with reltol 1e-4: 21 of 300 seeds need the transient-op fallback, 4 have no DC point from Newton. The cause is the solver, not the circuit.",
+      "symptom": "Seeds without a DC point, or fallback snapshots with large offsets.",
+      "workaround": "Use reltol=1e-3 and itl1=1000 for the operating points of a Monte Carlo run (300 of 300 seeds converge); state the options.",
+      "status": "worked_around",
+      "evidence": "Monte Carlo of an IF amplifier block of a reference design"
+    },
+    {
+      "id": "ngspice-sg13g2-hbt-selfheating",
+      "applies_to": {
+        "device_classes": [
+          "hbt_npn13G2",
+          "hbt_npn13G2l",
+          "hbt_npn13G2v"
+        ],
+        "analyses": [
+          "tran"
+        ]
+      },
+      "gap": "The npn13G2 card has self-heating (selft=1) with a thermal time constant of about 5 ns.",
+      "symptom": "Transient values drift for tens of ns.",
+      "workaround": "Read transient results after more than 25 ns, or set selft=0 for method comparisons (state it).",
+      "status": "worked_around",
+      "evidence": "stage 0 of a reference design"
+    },
+    {
+      "id": "ngspice-sg13g2-dantenna-step",
+      "applies_to": {
+        "device_classes": [
+          "dio_dantenna",
+          "dio_dpantenna"
+        ],
+        "analyses": [
+          "tran"
+        ]
+      },
+      "gap": "The antenna diode model has a jump near 3 n Vt (a discontinuity) that can stall transients of pad circuits.",
+      "symptom": "'timestep too small' near zero diode voltage.",
+      "workaround": "Leave the pad antenna diodes out of the transient deck when the pad is not under test, and state it.",
+      "status": "proposed",
+      "evidence": "pad circuit transients of an earlier design"
+    }
+  ]
+}

@@ -50,6 +50,15 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
   prints the table "class x simulator: simulates / parses / fails / not run" (see [Device-class probe](#device-class-probe)).
 - The openems adapter has two operations: `simulate` and `merge`. The command `simra em` gives the S-parameters of a
   layout cell as a Touchstone file: one openEMS job per port, then the merge (see [EM S-parameters](#em-s-parameters)).
+- The tool `em_sparameters` (pi) runs `simra em` and lists S at given frequencies. `simra snp-diff` compares two
+  Touchstone files per entry in dB, degrees and |dS|.
+- The workaround registry (`workarounds/<simulator>/<pdk>.json`) lists the known gaps of ngspice, Xyce and openEMS and the
+  stated workaround of each. The agent sees the entries of an adapter with its first result in a session; `simra
+  workarounds` and the tool `workarounds` list them (see [Workaround registry](#workaround-registry)).
+- A connection table (`simra.connections/0`) holds the pins, supplies, bias needs and control encodings of the blocks of a
+  chip. `gates.connections` checks a block interface record against it (see [Connection table](#connection-table)).
+- The ngspice operation `assemble_dc` finds the DC point of a large deck (a whole chip of blocks) from the operating
+  points of its blocks: a clamp homotopy with seeds, then a free operating point (see [Assemble a DC point](#assemble-a-dc-point)).
 - Requirements can reduce a sweep table with the bracket rule (kind `sweep`), gate an RF block on mu over a band at
   each corner for each active stage (`gates.stability`), and cite assumption ids (`assumptions`); `simra assumptions`
   lists the rows of an assumption.
@@ -263,6 +272,12 @@ port job).
 3. A port job that failed, timed out, or did not reach the end criterion of openEMS stops the merge. The command then
    names the job and the reason, and gives no Touchstone file.
 
+In pi, the tool `em_sparameters` does the same and lists every S_ij in dB and degrees at the frequencies of
+`report_at_hz`. Input `deembed` moves port reference planes (see the [openems adapter](adapters/openems/README.md)).
+`npx simra snp-diff <a.sNp> <b.sNp> [--band <lo,hi>]` compares two Touchstone files: per S_ij the largest difference in
+dB, in degrees and of |S|, at the frequencies that both files have. Entries below -40 dB in both files get no dB or
+degree difference (only |dS|).
+
 The end criterion is the check of an FDTD run: the field energy must fall by `end_criteria_db` (default -40 dB). A
 run that stops at `max_timesteps` with the energy at a plateau can give S-parameters that look correct. The adapter
 records `end_criteria_reached_p<k>` and `energy_end_db_p<k>` and reports such a run as failed.
@@ -274,8 +289,84 @@ criterion.
 The container test is one real run: a TopMetal2 line (300 um x 18 um) over a Metal1 ground on the IHP SG13G2 stackup,
 1 GHz to 60 GHz, two port jobs on 4 CPUs (see [test/openems-container.test.mjs](test/openems-container.test.mjs)).
 Result (openEMS 0.37, simulated): each port run reaches -40.5 dB after 16450 time steps on 68952 cells, in 16.5 s. At
-60 GHz |S11| is -32.7 dB and |S21| is -0.164 dB; S21 equals S12 within 0.05 dB over the band. The test does not
-include a via or a multi-layer structure.
+60 GHz |S11| is -32.7 dB and |S21| is -0.164 dB; S21 equals S12 within 0.05 dB over the band. A second container
+test checks the de-embedding: the 600 um line with 150 um removed at each port equals the 300 um line.
+
+Validation against a stored multi-layer model (simulated, openEMS 0.37, both runs). The structure is a three-port
+on-chip junction: a TopMetal2 line over a slotted Metal1/Metal2 ground with 70 Via1 cuts, homogenised metal-fill
+slabs, a 400 um x 400 um die, 1 GHz to 400 GHz, end criterion -50 dB. The reference is the result of an independent
+openEMS script with the same stackup and the same slab values. `simra em` used the inputs `faces`, port widths,
+`merge_um` (Via1), `cut` (Metal1 and Metal2 datatype 24), `slabs` and `die`; 757350 cells, three port jobs on 4 CPUs,
+each at -50 dB after 66930 to 77794 time steps, 1080 s in total. `simra snp-diff`, 400 common points:
+
+| entries | 1 GHz to 200 GHz | 1 GHz to 400 GHz |
+| --- | --- | --- |
+| transmission (S21, S31, S32 and the reverse) | max 0.40 dB, 1.6 deg | max 0.41 dB, 3.2 deg |
+| reflection (S11, S22, S33; about -10 dB) | max 0.69 dB, 8.5 deg | max 0.73 dB, 8.5 deg |
+| largest difference of the complex value, any entry | 0.050 | 0.050 |
+
+Without `cut`, the slits of the ground are solid metal, and the reflections differ by 1.1 dB to 1.2 dB at every
+frequency from 1 GHz (transmission 0.47 dB). With `cut`, the metal areas are equal to those of the reference model.
+The remaining reflection difference is 0.2 dB at 1 GHz and rises with frequency to 0.7 dB; its cause is not
+established. The known model differences that remain: the mesh (smallest cell 0.7 um to 0.85 um here, 1.0 um to
+1.8 um in the reference, which also has a refined region at the line), the via conductivity (fill factor 0.108 here,
+0.100 in the reference), and the reference has reciprocity enforced (mean of S_ij and S_ji).
+
+## Workaround registry
+
+A simulator can fail a device class of a PDK or an analysis, sometimes with no message. The registry holds each known
+gap with the stated workaround, as data: `workarounds/<simulator>/<pdk>.json`, and `workarounds/<simulator>/any.json`
+for gaps that do not depend on the PDK. Each entry has an id, where it applies (device classes of the device-class
+probe, analyses, operations), the gap, the symptom, the workaround, the evidence and a status:
+
+- `worked_around`: the workaround was used and checked;
+- `proposed`: the workaround is not yet used;
+- `open`: there is no workaround (use another simulator).
+
+The agent sees the entries of an adapter and its PDK (the `pdk` input or the `PDK` variable of the environment) with
+the first result of that adapter in a session (`run_experiment`, `run_jobs`, `em_sparameters`). The tool `workarounds`
+and `npx simra workarounds [--simulator <name>] [--pdk <name>]` list them. A test checks that each class that a
+simulator fails in the stored device-class probe has an entry.
+
+| Simulator | PDK | Entries |
+| --- | --- | --- |
+| Xyce 7.10 | IHP SG13G2 | PSP 103 MOS (open), r3_cmc poly resistors, HV varactor subcircuit, HBT transit time with dtemp |
+| Xyce 7.10 | any | no autonomous HB or HB noise, .step with HB, YLIN outside HB, .temp ignored |
+| ngspice 46 | IHP SG13G2 | KLU on a large mixed deck, Monte Carlo DC with reltol 1e-4, HBT self-heating, antenna diode step |
+| ngspice 46 | any | pulse with PW = 0, trnoise with a round step, trnoise current source, threads in a container, .pss |
+| openEMS 0.37 | any | MUR energy plateau, thin dielectric time step, headless runs |
+
+## Connection table
+
+Integration finds mismatches late when each block keeps its own idea of its pins, bias and controls. The connection
+table (schema `simra.connections/0`) is the interface of the chip, written before the block work:
+
+- `supplies`: name, voltage and tolerance;
+- `blocks.<block>.pins.<pin>`: the net and the kind (`supply`, `ground`, `bias`, `bias_out`, `control`, `signal`). A bias
+  need has its current or voltage, tolerance, temperature behaviour (`constant`, `ptat`, `ctat`) and its provider
+  (`<block>.<pin>`, a `bias_out` pin on the same net). A control pin names a control;
+- `controls.<name>`: bits, encoding (`binary`, `thermometer`, `one_hot`, `gray`), active level, reset value and logic
+  level.
+
+Each block keeps a block interface record (schema `simra.block_interface/0`): its netlist and subcircuit, and the supply
+voltages, bias values and control encodings that its own simulations used. The gate in `requirements.json`:
+
+```json
+"gates": { "connections": { "table": "../spec/connections.json", "block": "div", "interface": "interface.json" } }
+```
+
+gives one verdict row per item (requirement `gate connections <block>`):
+
+1. the pins of the `.subckt` line against the pins of the table (missing and extra pins);
+2. each supply pin: the simulated voltage against the supply of its net;
+3. each bias need: the simulated value inside the tolerance of the table, and the temperature behaviour;
+4. each control: bits, encoding, active level and reset value;
+5. a bias need or a control of the block that is not in the table;
+6. the problems of the table for this block: a need without a provider, a provider with another value or temperature
+   behaviour, a control without a definition.
+
+A block without a record gets a row that is not run, so the check is never a pass. `npx simra connections --table <file>`
+checks the whole table; add `--block <name> --interface <file>` for one block.
 
 ## Add a PDK
 
@@ -421,6 +512,28 @@ testbench, and whether the device is in saturation. Use it to find why a design 
 The parameter names of the MOS models are different in each PDK. They are in the technology packs in
 [technologies/](technologies/README.md). The adapter selects the pack for `$PDK`, or the pack in the input
 `technology`. Packs exist for IHP SG13G2, IHP SG13CMOS5L and SKY130.
+
+## Assemble a DC point
+
+A deck with many blocks (a whole chip) can fail to find a DC point, or find a wrong one, also when each block alone
+converges. The operation `assemble_dc` of the ngspice adapter builds the DC point from the points of the parts.
+
+1. Give `deck` and `libs` as for `simulate`, and `seeds`: the node voltages of earlier runs. A seed file is
+   `{"v(node)": volts}` (for example the op of a block testbench) or the `dc_point.json` of an earlier assembly.
+   `from_prefix` and `to_prefix` change the testbench names to the deck names, for example `x1.` to `xcore.xif.`.
+   Later seeds win.
+2. Each seeded node gets a clamp current g (V - V_seed). A `.dc` sweep takes g from 1 S to 10^-`decades` S
+   (default 12), with `steps` points (default 50). Each point starts from the point before.
+3. Optional `phases`: lists of node-name prefixes, released in this order. Nodes in no phase are released last.
+   When the sweep stops, the error names the phase. Add a seed for its nodes, split the phase, or add steps.
+4. Then a free operating point runs without clamps, with `.nodeset` from the end of the sweep. Its node voltages are
+   in `work/dc_point.json` (role `dc_point`). The measurement `free_op_max_dv_v` is the largest change from the end of
+   the sweep.
+
+The solver is Sparse 1.3, the ngspice default; `solver: "klu"` selects KLU. `options` adds one line of ngspice options,
+for example `reltol=1e-3 itl1=1000`. The test
+[test/ngspice-assemble.test.mjs](test/ngspice-assemble.test.mjs) uses a latch with two stable states: the seed
+selects the state, and the free operating point corrects a wrong seed of a divider.
 
 ## Check requirements
 

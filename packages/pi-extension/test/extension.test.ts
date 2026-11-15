@@ -335,3 +335,46 @@ test("run_jobs runs N jobs and gives one line per job; assumption_rows lists the
 	assert.match(listed.content[0].text, /^assumption leak: leakage level = -34 dBm\n {2}requirement x via requirement; conditions \(none\)$/);
 	assert.deepEqual(listed.details.assumptions, [{ id: "leak", requirements: ["x"] }]);
 });
+
+test("em_sparameters runs one job per port, merges, and lists S at the requested frequencies", async (t) => {
+	const tools = new Map<string, any>();
+	extension({ registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand: () => {}, on: () => {} } as any);
+	const em = tools.get("em_sparameters");
+	assert.ok(em, "em_sparameters is not registered");
+	assert.ok(em.promptGuidelines.some((g: string) => /em_sparameters/.test(g)));
+	const root = mkdtempSync(join(tmpdir(), "simra-ext-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	writeFileSync(join(root, "simra.config.json"), JSON.stringify({ adapter_dirs: [fakeAdapters] }));
+	const ports = [{ name: "in", x: 0, y: 0, from: "Metal1", to: "TopMetal2" }, { name: "out", x: 300, y: 0, from: "Metal1", to: "TopMetal2" }];
+	const out = await em.execute("call-e", { adapter: "openems-fake", inputs: { ports }, parallel: 2, report_at_hz: [1e9, 1.6e9] }, undefined, undefined, { cwd: root });
+	assert.match(out.details.touchstone, /line\.s2p$/);
+	assert.deepEqual(out.details.points.map((p: any) => p.f_hz), [1e9, 2e9]);
+	assert.match(out.content[0].text, /^1 GHz: S11 -20\.000 dB 0\.00 deg, S12 -0\.915 dB 0\.00 deg/m);
+	assert.match(out.content[0].text, /^2 GHz \(nearest point to 1\.6 GHz\): /m);
+	const bad = await em.execute("call-f", { adapter: "openems-fake", inputs: { ports, unconverged_port: 1 }, parallel: 2 }, undefined, undefined, { cwd: root });
+	assert.equal(bad.details.touchstone, null);
+	assert.match(bad.content[0].text, /no Touchstone file/);
+});
+
+test("workarounds lists the registry; run_experiment shows the gaps of its adapter and PDK once per session", async (t) => {
+	const tools = new Map<string, any>();
+	extension({ registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand: () => {}, on: () => {} } as any);
+	const wa = tools.get("workarounds");
+	assert.ok(wa, "workarounds is not registered");
+	const listed = await wa.execute("call-w", { simulator: "xyce", pdk: "ihp-sg13g2" });
+	assert.ok(listed.details.ids.includes("xyce-sg13g2-psp103"));
+	const root = mkdtempSync(join(tmpdir(), "simra-ext-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	// an adapter named xyce (the fake adapter under another name) so that the registry has entries for it
+	const dir = join(root, "adapters", "xyce");
+	mkdirSync(dir, { recursive: true });
+	const fake = JSON.parse(readFileSync(join(fakeAdapters, "fake", "adapter.json"), "utf8"));
+	writeFileSync(join(dir, "adapter.json"), JSON.stringify({ ...fake, name: "xyce", command: fake.command.map((c: string) => c.replace("{adapter_dir}", join(fakeAdapters, "fake"))) }));
+	writeFileSync(join(root, "simra.config.json"), JSON.stringify({ adapter_dirs: [join(root, "adapters")], environments: { local: { kind: "local", env: { PDK: "ihp-sg13g2" } } } }));
+	const run = tools.get("run_experiment");
+	const first = await run.execute("call-r1", { adapter: "xyce", operation: "run", inputs: { mode: "ok" }, purpose: "test" }, undefined, undefined, { cwd: root });
+	assert.match(first.content[0].text, /known gaps of xyce with ihp-sg13g2 \(workaround registry/);
+	assert.match(first.content[0].text, /xyce-sg13g2-psp103/);
+	const second = await run.execute("call-r2", { adapter: "xyce", operation: "run", inputs: { mode: "ok" }, purpose: "test" }, undefined, undefined, { cwd: root });
+	assert.doesNotMatch(second.content[0].text, /known gaps/);
+});

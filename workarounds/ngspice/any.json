@@ -1,0 +1,76 @@
+{
+  "schema": "simra.workarounds/0",
+  "simulator": "ngspice",
+  "pdk": "*",
+  "versions": "ngspice 46",
+  "entries": [
+    {
+      "id": "ngspice-pulse-pw0",
+      "applies_to": {
+        "analyses": [
+          "tran"
+        ]
+      },
+      "gap": "pulse(... PW=0 ...) uses PW = TSTOP: a step, not an impulse. PW = 1e-18 gives 'timestep too small'.",
+      "symptom": "A step response where an impulse was meant, with no message.",
+      "workaround": "Use a PWL triangle for an impulse.",
+      "status": "worked_around",
+      "evidence": "oscillator phase-noise method of a reference design (stage 0)"
+    },
+    {
+      "id": "ngspice-trnoise-round-step",
+      "applies_to": {
+        "analyses": [
+          "tran",
+          "trnoise"
+        ]
+      },
+      "gap": "trnoise with a round sample time (for example 1 ps) aborts in about half of the seeds.",
+      "symptom": "The transient stops early.",
+      "workaround": "Use a non-round sample time (for example 0.9973 ps).",
+      "status": "worked_around",
+      "evidence": "stage 0 transient-noise runs of a reference design"
+    },
+    {
+      "id": "ngspice-trnoise-current-source",
+      "applies_to": {
+        "analyses": [
+          "tran",
+          "trnoise"
+        ]
+      },
+      "gap": "An independent trnoise current source into a tank with lead inductances stops every seed at the second breakpoint.",
+      "symptom": "The transient stops.",
+      "workaround": "Drive a VCCS from a trnoise voltage source.",
+      "status": "worked_around",
+      "evidence": "oscillator study of a reference design"
+    },
+    {
+      "id": "ngspice-threads",
+      "applies_to": {
+        "operations": [
+          "simulate",
+          "operating_point"
+        ]
+      },
+      "gap": "ngspice ignores OMP_NUM_THREADS in the container: N parallel runs on N CPUs oversubscribe.",
+      "symptom": "Runs take up to 50 times longer.",
+      "workaround": "Put 'set num_threads=1' in the deck (or .spiceinit) and run one job per CPU (run N jobs and wait).",
+      "status": "worked_around",
+      "evidence": "reference design runs"
+    },
+    {
+      "id": "ngspice-pss",
+      "applies_to": {
+        "analyses": [
+          "pss"
+        ]
+      },
+      "gap": "The experimental .pss analysis failed on an HBT oscillator ('timestep too small').",
+      "symptom": "The analysis stops.",
+      "workaround": "Use a long transient, or the Xyce HB probe method.",
+      "status": "open",
+      "evidence": "stage 0 of a reference design"
+    }
+  ]
+}

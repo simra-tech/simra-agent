@@ -27,6 +27,14 @@
 //   simra em <inputs.json> [--environment <env>] [--cpus <list>] [--parallel <n>] [--timeout-s <n>]
 //                             EM S-parameters with openEMS: one job per port (inputs of the operation simulate), then
 //                             the merge to a Touchstone file; --timeout-s is the wall time of each port job
+//   simra connections --table <file> [--block <name> --interface <file>]
+//                             check a connection table (bias needs without a provider, undefined controls), and with
+//                             --block the block interface record against it (pins, supplies, bias values, encodings)
+//   simra snp-diff <a.sNp> <b.sNp> [--band <lo,hi>]
+//                             the largest difference per S_ij in dB, degrees and |dS| at the common frequencies
+//   simra workarounds [--simulator <name>] [--pdk <name>]
+//                             the known gaps of the simulators (all, or one) with the PDK-independent ones, and the
+//                             stated workaround of each (registry workarounds/<simulator>/<pdk>.json)
 //   simra pdf <file>          print the text of a PDF with a [page N] marker before each page; option --pages <a-b>,
 //                             or --render <N> (render page N to a PNG in the cache and print its path)
 //   simra pack init --pdk <name> [--adapter <name>] [--pdk-root <dir>] [--dir <technology dir>] [--inputs <json>]
@@ -45,7 +53,9 @@ import { createInterface } from "node:readline/promises";
 import { formatPackCheck, formatPackInit, packCheck, packInit, writeProposed } from "./packs.ts";
 import { extractPdf, pdfPages, renderPage } from "./pdf.ts";
 import { probeDevices } from "./probe.ts";
-import { emSParameters } from "./em.ts";
+import { compareTouchstone, emSParameters, formatSnpDiff } from "./em.ts";
+import { formatWorkarounds, workaroundsFor } from "./workarounds.ts";
+import { checkTable, connectionGate, formatConnectionRows, loadConnectionTable } from "./connections.ts";
 import { formatJobs, runJobs } from "./jobs.ts";
 import { assumptionUses, latestVerdict, loadRequirements, runCheck } from "./requirements.ts";
 import { runtimeEstimate } from "./estimate.ts";
@@ -57,7 +67,7 @@ import { waitExperiments } from "./wait.ts";
 
 function usage(): never {
 	console.error(
-		"usage: simra run [--detach] <spec.json> | simra jobs <jobs.json> [--cpus <list>] [--parallel <n>] [--timeout-s <n>] | simra wait <id> [<id>...] [--timeout-s <n>] | simra show <id> [--json] | simra record [<path>...] | simra probe --pdk <name> [--environment <env>] [--cpus <list>] [--json] | simra em <inputs.json> [--environment <env>] [--cpus <list>] [--parallel <n>] [--timeout-s <n>] | simra list | simra assumptions [<id>] [--file <path>] | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>] | simra pdf <file> [--pages <a-b> | --render <N>] | simra pack init --pdk <name> [--adapter <name>] [--pdk-root <dir>] [--dir <dir>] [--inputs <json>] [--write] | simra pack check --pdk <name> [--adapter <name>] [--inputs <json>]   [--root <dir>]",
+		"usage: simra run [--detach] <spec.json> | simra jobs <jobs.json> [--cpus <list>] [--parallel <n>] [--timeout-s <n>] | simra wait <id> [<id>...] [--timeout-s <n>] | simra show <id> [--json] | simra record [<path>...] | simra probe --pdk <name> [--environment <env>] [--cpus <list>] [--json] | simra em <inputs.json> [--environment <env>] [--cpus <list>] [--parallel <n>] [--timeout-s <n>] | simra workarounds [--simulator <name>] [--pdk <name>] | simra snp-diff <a.sNp> <b.sNp> [--band <lo,hi>] | simra connections --table <file> [--block <name> --interface <file>] | simra list | simra assumptions [<id>] [--file <path>] | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>] | simra pdf <file> [--pages <a-b> | --render <N>] | simra pack init --pdk <name> [--adapter <name>] [--pdk-root <dir>] [--dir <dir>] [--inputs <json>] [--write] | simra pack check --pdk <name> [--adapter <name>] [--inputs <json>]   [--root <dir>]",
 	);
 	process.exit(2);
 }
@@ -80,7 +90,7 @@ async function main(argv: string[]): Promise<number> {
 			// Internal: the supervisor of a detached run (see runExperiment). The argument is the experiment directory.
 			const result = await runDetachedWorker(argv[++i] ?? usage());
 			return result.status === "completed" ? 0 : 1;
-		} else if (["--cpus", "--environment", "--file", "--only", "--conditions", "--parallel", "--timeout-s", "--pages", "--render", "--pdk", "--adapter", "--pdk-root", "--dir", "--inputs"].includes(argv[i])) options[argv[i].slice(2)] = argv[++i] ?? usage();
+		} else if (["--cpus", "--environment", "--file", "--only", "--conditions", "--parallel", "--timeout-s", "--pages", "--render", "--pdk", "--simulator", "--band", "--table", "--block", "--interface", "--adapter", "--pdk-root", "--dir", "--inputs"].includes(argv[i])) options[argv[i].slice(2)] = argv[++i] ?? usage();
 		else args.push(argv[i]);
 	}
 	root ??= findRoot(process.cwd()) ?? process.cwd();
@@ -165,6 +175,26 @@ async function main(argv: string[]): Promise<number> {
 		const { table, jobs, text } = await probeDevices({ root, pdk: options.pdk ?? usage(), environment: options.environment, cpus: options.cpus });
 		console.log(json ? JSON.stringify(table, null, 2) : text);
 		return jobs.every((j) => j.status === "completed") ? 0 : 1;
+	}
+	if (command === "snp-diff" && arg) {
+		const other = args[2] ?? usage();
+		const band = options.band === undefined ? undefined : (options.band.split(",").map(Number) as [number, number]);
+		if (band && (band.length !== 2 || band.some((x) => !Number.isFinite(x)))) usage();
+		console.log(formatSnpDiff(compareTouchstone(arg, other, band)));
+		return 0;
+	}
+	if (command === "connections") {
+		const table = options.table ?? usage();
+		if ((options.block === undefined) !== (options.interface === undefined)) usage();
+		const rows = options.block
+			? connectionGate(root, table, options.block, options.interface as string)
+			: checkTable(loadConnectionTable(resolve(root, table)));
+		console.log(formatConnectionRows(rows));
+		return rows.every((r) => r.status === "pass") ? 0 : 1;
+	}
+	if (command === "workarounds") {
+		console.log(formatWorkarounds(workaroundsFor({ simulators: options.simulator ? [options.simulator] : undefined, pdk: options.pdk ?? null })));
+		return 0;
 	}
 	if (command === "em" && arg) {
 		const out = await emSParameters({

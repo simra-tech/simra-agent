@@ -1,0 +1,8 @@
+{
+  "schema": "simra.block_interface/0",
+  "block": "div",
+  "netlist": { "path": "div.spice", "subckt": "div_core" },
+  "supplies": { "vcc": 3.3, "vcc18": 1.71 },
+  "bias": { "vbx": { "current_a": 6e-4, "tc": "ptat" }, "vtest": { "voltage_v": 1.0 } },
+  "controls": { "en": { "bits": 1, "encoding": "binary", "active": "low", "reset": 0 }, "gain": { "bits": 3, "encoding": "thermometer", "reset": 4 } }
+}

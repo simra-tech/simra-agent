@@ -1,0 +1,8 @@
+{
+  "schema": "simra.block_interface/0",
+  "block": "div",
+  "netlist": { "path": "div_good.spice", "subckt": "div_core" },
+  "supplies": { "vcc": 3.3, "vcc18": 1.8 },
+  "bias": { "vbx": { "current_a": 5.1e-4, "tc": "constant" } },
+  "controls": { "en": { "bits": 1, "encoding": "binary", "active": "high", "reset": 0 }, "gain": { "bits": 3, "encoding": "binary", "reset": 4 } }
+}

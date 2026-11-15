@@ -1,4 +1,5 @@
 export * from "./config.ts";
+export * from "./connections.ts";
 export * from "./em.ts";
 export * from "./estimate.ts";
 export * from "./jobs.ts";
@@ -13,3 +14,4 @@ export * from "./runner.ts";
 export * from "./summary.ts";
 export * from "./touchstone.ts";
 export * from "./wait.ts";
+export * from "./workarounds.ts";

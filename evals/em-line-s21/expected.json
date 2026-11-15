@@ -1,0 +1,33 @@
+{
+  "f_hz": 60000000000,
+  "s21_db": -0.32674292727857557,
+  "s21_deg": -86.51702382247679,
+  "tolerance": {
+    "s21_db": {
+      "abs": 0.05
+    },
+    "s21_deg": {
+      "abs": 3
+    }
+  },
+  "traps": {
+    "oxide_tem": {
+      "s21_db": 0,
+      "s21_deg": -87.53388960767745
+    }
+  },
+  "provenance": {
+    "numbers": "simulated: openEMS 0.37 through the openems adapter (simra em), PML boundaries, end criterion -40 dB",
+    "experiments": [
+      "20261115-115556-d5b473",
+      "20261115-115602-a3adc2",
+      "20261115-115707-631a9a"
+    ],
+    "tool": {
+      "name": "simra-openems",
+      "version": "0.1.0",
+      "gdstk": "1.0.1"
+    },
+    "date": "2026-11-15"
+  }
+}

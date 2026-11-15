@@ -16,6 +16,7 @@
 // each experiment, so a failed row can show its errors with file and line. The kernel reads no netlist and holds no
 // PDK facts.
 
+import { type ConnectionRow, connectionGate } from "./connections.ts";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import {
@@ -51,6 +52,15 @@ export type RequirementKind = "measurement" | "s_db" | "mu" | "sweep";
 export const REQUIREMENT_KINDS: RequirementKind[] = ["measurement", "s_db", "mu", "sweep"];
 
 /** The stability gate: every listed stage needs a mu requirement over the band at every listed condition. */
+/** The connection gate: the block interface record of a block against the connection table (see connections.ts). */
+export interface ConnectionsGate {
+	/** The connection table, relative to the design root. */
+	table: string;
+	block: string;
+	/** The block interface record, relative to the design root. */
+	interface: string;
+}
+
 export interface StabilityGate {
 	/** The active RF stages of the block. A mu requirement names its stage in "stage". */
 	stages: string[];
@@ -121,7 +131,7 @@ export interface RequirementsFile {
 	experiments: Record<string, ExperimentTemplate>;
 	requirements: Requirement[];
 	assumptions?: Record<string, Assumption>;
-	gates?: { stability?: StabilityGate };
+	gates?: { stability?: StabilityGate; connections?: ConnectionsGate };
 }
 
 /**
@@ -226,7 +236,11 @@ export function validateRequirements(file: RequirementsFile): string[] {
 	}
 	for (const [name, c] of Object.entries(conditions)) cites(`condition "${name}"`, c?.assumptions);
 	const gate = file.gates?.stability;
-	for (const k of Object.keys(file.gates ?? {})) if (k !== "stability") errors.push(`gates.${k}: unknown gate; the gates are stability`);
+	for (const k of Object.keys(file.gates ?? {})) if (k !== "stability" && k !== "connections") errors.push(`gates.${k}: unknown gate; the gates are stability and connections`);
+	const cg = file.gates?.connections;
+	if (cg !== undefined && !(cg && typeof cg.table === "string" && typeof cg.block === "string" && typeof cg.interface === "string")) {
+		errors.push("gates.connections: table, block and interface (paths relative to the design root, and the block name) are required");
+	}
 	if (gate) {
 		if (!Array.isArray(gate.stages) || !gate.stages.length || !gate.stages.every((x) => typeof x === "string" && x)) errors.push("gates.stability: stages must list the active RF stages");
 		if (!Array.isArray(gate.conditions) || !gate.conditions.length) errors.push("gates.stability: conditions must list the corners of the gate");
@@ -234,8 +248,8 @@ export function validateRequirements(file: RequirementsFile): string[] {
 		const b = gate.band_hz;
 		if (b !== undefined && !(Array.isArray(b) && b.length === 2 && b.every(isNumber) && b[0] >= 0 && b[0] < b[1])) errors.push("gates.stability: band_hz must be [f_lo, f_hi] in Hz");
 	}
-	if (!Array.isArray(file.requirements) || file.requirements.length === 0) {
-		errors.push("requirements: give at least one requirement");
+	if (!Array.isArray(file.requirements) || (file.requirements.length === 0 && !file.gates?.connections)) {
+		errors.push("requirements: give at least one requirement (or a connection gate)");
 		return errors;
 	}
 	const ids = new Set<string>();
@@ -488,6 +502,37 @@ export function evaluateRow(
 
 const rank: Record<RowStatus, number> = { fail: 0, not_run: 1, not_measured: 2, pass: 3 };
 
+/** The rows of the connection gate: one per item of the block against the connection table (connections.ts). */
+export function connectionGateRows(file: RequirementsFile, root: string): VerdictRow[] {
+	const gate = file.gates?.connections;
+	if (!gate) return [];
+	let rows: ConnectionRow[];
+	try {
+		rows = connectionGate(root, gate.table, gate.block, gate.interface);
+	} catch (e) {
+		rows = [{ item: "table", status: "not_run", expected: null, got: null, unit: null, reason: (e as Error).message }];
+	}
+	return rows.map((r) => {
+		const numeric = typeof r.got === "number" && (typeof r.expected === "number" || Array.isArray(r.expected));
+		return {
+			requirement: `gate connections ${gate.block}`,
+			condition: null,
+			measurement: r.item,
+			op: numeric && Array.isArray(r.expected) ? "between" : ">=",
+			limit: numeric ? (r.expected as Limit) : 1,
+			value: numeric ? (r.got as number) : r.status === "pass" ? 1 : r.status === "fail" ? 0 : null,
+			unit: r.unit,
+			margin: null,
+			margin_rel: null,
+			status: r.status,
+			experiment: null,
+			reason: r.reason,
+			at: null,
+			gate: { name: "connections", stage: gate.block, covered_by: [] },
+		} as VerdictRow;
+	});
+}
+
 /**
  * The rows of the stability gate: one per stage and condition of the gate. A gate row takes the worst of the mu rows of
  * its stage and condition whose band contains the gate band, with op >= and a limit of at least 1. Without such a row,
@@ -640,6 +685,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 		}
 	}
 	rows.push(...stabilityGateRows(file, rows));
+	rows.push(...connectionGateRows(file, root));
 	const counts: Record<RowStatus, number> = { pass: 0, fail: 0, not_measured: 0, not_run: 0 };
 	for (const row of rows) counts[row.status]++;
 	// A selection is never a pass, also when it happens to include every row.

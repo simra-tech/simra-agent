@@ -2,7 +2,9 @@
 """Unit tests of the openEMS adapter that need no openEMS and no gdstk: stackup, plan, mesh, log, Touchstone, merge.
 The real solver run is the container test (test/openems-container.test.mjs)."""
 
+import cmath
 import json
+import math
 import os
 import shutil
 import sys
@@ -185,6 +187,112 @@ class Simulate(unittest.TestCase):
         r = oa.simulate({"root": tempfile.gettempdir(), "work_dir": tempfile.mkdtemp(), "inputs": {"stackup": "x.xml"}})
         self.assertEqual(r["status"], "failed")
         self.assertIn("'gds' is required", r["diagnostics"][0]["message"])
+
+
+class Deembed(unittest.TestCase):
+    def line(self, f, length_um, eps):
+        b = 2 * math.pi * f * math.sqrt(eps) / oa.C0 * length_um * 1e-6
+        t = cmath.exp(-1j * b)
+        return [[0.05 * t, t], [t, 0.05 * t]]
+
+    def test_removing_half_the_line_from_each_port_leaves_a_through(self):
+        f = [10e9, 60e9, 120e9]
+        s = [self.line(x, 300, 6.0) for x in f]
+        out = oa.shift_reference(s, f, oa.check_deembed([{"port": 1, "length_um": 150, "eps_eff": 6.0},
+                                                         {"port": 2, "length_um": 150, "eps_eff": 6.0}], 2))
+        for k in range(len(f)):
+            self.assertAlmostEqual(out[k][0][1], 1.0 + 0j, places=12)
+            self.assertAlmostEqual(abs(out[k][0][0]), 0.05, places=12)
+            self.assertAlmostEqual(out[k][0][0], 0.05 + 0j, places=12)
+
+    def test_negative_length_adds_line_and_loss_scales_the_magnitude(self):
+        f = [50e9]
+        s = [[[0j, 1 + 0j], [1 + 0j, 0j]]]
+        out = oa.shift_reference(s, f, oa.check_deembed([{"port": 1, "length_um": -1000, "eps_eff": 4.0, "loss_db_per_mm": 2.0}], 2))
+        self.assertAlmostEqual(20 * math.log10(abs(out[0][1][0])), -2.0, places=9)
+        expected = -2 * math.pi * 50e9 * 2.0 / oa.C0 * 1e-3
+        self.assertAlmostEqual(cmath.phase(out[0][1][0]), math.atan2(math.sin(expected), math.cos(expected)), places=9)
+
+    def test_bad_deembed_inputs(self):
+        for d, text in (([{"port": 3, "length_um": 1, "eps_eff": 4}], "port must be"), ([{"port": 1, "length_um": 1, "eps_eff": 0.5}], "eps_eff"),
+                        ([{"port": 1, "length_um": 1, "eps_eff": 4}, {"port": 1, "length_um": 2, "eps_eff": 4}], "once each"), ({"port": 1}, "must be a list")):
+            with self.assertRaises(ValueError) as e:
+                oa.check_deembed(d, 2)
+            self.assertIn(text, str(e.exception))
+
+    def test_merge_writes_the_shifted_touchstone_and_states_it(self):
+        root = tempfile.mkdtemp(prefix="simra-oems-")
+        try:
+            paths = []
+            for i, d in enumerate([columns_doc([1]), columns_doc([2])]):
+                with open(os.path.join(root, "c%d.json" % i), "w") as fh:
+                    json.dump(d, fh)
+                paths.append("c%d.json" % i)
+            r = oa.merge({"root": root, "work_dir": os.path.join(root, "w"),
+                          "inputs": {"columns": paths, "deembed": [{"port": 1, "length_um": 100, "eps_eff": 4.0}]}})
+            self.assertEqual(r["status"], "completed", r["diagnostics"])
+            with open(os.path.join(root, "w", "line.s2p")) as fh:
+                text = fh.read()
+            self.assertIn("reference planes moved: port 1 by 100 um", text)
+            r = oa.merge({"root": root, "work_dir": os.path.join(root, "w2"), "inputs": {"columns": paths, "deembed": [{"port": 9}]}})
+            self.assertEqual(r["status"], "failed")
+        finally:
+            shutil.rmtree(root)
+
+
+class Features(unittest.TestCase):
+    def test_faces_vias_port_span_slabs_die(self):
+        st = stackup()
+        polys = dict(LINE, V1=[[(0, -5), (10, -5), (10, 5), (0, 5)]])
+        inputs = {"band_hz": [1e9, 60e9], "faces": {"M1": "top"}, "die": {"size_um": [400, 200], "center_um": [150, 0]}, "margin_um": 100,
+                  "ports": [dict(PORTS[0], y=[-1, 1]), PORTS[1]],
+                  "slabs": [{"name": "fill", "rects": "die", "z": [["M1", "top"], ["V1", "top"]], "eps": [5, 6], "sigma_m": 100.0}]}
+        p = oa.build_plan(inputs, st, polys, {"V1": 0.25})
+        self.assertEqual(p["ports"][0]["z0"], 51.5)
+        self.assertEqual(p["ports"][0]["y"], [-1.0, 1.0])
+        via = [m for m in p["metals"] if m["name"] == "V1"][0]
+        self.assertEqual((via["z0"], via["z1"], via["sigma"]), (51.5, 56.0, 0.25 * 2e6))
+        self.assertEqual(p["slabs"][0]["eps"], [5, 5, 6])
+        self.assertEqual(p["slabs"][0]["boxes"], [[-50.0, -100.0, 51.5, 350.0, 100.0, 56.0]])
+        self.assertEqual(p["dielectrics"][0]["box"][:2], [-50.0, -100.0])
+        self.assertNotIn("AIR", [d["name"] for d in p["dielectrics"]])
+        self.assertEqual((p["mesh"]["x"][0], p["mesh"]["x"][-1]), (-150.0, 450.0))
+        with self.assertRaises(ValueError):
+            oa.build_plan(dict(inputs, die={"size_um": [100, 100]}), st, polys)
+
+    def test_min_cell_drops_close_lines_but_keeps_listed_ones(self):
+        self.assertEqual(oa.smooth_lines([0, 0.2, 0.5, 3, 3.1, 10], 2, min_cell=1.0)[:3], [0, 1.5, 3])
+        self.assertIn(3.1, oa.smooth_lines([0, 0.2, 0.5, 3, 3.1, 10], 2, min_cell=1.0, keep=[3.1]))
+
+
+try:
+    import gdstk
+except ImportError:
+    gdstk = None
+
+
+@unittest.skipIf(gdstk is None, "gdstk is not installed")
+class Reader(unittest.TestCase):
+    def test_cut_removes_the_openings_of_another_datatype(self):
+        st = stackup()
+        m1 = [l for l in st["layers"] if l["name"] == "M1"][0]["gds"]
+        d = tempfile.mkdtemp()
+        try:
+            lib = gdstk.Library()
+            c = lib.new_cell("top")
+            c.add(gdstk.rectangle((0, 0), (100, 50), layer=m1, datatype=0))
+            c.add(gdstk.rectangle((10, 10), (20, 40), layer=m1, datatype=24))
+            path = os.path.join(d, "t.gds")
+            lib.write_gds(path)
+            area = lambda polys: sum(abs(gdstk.Polygon(p).area()) for p in polys)  # noqa: E731
+            _, out, _ = oa.read_polygons(path, None, st, ["M1"])
+            self.assertAlmostEqual(area(out["M1"]), 5000.0)
+            _, out, _ = oa.read_polygons(path, None, st, ["M1"], cut=oa.check_cut({"M1": [24]}))
+            self.assertAlmostEqual(area(out["M1"]), 4700.0)
+            with self.assertRaisesRegex(ValueError, "cut' must be"):
+                oa.check_cut({"M1": 24})
+        finally:
+            shutil.rmtree(d)
 
 
 if __name__ == "__main__":

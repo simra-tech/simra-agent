@@ -109,7 +109,7 @@ def apply(work, cfg, src_dir):
     error = ""
     for _ in range(10):
         r = subprocess.run(git + ["commit", "-q", "-m", cfg["message"], "--", cfg["target"]], cwd=work, env=env,
-                           capture_output=True, text=True)
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         if r.returncode == 0:
             break
         error = (r.stderr or r.stdout).strip().replace("\n", " ")
@@ -117,7 +117,7 @@ def apply(work, cfg, src_dir):
         time.sleep(1)
     else:
         return f"applied {now_iso()} sha256:{sha256(target)} commit failed: {error}{note}"
-    head = subprocess.run(git + ["rev-parse", "HEAD"], cwd=work, capture_output=True, text=True).stdout.strip()
+    head = subprocess.run(git + ["rev-parse", "HEAD"], cwd=work, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True).stdout.strip()
     return f"applied {now_iso()} sha256:{sha256(target)} commit {head}{note}"
 
 

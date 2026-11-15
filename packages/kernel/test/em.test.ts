@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { emPortJobs, emSParameters } from "../src/index.ts";
+import { compareTouchstone, emPortJobs, emSParameters, formatSnpDiff } from "../src/index.ts";
 
 const fixtures = new URL("./fixtures/", import.meta.url).pathname;
 
@@ -64,4 +64,24 @@ test("emSParameters: a failed solver names the port job and its reason", async (
 	const out = await emSParameters({ root, adapter: "openems-fake", inputs: { ports, fail_port: 1 }, parallel: 2 });
 	assert.equal(out.touchstone, null);
 	assert.match(out.problems[0], /EM port 1 of 2: failed: port 1: the solver failed/);
+});
+
+test("compareTouchstone: dB, degree and |dS| differences at the common points, with a noise floor", (t) => {
+	const dir = mkdtempSync(join(tmpdir(), "simra-snpdiff-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const s2p = (rows: number[][]) => `# Hz S MA R 50\n${rows.map((r) => r.join(" ")).join("\n")}\n`;
+	// f, S11 (mag, deg), S21, S12, S22
+	writeFileSync(join(dir, "a.s2p"), s2p([[1e9, 0.1, 0, 0.9, -10, 0.9, -10, 0.001, 0], [2e9, 0.1, 0, 0.9, -20, 0.9, -20, 0.001, 0], [3e9, 0.1, 0, 0.9, -30, 0.9, -30, 0.001, 0]]));
+	writeFileSync(join(dir, "b.s2p"), s2p([[1e9, 0.1, 0, 0.9, -10, 0.9, -10, 0.002, 90], [2e9, 0.11, 0, 0.8, -25, 0.8, -25, 0.002, 90], [2.5e9, 1, 0, 1, 0, 1, 0, 1, 0]]));
+	const d = compareTouchstone(join(dir, "a.s2p"), join(dir, "b.s2p"));
+	assert.equal(d.points, 2);
+	const s21 = d.entries.find((e) => e.entry === "S21");
+	assert.ok(Math.abs((s21?.max_abs_db ?? 0) - 20 * Math.log10(0.9 / 0.8)) < 1e-9);
+	assert.ok(Math.abs((s21?.max_abs_deg ?? 0) - 5) < 1e-9);
+	assert.equal(s21?.at_deg_hz, 2e9);
+	const s22 = d.entries.find((e) => e.entry === "S22");
+	assert.deepEqual([s22?.max_abs_db, s22?.max_abs_deg], [0, 0], "S22 is below the -40 dB floor in both files");
+	assert.ok((s22?.max_abs_ds ?? 0) > 0.002);
+	assert.equal(compareTouchstone(join(dir, "a.s2p"), join(dir, "b.s2p"), [1.5e9, 3e9]).points, 1);
+	assert.match(formatSnpDiff(d), /^2 common points\nS11: max 0\.828 dB at 2\.0 GHz/);
 });

@@ -1,0 +1,70 @@
+{
+  "schema": "simra.workarounds/0",
+  "simulator": "xyce",
+  "pdk": "ihp-sg13g2",
+  "versions": "Xyce 7.10, IHP SG13G2 Xyce model libraries",
+  "entries": [
+    {
+      "id": "xyce-sg13g2-psp103",
+      "applies_to": {
+        "device_classes": [
+          "mos_lv_nmos",
+          "mos_lv_pmos",
+          "mos_hv_nmos",
+          "mos_hv_pmos"
+        ]
+      },
+      "gap": "Xyce rejects the PSP 103 model cards of the PDK: no LV or HV MOS device simulates.",
+      "symptom": "Unrecognized parameter D for device YPSP103_VA!M1 (sg13g2_moslv_mod.lib, sg13g2_moshv_mod.lib)",
+      "workaround": "Simulate decks with MOS devices in ngspice. Use Xyce only for decks without MOS devices (for example HBT harmonic balance). Do not replace the PSP cards with another MOS model.",
+      "status": "open",
+      "evidence": "device-class probe, test/fixtures/device-probe/ihp-sg13g2.json"
+    },
+    {
+      "id": "xyce-sg13g2-r3cmc",
+      "applies_to": {
+        "device_classes": [
+          "res_rsil",
+          "res_rppd",
+          "res_rhigh"
+        ]
+      },
+      "gap": "Xyce rejects the r3_cmc card of the poly resistors rsil, rppd and rhigh.",
+      "symptom": "Unrecognized parameter 1 for device YR3_CMC!R1 (resistors_mod.lib)",
+      "workaround": "In Xyce, replace each poly resistor by an ideal resistor with the value that ngspice gives for the same corner and temperature, and state the substitution; the voltage coefficient is then lost. Otherwise simulate in ngspice.",
+      "status": "proposed",
+      "evidence": "device-class probe, test/fixtures/device-probe/ihp-sg13g2.json"
+    },
+    {
+      "id": "xyce-sg13g2-varactor",
+      "applies_to": {
+        "device_classes": [
+          "varactor_hv"
+        ]
+      },
+      "gap": "The Xyce library of the PDK does not define the HV varactor subcircuit sg13_hv_svaricap.",
+      "symptom": "Subcircuit SG13_HV_SVARICAP has not been defined",
+      "workaround": "Simulate varactor circuits (VCO tanks) in ngspice. For Xyce harmonic balance, use a capacitor fitted to the ngspice C(V) at the bias point, and state it.",
+      "status": "proposed",
+      "evidence": "device-class probe, test/fixtures/device-probe/ihp-sg13g2.json"
+    },
+    {
+      "id": "xyce-sg13g2-hbt-dtemp",
+      "applies_to": {
+        "device_classes": [
+          "hbt_npn13G2",
+          "hbt_npn13G2l",
+          "hbt_npn13G2v"
+        ],
+        "analyses": [
+          "temperature"
+        ]
+      },
+      "gap": "The npn13G2 card computes the transit time tf from the global temperature. A per-instance dtemp at a global 27 C leaves tf at its 27 C value.",
+      "symptom": "No message. At 125 C the device is too fast (optimistic), at -40 C too slow; tf scales with ((T + 273) / 300)^0.7.",
+      "workaround": "Set the global temperature (temp_c of the xyce adapter) to the corner. When a per-instance temperature is needed, scale vbic_tf in a copy of the corner section by ((T + 273) / 300)^0.7.",
+      "status": "worked_around",
+      "evidence": "PDK file sg13g2_hbt_mod.lib (tf expression); found in a detector block of a reference design"
+    }
+  ]
+}

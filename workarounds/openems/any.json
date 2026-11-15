@@ -1,0 +1,47 @@
+{
+  "schema": "simra.workarounds/0",
+  "simulator": "openems",
+  "pdk": "*",
+  "versions": "openEMS 0.37",
+  "entries": [
+    {
+      "id": "openems-mur-plateau",
+      "applies_to": {
+        "operations": [
+          "simulate"
+        ]
+      },
+      "gap": "With first-order MUR boundaries, an on-chip microstrip stays at an energy plateau (-13 dB to -18 dB) and never reaches the end criterion.",
+      "symptom": "'Max. number of timesteps was reached before the end-criteria'; the S-parameters look plausible.",
+      "workaround": "Use PML_8 on the sides and the top (the default of the openems adapter). The adapter fails a run that does not reach the end criterion.",
+      "status": "worked_around",
+      "evidence": "adapters/openems/fixtures/log-mur-maxts.log and log-pml-converged.log"
+    },
+    {
+      "id": "openems-thin-dielectric",
+      "applies_to": {
+        "operations": [
+          "simulate"
+        ]
+      },
+      "gap": "A thin dielectric (0.4 um passivation) in the z mesh sets the time step of the whole run.",
+      "symptom": "A run 5 times slower.",
+      "workaround": "Snap the interface to a near z line (dielectric_snap_um of the openems adapter, default 2 um).",
+      "status": "worked_around",
+      "evidence": "openems adapter README"
+    },
+    {
+      "id": "openems-headless",
+      "applies_to": {
+        "operations": [
+          "simulate"
+        ]
+      },
+      "gap": "The PDK openEMS workflow opens the AppCSXCAD viewer and stops on a host without a display; a relative simulation path gives a RuntimeError.",
+      "symptom": "The run waits for a display, or stops at once.",
+      "workaround": "Use the openems adapter (no viewer, absolute paths).",
+      "status": "worked_around",
+      "evidence": "openems adapter README"
+    }
+  ]
+}
