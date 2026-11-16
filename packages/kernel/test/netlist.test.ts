@@ -94,4 +94,11 @@ test("netlist: a fitted model of a record may hold sources; the fit band gate ch
 	const nf = fitBandFindings(r, "nf.spice", fits);
 	assert.equal(nf[0].pass, false);
 	assert.match(nf[0].reason, /no port noise \(give uses.noise_band_hz/);
+	// harmonic balance (an xyce hb experiment): the deck has no analysis; the gate gives the band of the harmonics
+	writeFileSync(join(r, "hb.cir"), ".include cell.spice\n");
+	assert.deepEqual(fitBandFindings(r, "hb.cir", fits), [{ subckt: "em_net", fit: "e2", pass: true, reason: "in band (60000000000 Hz to 180000000000 Hz)" }]);
+	const hb = (h: number) => fitBandFindings(r, "hb.cir", fits, [{ kind: "hb", f_hz: [61e9, 61e9 * h], text: `hb tones 61e9 Hz, harmonics ${h}` }]);
+	assert.equal(hb(2)[0].pass, true);
+	assert.equal(hb(3)[0].pass, false);
+	assert.match(hb(3)[0].reason, /hb tones 61e9 Hz, harmonics 3" sweeps 61000000000 Hz to 183000000000 Hz/);
 });

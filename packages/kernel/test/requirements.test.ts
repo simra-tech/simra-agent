@@ -541,3 +541,18 @@ test("gates.limits: an experiment that no row cites runs at every condition of t
 	assert.deepEqual(v2.rows.filter((r) => r.gate?.name === "limits").map((r) => r.condition).sort(), ["ss", "tt"]);
 	assert.equal(verdict.status, "fail");
 });
+
+test("requirements: experiment_inputs of a condition apply to one experiment only, after inputs", async () => {
+	const { experimentInputs } = await import("../src/requirements.ts");
+	const file = {
+		schema: "simra.requirements/0",
+		conditions: { hot: { inputs: { libs: ["ngspice.lib"], temp_c: 125 }, experiment_inputs: { hb: { libs: ["xyce.lib"] } } } },
+		experiments: { sp: { adapter: "ngspice", operation: "simulate", inputs: { deck: "sp.spice" } }, hb: { adapter: "xyce", operation: "hb", inputs: { deck: "hb.spice" } } },
+		requirements: [{ id: "p", experiment: "hb", measurement: "p_dbm", op: ">=", limit: 0, conditions: ["hot"] }],
+	} as unknown as RequirementsFile;
+	assert.deepEqual(validateRequirements(file), []);
+	assert.deepEqual(experimentInputs(file, "sp", "hot"), { deck: "sp.spice", libs: ["ngspice.lib"], temp_c: 125 });
+	assert.deepEqual(experimentInputs(file, "hb", "hot"), { deck: "hb.spice", libs: ["xyce.lib"], temp_c: 125 });
+	const bad = { ...file, conditions: { hot: { experiment_inputs: { nope: {} } } } } as unknown as RequirementsFile;
+	assert.match(validateRequirements(bad).join("\n"), /experiment_inputs.nope: experiment "nope" is not defined/);
+});

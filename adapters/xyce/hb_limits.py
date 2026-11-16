@@ -35,7 +35,17 @@ import sys
 
 import xyce_adapter as xa
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ngspice"))
+def ngspice_dir():
+    """The ngspice adapter directory: SIMRA_ADAPTER_DIRS (set by the runner from the manifest uses_adapters), or the
+    sibling directory of this adapter."""
+    for entry in (os.environ.get("SIMRA_ADAPTER_DIRS") or "").split(":"):
+        name, _, path = entry.partition("=")
+        if name == "ngspice" and os.path.isdir(path):
+            return path
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ngspice")
+
+
+sys.path.insert(0, ngspice_dir())
 import ngspice_adapter as na  # noqa: E402
 import device_limits as dl  # noqa: E402
 from monte_carlo import inline_deck  # noqa: E402

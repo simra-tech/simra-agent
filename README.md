@@ -60,7 +60,7 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
   chip. `gates.connections` checks a block interface record against it (see [Connection table](#connection-table)).
 - The ngspice operation `assemble_dc` finds the DC point of a large deck (a whole chip of blocks) from the operating
   points of its blocks: a clamp homotopy with seeds, then a free operating point (see [Assemble a DC point](#assemble-a-dc-point)).
-- The ngspice operation `oscillator` gives f0, the amplitude and the white phase noise of an oscillator by the impulse
+- The ngspice operation `oscillator` gives f0, the amplitude, the start-up time and the phase noise (white and flicker) of an oscillator by the impulse
   sensitivity function (see [Oscillator](#oscillator)).
 - The ngspice operation `device_budget` gives the RF budget of one device at a bias and frequency: fT, fmax, MAG / MSG,
   the stability factor, NFmin, Rn and the noise-optimum source impedance (see [Device budget](#device-budget)).
@@ -74,6 +74,25 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
 - The commands `simra pack init` and `simra pack check` add a PDK to a site: an adapter proposes a technology pack
   from the kit, the user confirms it, and the adapter checks it (see "Add a PDK").
 - One example design exists: a two-stage OTA for the open IHP SG13G2 PDK.
+
+## Tools for RF and mixed-signal blocks
+
+What the harness has now, and what a task needs that it does not have yet.
+
+| Kind of block | Tools that exist | Tool that is missing |
+| --- | --- | --- |
+| LNA, gain stage | `sp` and noise benches (ngspice), stability gate, `device_budget`, operating-limit gate | compression of a hot corner when the Xyce DC point fails |
+| Power amplifier | Xyce `hb`, `hb_limits` (cycle means and peak voltages) | the conduction part of the instantaneous base current |
+| Oscillator | `oscillator` (f0, amplitude, start-up, ISF phase noise with named sources) | a source list made from the design (resistor and EM-port thermal noise) |
+| Frequency multiplier, buffer | Xyce `hb` (driven) | none known |
+| Frequency divider | ngspice transient | a division-ratio and input-sensitivity measurement |
+| Mixer | Xyce `hb` with two tones (conversion gain, compression) | noise figure of a periodically driven circuit |
+| EM passive (line, splitter, hybrid) | `em_sparameters` (openEMS), `fit_to_spice`, fit-band gate | none known |
+| Antenna | `em_sparameters` (S11) | far-field gain and pattern |
+| Baseband amplifier, filter, regulator | ngspice ac, noise, transient, `monte_carlo` | loop gain at an internal node (a loop-probe operation) |
+| Bias reference with trim | ngspice, `monte_carlo` | a trim search per Monte Carlo seed |
+| Digital control | none | a digital flow adapter (synthesis, place and route) |
+| Whole chip | `assemble_dc` | a whole-chip transient or harmonic-balance check |
 
 ## Install
 
@@ -693,7 +712,16 @@ The operation `oscillator` of the ngspice adapter gives the steady-state frequen
 3. For each source and each of `phases` phases, two runs inject +q and -q with a short triangle pulse. The shift of
    the output zero crossings in `window_periods` (default 35 to 45 periods after the injection) gives the ISF. Then
    L(df) = mult x 1/2 x (f0/df)^2 x mean(ISF^2 x S) for each source, and the total is the sum.
-4. `output_multiplier` gives L after an ideal frequency multiplier (+20 log10 of it). The measurements are
+4. Sources and devices inside the design subcircuit. A bench that instantiates the design (for example
+   `xdut ... vco`) cannot name the nodes inside it. A source or a device can then name an instance of the
+   subcircuit: `instance: {subckt, name, pins: [i, j]}` injects a current between the nodes of pins i and j of that
+   instance; `instance: {subckt, name, pin: i}` puts a series voltage source of value 0 in the lead of pin i; a device
+   with `instance: {subckt, name}` takes its table lines from the instance line (the first two pins become the two
+   swept nodes, the other pins ground, the instance parameters unchanged; its table vectors are `@q.x<device
+   name>.<model device>[...]`). The operation inlines the include file that defines the subcircuit. The injection is
+   in every instance of the subcircuit, so the bench must have one. The `at` vectors use the hierarchical names of
+   the bench, for example `@q.xdut.xq1.qnpn13g2[vbe]`.
+5. `output_multiplier` gives L after an ideal frequency multiplier (+20 log10 of it). The measurements are
    `l_<offset>_hz_dbc`, for example `l_1e+06_hz_dbc`, and `l_white_<offset>_hz_dbc` when a source has flicker.
    `work/oscillator.json` has the ISF, the PSD, the conduction currents and L of each source.
 
@@ -972,7 +1000,16 @@ condition of its rows, with the same deck, libs, params and temperature:
 3. `extra_limits` adds design limits; each gives a source or cites an assumption of the file.
 4. `tran` gives a transient per experiment: the gate also checks the peak voltages over it (the peak V<sub>CE</sub>
    is a conservative bound from the extremes of V<sub>BE</sub> and V<sub>BC</sub>). Transient currents are not
-   checked: the VBIC instance currents include the junction charge currents.
+   checked: the VBIC instance currents include the junction charge currents. With `"dc": "mean"` in the `tran` entry
+   of an experiment, the "dc" values are time means over whole periods inside the transient window (from the first to
+   the last rising crossing of the device's own V<sub>BE</sub> through its mean) instead of the operating point of the
+   deck. Use it for an oscillator: its deck ramps the supply from 0 V, so its operating point has no bias, and its
+   cycle means are its DC values. Over whole periods the mean of a junction charging current is zero, so the mean
+   terminal currents are exact; over a window of 31.2 periods the mean base current of a 61 GHz core was off by up to
+   10 µA (a false reverse base current).
+   `peak_overrides` (`[{id, limit, assumption}]`) gives a limit of the pack another value at the peak only, for
+   example a peak V<sub>CE</sub> above 1.6 V in an oscillator core; each override cites an assumption of the file,
+   and its peak rows cite it.
 5. An xyce `hb` experiment of the gate (by default every `hb` experiment that a requirement cites) runs the xyce
    operation `hb_limits` with all its inputs: the same harmonic balance, with the terminal voltages and the lead
    currents of each HBT. The limits apply to the cycle means (rows `gate limits <id>`: V<sub>CE</sub>, V<sub>BE</sub>,

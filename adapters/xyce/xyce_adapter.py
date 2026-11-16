@@ -21,6 +21,10 @@ Behaviour of Xyce 7.10 that the adapter guards against (each one gives a wrong n
     writes the caller's params and temp_c before the deck, so that they replace the deck's values.
   - The YLIN device (Touchstone data in Xyce) is an open circuit in .ac, .tran, .lin and .op. The adapter refuses a
     deck with YLIN in simulate; YLIN is accepted in hb.
+  - At a global temperature of -40 C or 125 C the HB of a PDK HBT circuit often fails (DC point or HB Newton) where it
+    converges at 27 C. Input temperature_method "dtemp_tf" (hb, hb_limits) runs at a global 27 C with dtemp = T - 27
+    on every npn13G2 instance and vbic_tf of the HBT corner section scaled by ((T + 273) / 300)^0.7 (registry entry
+    xyce-sg13g2-hbt-dtemp: the card computes tf from the global temperature only).
   - A harmonic-balance point that does not converge can be left out of a stepped output with no error. The adapter
     runs one process per point and compares the requested points with the results.
 The adapter holds no PDK facts: model libraries come from the caller (input libs).
@@ -219,7 +223,7 @@ def write_top(path, header, settings, libs, include):
         for line in settings:
             f.write(line + "\n")
         for lib, section in libs:
-            f.write('.lib "{}"{}\n'.format(lib, " " + section if section else ""))
+            f.write('.lib "{}" {}\n'.format(lib, section) if section else '.include "{}"\n'.format(lib))
         f.write('.include "{}"\n'.format(include))
 
 
@@ -463,6 +467,86 @@ def simulate(request):
 
 
 # ------------------------------------------------------------------------------------------------------------- hb
+HBT_INSTANCE = re.compile(r"^\s*x\S*\s.*\snpn13g2(\s|$)", re.IGNORECASE)
+
+
+def tf_factor(temp_c):
+    """Factor on vbic_tf that gives tf(T) at a global 27 C: the PDK card scales tf by ((temper + 273) / 300)^0.7."""
+    return ((temp_c + 273.0) / 300.0) ** 0.7
+
+
+def hbt_section_tf(lib, section, temp_c, out_path):
+    """Write a copy of section `section` of the HBT corner library `lib` with vbic_tf scaled for temp_c. Returns None
+    or an error message. The PDK file is read, not changed."""
+    path = os.path.expandvars(lib)
+    try:
+        text = open(path, errors="replace").read()
+    except OSError as e:
+        return "temperature_method dtemp_tf: cannot read {}: {}".format(lib, e)
+    m = re.search(r"^\.lib\s+%s\s*$(.*?)^\.endl" % re.escape(section), text, flags=re.M | re.S | re.I)
+    if m is None:
+        return "temperature_method dtemp_tf: no section {} in {}".format(section, lib)
+    k = tf_factor(temp_c)
+    body, n = re.subn(r"(\.param\s+vbic_tf\s*=\s*)(\S+)", lambda mm: "%s{%s*%.6f}" % (mm.group(1), mm.group(2), k), m.group(1), flags=re.I)
+    if n != 1:
+        return "temperature_method dtemp_tf: expected one vbic_tf parameter in section {} of {}, found {}".format(section, lib, n)
+    base = os.path.dirname(path)
+    body = re.sub(r"^(\s*\.(?:include|inc|lib)\s+)[\"']?([^\s\"']+)[\"']?", lambda mm: mm.group(1) + '"' + (
+        mm.group(2) if os.path.isabs(mm.group(2)) else os.path.join(base, mm.group(2))) + '"', body, flags=re.M | re.I)
+    with open(out_path, "w") as fh:
+        fh.write("* {} section {}: vbic_tf x {:.6f} for {:g} C at a global 27 C (simra xyce adapter, dtemp_tf)\n{}".format(lib, section, k, temp_c, body))
+    return None
+
+
+def inline_includes(lines, depth=0):
+    """The lines with every '.include' / '.inc' of an existing file replaced by its lines (recursive, 4 levels)."""
+    out = []
+    for line in lines:
+        m = INCLUDE_LINE.match(line)
+        words = split_args(m.group(2)) if m else []
+        if m and m.group(1).lower() != "lib" and words and depth < 4:
+            path = os.path.expandvars(words[0])
+            if os.path.isfile(path):
+                sub, _ = circuit_lines(path)
+                out += inline_includes(sub, depth + 1)
+                continue
+        out.append(line)
+    return out
+
+
+def apply_dtemp_tf(inputs, libs, circuit, work_dir):
+    """(inputs, libs, circuit, message, error) for temperature_method dtemp_tf; unchanged at 27 C."""
+    temp_c = inputs.get("temp_c")
+    if temp_c is None or abs(float(temp_c) - 27.0) < 1e-9:
+        return inputs, libs, circuit, None, None
+    dt = float(temp_c) - 27.0
+    new_libs, scaled = [], 0
+    for k, (lib, section) in enumerate(libs):
+        if section and re.search(r"cornerhbt\.lib$", lib, re.I):
+            out = os.path.join(work_dir, "hbt_tf_{}.lib".format(k))
+            err = hbt_section_tf(lib, section, float(temp_c), out)
+            if err:
+                return None, None, None, None, err
+            new_libs.append((out, None))
+            scaled += 1
+        else:
+            new_libs.append((lib, section))
+    if not scaled:
+        return None, None, None, None, "temperature_method dtemp_tf needs the HBT corner library (cornerHBT.lib with a section) in libs"
+    flat = inline_includes(circuit)
+    n = 0
+    for i, line in enumerate(flat):
+        if HBT_INSTANCE.match(line):
+            if re.search(r"\sdtemp\s*=", line, re.I):
+                return None, None, None, None, "temperature_method dtemp_tf: the instance '{}' already sets dtemp".format(line.split()[0])
+            flat[i] = line.rstrip() + " dtemp={:g}".format(dt)
+            n += 1
+    inputs = dict(inputs, temp_c=27)
+    msg = ("temperature method dtemp_tf: global 27 C, dtemp={:g} on {} npn13G2 instances, vbic_tf x {:.4f} in {} HBT "
+           "corner section(s) (registry xyce-sg13g2-hbt-dtemp)").format(dt, n, tf_factor(float(temp_c)), scaled)
+    return inputs, new_libs, flat, msg, None
+
+
 def circuit_lines(deck_path):
     """The deck without .control blocks, analyses, outputs and HB options; relative includes become absolute.
     Returns (lines, removed lines)."""
@@ -633,6 +717,17 @@ def hb(request, extra_prints=None):
     circuit, removed = circuit_lines(ctx["deck"])
     if removed:
         diagnostics.append({"severity": "info", "source": "adapter", "message": "removed from the deck for hb: " + "; ".join(removed[:10])})
+    method = inputs.get("temperature_method", "global")
+    if method not in ("global", "dtemp_tf"):
+        return failure(tool, "input 'temperature_method' is 'global' (the default) or 'dtemp_tf'")
+    if method == "dtemp_tf":
+        t_inputs, t_libs, t_circuit, msg, err = apply_dtemp_tf(ctx["inputs"], ctx["libs"], circuit, work_dir)
+        if err:
+            return failure(tool, err)
+        ctx["inputs"], ctx["libs"], circuit = t_inputs, t_libs, t_circuit
+        if msg:
+            diagnostics.append({"severity": "info", "source": "adapter", "message": msg})
+            ctx["tool"]["temperature_method"] = {"method": method, "temp_c": inputs.get("temp_c")}
     circ_path = os.path.join(work_dir, "circuit.cir")
     with open(circ_path, "w") as fh:
         fh.write("* circuit of {} without analyses (simra xyce adapter, hb)\n".format(os.path.basename(ctx["deck"])))
@@ -781,9 +876,11 @@ def main(argv):
         sys.stderr.write("unsupported contract: {}\n".format(request.get("contract")))
         return 2
     import device_probe  # here, not at the top: device_probe imports the helpers of this module
-    import hb_limits
+    def run_hb_limits(req):
+        import hb_limits  # here: it imports the ngspice adapter (manifest uses_adapters), which only this operation needs
+        return hb_limits.hb_limits(req)
     operation = {"parse": parse, "simulate": simulate, "hb": hb, "probe_devices": device_probe.probe_devices,
-                 "hb_limits": hb_limits.hb_limits}.get(request.get("operation"))
+                 "hb_limits": run_hb_limits}.get(request.get("operation"))
     response = operation(request) if operation else failure(None, "unknown operation: {}".format(request.get("operation")))
     tmp = request["response_path"] + ".tmp"
     with open(tmp, "w") as f:

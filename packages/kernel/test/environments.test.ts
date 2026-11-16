@@ -67,3 +67,13 @@ test("each technology directory is mounted read-only and given in SIMRA_TECHNOLO
 	const local = buildInvocation({ ...request({}), config: { kind: "local" } as never, technologyDirs: ["/simra/technologies"] });
 	assert.equal(local.env.SIMRA_TECHNOLOGY_DIR, "/simra/technologies");
 });
+
+test("the adapters that an adapter uses are mounted read-only and named in SIMRA_ADAPTER_DIRS", (t) => {
+	fakeEngines(t);
+	const inv = buildInvocation({ ...request({}), usedAdapterDirs: { ngspice: "/simra/adapters/ngspice" } });
+	assert.ok(inv.args.includes("/simra/adapters/ngspice:/simra/adapters/ngspice:ro"));
+	assert.ok(inv.args.includes("SIMRA_ADAPTER_DIRS=ngspice=/simra/adapters/ngspice"));
+	assert.ok(!buildInvocation(request({})).args.some((a) => a.includes("SIMRA_ADAPTER_DIRS")));
+	const local = buildInvocation({ ...request({}), config: { kind: "local" } as never, usedAdapterDirs: { ngspice: "/a/ngspice" } });
+	assert.equal(local.env.SIMRA_ADAPTER_DIRS, "ngspice=/a/ngspice");
+});

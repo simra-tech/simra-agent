@@ -52,6 +52,8 @@ export interface AdapterManifest {
 	/** Command line. "{adapter_dir}" is replaced with the adapter directory. The request path is appended. */
 	command: string[];
 	operations: Record<string, { description: string }>;
+	/** Other adapters whose code this adapter imports (their directories are mounted and named in SIMRA_ADAPTER_DIRS). */
+	uses_adapters?: string[];
 }
 
 export interface RunOptions {
@@ -187,7 +189,8 @@ function prepareExperiment(opts: RunOptions): { job: Job; env: NodeJS.ProcessEnv
 	const adapterCommand = [...manifest.command.map((part) => part.replaceAll("{adapter_dir}", adapterDir)), requestPath];
 	// Build the invocation first: a configuration error must not leave an empty experiment behind.
 	const technologyDirs = technologySearchPath(config.technology_dirs ?? []);
-	const invocation = buildInvocation({ name: envName, config: envConfig, root, adapterDir, adapterCommand, experimentId: id, technologyDirs });
+	const usedAdapterDirs = Object.fromEntries((manifest.uses_adapters ?? []).map((n) => [n, findAdapter(n, [...(config.adapter_dirs ?? []), BUILTIN_ADAPTER_DIR]).dir]));
+	const invocation = buildInvocation({ name: envName, config: envConfig, root, adapterDir, adapterCommand, experimentId: id, technologyDirs, usedAdapterDirs });
 	createExperimentDir(root, id);
 
 	const experiment: ExperimentRecord = {
@@ -195,7 +198,7 @@ function prepareExperiment(opts: RunOptions): { job: Job; env: NodeJS.ProcessEnv
 		id,
 		created_at: new Date().toISOString(),
 		purpose: opts.purpose ?? null,
-		adapter: { name: manifest.name, version: manifest.version, dir: adapterDir, files: hashTree(adapterDir) },
+		adapter: { name: manifest.name, version: manifest.version, dir: adapterDir, files: hashTree(adapterDir), ...(Object.keys(usedAdapterDirs).length ? { uses: Object.fromEntries(Object.entries(usedAdapterDirs).map(([n, d]) => [n, { dir: d, files: hashTree(d) }])) } : {}) },
 		operation: opts.operation,
 		inputs: opts.inputs,
 		environment: invocation.record,

@@ -103,7 +103,12 @@ test("gates.limits: validation of experiments, tran and extra limits", () => {
 		gates: {
 			limits: {
 				experiments: ["nope"],
-				tran: { bench: { step_s: 1e-9, stop_s: 1e-10 } },
+				tran: { bench: { step_s: 1e-9, stop_s: 1e-10, dc: "avg" } },
+				peak_overrides: [
+					{ id: "hbt_vce_max", limit: 2.5, assumption: "vmin" },
+					{ id: "po_bad", limit: 2.5, assumption: "nope" },
+					{ id: "po_bad2", limit: "x" },
+				],
 				extra_limits: [
 					{ id: "ok", class: "hbt", quantity: "vcb", op: ">=", limit: 0, assumption: "vmin" },
 					{ id: "bad", class: "hbt", quantity: "vce", op: ">=", limit: 0.9 },
@@ -118,6 +123,10 @@ test("gates.limits: validation of experiments, tran and extra limits", () => {
 	assert.match(errors, /"bad": give a source or an assumption/);
 	assert.match(errors, /"bad2": assumption "other" is not defined/);
 	assert.doesNotMatch(errors, /"ok"/);
+	assert.match(errors, /gates.limits.tran.bench: dc is "op" or "mean"/);
+	assert.match(errors, /peak_overrides "po_bad": assumption "nope" is not defined/);
+	assert.match(errors, /peak_overrides "po_bad2": id, limit and assumption are required/);
+	assert.doesNotMatch(errors, /peak_overrides "hbt_vce_max"/);
 });
 
 test("gates.limits: one row per applicable limit, assumed limits cite their assumption, a missing table is not run", (t) => {

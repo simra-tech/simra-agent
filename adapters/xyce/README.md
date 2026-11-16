@@ -36,6 +36,7 @@ refuses or reports these cases:
 | an HB point exits with 0 but without the output | point status `missing`, never a value |
 | the HB output spectrum is two-sided | power from 2 &#124;X&#124;; tested against a closed form |
 | an MPI start failure | retried two times |
+| HB of an HBT circuit fails at a global −40 C or 125 C (DC point failed, or no HB Newton convergence) where 27 C converges | `temperature_method: "dtemp_tf"` (hb, hb_limits): a global 27 C, `dtemp` = T − 27 on every npn13G2 instance of the deck and its includes, `vbic_tf` of the cornerHBT.lib section scaled by ((T + 273) / 300)^0.7; other devices (MIM) stay at 27 C. A PA output stage: global fails at 4 of 4 cases, dtemp_tf converges at 4 of 4 |
 
 ## Evaluation on two technologies
 

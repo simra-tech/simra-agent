@@ -2,8 +2,13 @@
 of a transient.
 
 Inputs: deck, libs, params, temp_c (as simulate); technology (optional pack name; default the pack of $PDK);
-tran (optional {step_s, stop_s, start_s}: also the peak over a transient of the circuit of the deck); extra_limits
-(optional list of limits of the same form as the pack; each needs a source or an assumption).
+tran (optional {step_s, stop_s, start_s, dc}: also the peak over a transient of the circuit of the deck; with dc "mean"
+the "dc" values are the time means over whole periods inside the transient window [start_s, stop_s] (from the first
+to the last rising crossing of the device's own vbe or vgs through its mean) instead of the operating point of the
+deck: for an oscillator, whose deck has no bias at t = 0, and whose cycle means are the DC values); extra_limits (optional
+list of limits of the same form as the pack; each needs a source or an assumption); peak_overrides (optional list of
+{id, limit, assumption, description}: a pack or extra limit gets another value at the peak only, for example a peak
+V_CE above the DC limit in an oscillator core; each needs an assumption).
 
 The pack (ngspice.limits.<pdk>) gives the device classes and the limits:
   classes: {<class>: {kind: "hbt" | "mos", letter, models (regex on the model name, lower case)}}
@@ -108,19 +113,72 @@ def device_path(device):
 
 
 def control_text(devices, tran):
-    lines = [".control", "op"]
-    for d in devices:
-        for q in BASE[d["kind"]]:
-            lines.append("print @{}[{}]".format(d["device"], q))
+    mean = bool(tran and tran.get("dc") == "mean")
+    lines = [".control"]
+    if not mean:
+        lines.append("op")
+        for d in devices:
+            for q in BASE[d["kind"]]:
+                lines.append("print @{}[{}]".format(d["device"], q))
     if tran:
         vecs = ["@{}[{}]".format(d["device"], q) for d in devices for q in PEAK[d["kind"]]]
-        for i in range(0, len(vecs), 20):
-            lines.append("save " + " ".join(vecs[i:i + 20]))
-        lines.append("tran {} {} {}".format(tran["step_s"], tran["stop_s"], tran.get("start_s", 0)))
+        means = ["@{}[{}]".format(d["device"], q) for d in devices for q in BASE[d["kind"]]] if mean else []
+        saved = list(dict.fromkeys(vecs + means))
+        for i in range(0, len(saved), 20):
+            lines.append("save " + " ".join(saved[i:i + 20]))
+        # a fixed step (tmax = step) so that the mean of the points is the time mean
+        lines.append("tran {0} {1} {2} {0}".format(tran["step_s"], tran["stop_s"], tran.get("start_s", 0)))
         for v in vecs:
             lines.append("print maximum({0}) minimum({0})".format(v))
+        if means:
+            lines.append("wrdata means.dat " + " ".join(means))
     lines += [".endc", ".end"]
     return "\n".join(lines) + "\n"
+
+
+def read_columns(path, n):
+    """wrdata 't v1 t v2 ...' -> (t, [v1..vn])."""
+    t, cols = [], [[] for _ in range(n)]
+    with open(path) as fh:
+        for line in fh:
+            f = line.split()
+            if len(f) < 2 * n:
+                continue
+            try:
+                row = [float(x) for x in f]
+            except ValueError:
+                continue
+            t.append(row[0])
+            for i in range(n):
+                cols[i].append(row[2 * i + 1])
+    return t, cols
+
+
+def whole_period_means(t, cols, ref):
+    """Time means of the columns over whole periods: from the first to the last rising crossing of column `ref`
+    through its own mean. Over whole periods the mean of a junction charging current is zero, so the mean terminal
+    current is the conduction current. Returns (means, periods) or (plain means, 0) when ref has fewer than 2 crossings
+    (a device without signal: its values are constant)."""
+    def tmean(a, b):
+        out = []
+        for c in cols:
+            acc, k = 0.0, 0
+            for i in range(1, len(t)):
+                lo, hi = max(t[i - 1], a), min(t[i], b)
+                if hi <= lo:
+                    continue
+                f0 = c[i - 1] + (c[i] - c[i - 1]) * (lo - t[i - 1]) / (t[i] - t[i - 1])
+                f1 = c[i - 1] + (c[i] - c[i - 1]) * (hi - t[i - 1]) / (t[i] - t[i - 1])
+                acc += 0.5 * (f0 + f1) * (hi - lo)
+            out.append(acc / (b - a))
+        return out
+    y = cols[ref]
+    m = sum(y) / len(y)
+    z = [t[i - 1] + (m - y[i - 1]) * (t[i] - t[i - 1]) / (y[i] - y[i - 1]) for i in range(1, len(t)) if y[i - 1] < m <= y[i]]
+    span = (max(y) - min(y)) if y else 0.0
+    if len(z) < 2 or span <= 1e-6 * max(1.0, abs(m)):
+        return tmean(t[0], t[-1]), 0
+    return tmean(z[0], z[-1]), len(z) - 1
 
 
 def derived(kind, base, nx):
@@ -237,6 +295,17 @@ def device_limits(request):
             return na.failure(tool, "input 'tran' must be {step_s, stop_s, start_s (optional)} in seconds")
         if not 0 < tran["step_s"] < tran["stop_s"] or not 0 <= tran["start_s"] < tran["stop_s"]:
             return na.failure(tool, "input 'tran': 0 < step_s < stop_s and 0 <= start_s < stop_s")
+        dc_mode = inputs["tran"].get("dc", "op")
+        if dc_mode not in ("op", "mean"):
+            return na.failure(tool, "input 'tran.dc' is 'op' (the default) or 'mean'")
+        tran["dc"] = dc_mode
+    overrides = inputs.get("peak_overrides") or []
+    ids = {lim.get("id") for lim in limits if isinstance(lim, dict)}
+    for o in overrides:
+        if not (isinstance(o, dict) and o.get("id") in ids and isinstance(o.get("limit"), (int, float)) and isinstance(o.get("assumption"), str) and o["assumption"]):
+            return na.failure(tool, "each peak_overrides entry needs id (a limit of the pack or extra_limits), limit (a number) and assumption")
+    if overrides and not tran:
+        return na.failure(tool, "peak_overrides needs tran (the peak values come from the transient)")
 
     circuit = na.circuit_lines(deck_path)
     head = ["* simra ngspice adapter: device limits for experiment {}".format(request.get("experiment"))]
@@ -270,6 +339,20 @@ def device_limits(request):
                 mm.setdefault(dev, {}).setdefault(q, [None, None])[0 if m.group(1).lower() == "minimum" else 1] = float(m.group(3))
             else:
                 base.setdefault(dev, {})[q] = float(m.group(3))
+    if tran and tran.get("dc") == "mean":
+        means = [(d["device"], q) for d in devices for q in BASE[d["kind"]]]
+        data = os.path.join(work, "means.dat")
+        if os.path.isfile(data):
+            t, cols = read_columns(data, len(means))
+            for d in devices:
+                idx = [i for i, (dev, _) in enumerate(means) if dev == d["device"]]
+                sub = [cols[i] for i in idx]
+                ref = [means[i][1] for i in idx].index(PEAK[d["kind"]][0])
+                vals, periods = whole_period_means(t, sub, ref)
+                for i, v in zip(idx, vals):
+                    base.setdefault(d["device"], {})[means[i][1]] = v
+                d["mean_periods"] = periods
+            os.remove(data)
     hbt_cells = {c.lower() for c in facts.get("hbt_cells", [])}
     nx = nx_map(inline_deck(deck_path, root), hbt_cells)
     for d in devices:
@@ -277,7 +360,11 @@ def device_limits(request):
         d["dc"] = derived(d["kind"], base.get(d["device"], {}), d["nx"])
         if tran:
             d["peak"] = peak_values(d["kind"], {q: v for q, v in mm.get(d["device"], {}).items() if None not in v})
-    rows = check_limits(limits, devices, "dc") + (check_limits(limits, devices, "peak") if tran else [])
+    over = {o["id"]: o for o in overrides}
+    peak_limits = [dict(lim, limit=over[lim["id"]]["limit"], source=None, assumption=over[lim["id"]]["assumption"],
+                        description=over[lim["id"]].get("description") or "peak limit replaced by an assumption")
+                   if lim.get("id") in over else lim for lim in limits]
+    rows = check_limits(limits, devices, "dc") + (check_limits(peak_limits, devices, "peak") if tran else [])
     if tran:
         rows = [r for r in rows if not (r["at"] == "peak" and r["quantity"] not in ("vbe", "vbc", "vce", "vcb", "veb", "vgs", "vds"))]
     if code != 0:

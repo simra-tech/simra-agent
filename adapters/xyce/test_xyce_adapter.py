@@ -143,5 +143,37 @@ class HarmonicBalanceTest(unittest.TestCase):
         self.assertIn("'ports' is required", adapter.hb_inputs({"tones": [1e9]})[1])
 
 
+class TemperatureMethodTest(unittest.TestCase):
+    def test_dtemp_tf(self):
+        d = tempfile.mkdtemp()
+        try:
+            lib = os.path.join(d, "cornerHBT.lib")
+            with open(lib, "w") as fh:
+                fh.write(".LIB hbt_typ\n.param vbic_tf = 1.0\n.include sg13g2_hbt_mod.lib\n.ENDL hbt_typ\n")
+            with open(os.path.join(d, "core.spice"), "w") as fh:
+                fh.write(".subckt core a b\nxq1 a b 0 0 npn13G2 Nx=2\nxq2 a b 0 0 npn13g2 Nx=8 m=1\nr1 a b 10\n.ends core\n")
+            circuit = ['.include "%s"' % os.path.join(d, "core.spice"), "xdut n1 n2 core"]
+            inputs, libs, flat, msg, err = adapter.apply_dtemp_tf({"temp_c": 125}, [(lib, "hbt_typ"), ("/x/cornerCAP.lib", "cap_typ")], circuit, d)
+            self.assertIsNone(err)
+            self.assertEqual(inputs["temp_c"], 27)
+            self.assertIsNone(libs[0][1])
+            self.assertEqual(libs[1], ("/x/cornerCAP.lib", "cap_typ"))
+            text = open(libs[0][0]).read()
+            k = ((125 + 273.0) / 300.0) ** 0.7
+            self.assertIn("{1.0*%.6f}" % k, text)
+            self.assertIn('.include "%s"' % os.path.join(d, "sg13g2_hbt_mod.lib"), text)
+            self.assertIn("xq1 a b 0 0 npn13G2 Nx=2 dtemp=98", flat)
+            self.assertIn("xq2 a b 0 0 npn13g2 Nx=8 m=1 dtemp=98", flat)
+            self.assertIn("r1 a b 10", flat)
+            self.assertIn("on 2 npn13G2 instances", msg)
+            # unchanged at 27 C; an instance with its own dtemp is an error
+            self.assertEqual(adapter.apply_dtemp_tf({"temp_c": 27}, [(lib, "hbt_typ")], circuit, d)[2], circuit)
+            bad = ["xq9 a b 0 0 npn13G2 dtemp=3"]
+            self.assertIn("already sets dtemp", adapter.apply_dtemp_tf({"temp_c": 125}, [(lib, "hbt_typ")], bad, d)[4])
+            self.assertIn("needs the HBT corner library", adapter.apply_dtemp_tf({"temp_c": 125}, [], circuit, d)[4])
+        finally:
+            shutil.rmtree(d)
+
+
 if __name__ == "__main__":
     unittest.main()

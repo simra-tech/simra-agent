@@ -1,0 +1,35 @@
+* VCO bench (ngspice transient, for the oscillator operation). The design is the subcircuit vco in vco.spice, pins
+* outp outn vtune vcc18 iref irep vbvar vbvar2 b0 b1 b2.
+* Supply: VCC18 through 0.2 ohm and 20 pH (bond and grid), ramped from 0 V in 300 ps; the bias currents and voltages
+* ramp with it. A 0.2 mA differential current pulse (outn to outp) at 0.35 ns seeds the
+* differential mode; the oscillation grows when the bias has settled (about 4 ns to 5 ns for the reference).
+* Load of each output: the divider tap (MIM 2 x 2 um into 7.2 fF || 910 ohm) and the doubler input (14.6 fF in series
+* with 18 ohm: the small-signal input of the doubler of the reference at 61 GHz, a MIM coupling capacitor into the
+* base of an npn13G2 Nx 4, 18.2 - j179 ohm), both to ground.
+* Parameters: vcc, vt (VTUNE), b0, b1, b2 (band bits: 0 V or 3.3 V), irefa (tail reference), ireps (replica reference).
+.param vcc=1.8 vt=1.55 b0v=0 b1v=0 b2v=3.3 irefa=0.6m ireps=0.5m vbv=0.8 vbv2=1.8
+.include "vco.spice"
+vext vext 0 pwl(0 0 300p {vcc})
+rsup vext vs1 0.2
+lsup vs1 vcc18 20p
+vtun vtune 0 {vt}
+vvar1 vbvar 0 pwl(0 0 300p {vbv})
+vvar2 vbvar2 0 pwl(0 0 300p {vbv2})
+vb0 b0 0 {b0v}
+vb1 b1 0 {b1v}
+vb2 b2 0 {b2v}
+ir1 vcc18 iref pwl(0 0 300p {irefa})
+ir2 vcc18 irep pwl(0 0 300p {ireps})
+ikick outn outp pulse(0 0.2m 350p 5p 5p 1p 1)
+xdut outp outn vtune vcc18 iref irep vbvar vbvar2 b0 b1 b2 vco
+xtpa outp dva cap_cmim w=2u l=2u
+cdva dva 0 7.2f
+rdva dva 0 910
+xtpb outn dvb cap_cmim w=2u l=2u
+cdvb dvb 0 7.2f
+rdvb dvb 0 910
+cdla outp dla 14.6f
+rdla dla 0 18
+cdlb outn dlb 14.6f
+rdlb dlb 0 18
+.end

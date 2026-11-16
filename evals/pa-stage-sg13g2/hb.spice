@@ -1,0 +1,15 @@
+* PA stage harmonic-balance bench (Xyce; the adapter adds the .hb line). The design is the subcircuit pa_stage in
+* pa_stage.spice, pins rfin rfout vccpa vcc18 iref. The source is 50 ohm with the available power pin_dbm at 122.5 GHz;
+* the load is 50 ohm. The drive is +3 dBm. VCCPA is vpa; the bias reference current flows from VCC18 into iref.
+.param pin_dbm=3 vpa=0.9 vcc=1.8 irefa=2.2m
+.param vin={sqrt(0.4*pow(10, pin_dbm/10))}
+.include "pa_stage.spice"
+vs src 0 sin(0 {vin} 122.5g)
+rs src rfin 50
+* vpa is written from 0 to vccpa so that its current (i_vpa_a) is the positive supply current into the stage
+vpa 0 vccpa {-vpa}
+v18 vcc18 0 {vcc}
+ir vcc18 iref {irefa}
+xdut rfin rfout vccpa vcc18 iref pa_stage
+rl rfout 0 50
+.end

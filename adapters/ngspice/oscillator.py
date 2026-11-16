@@ -4,7 +4,8 @@ the impulse sensitivity function (ISF; Hajimiri and Lee) from ngspice transients
 Method:
   1. Reference transient to ref_stop_s with a fixed step tstep_s (the deck must start by itself, for example with a
      short current kick). f0 from the rising zero crossings of the output v(p) - v(n) after settle_s; the amplitude is
-     half of the peak-to-peak output there.
+     half of the peak-to-peak output there. The start-up time startup_t90_s is the start of the first cycle of the
+     run (from t = 0) whose half peak-to-peak reaches 0.9 of that amplitude.
   2. For each noise source and each of N phases tau_k = t0 + k T / N (t0 = the first zero crossing after settle_s):
      inject +q and -q with a short triangular pulse (a current between two nodes, charge dq_c, or a voltage in a series
      source of value 0, flux dl_vs), continue, and read the shift of the output zero crossings in the window
@@ -20,6 +21,13 @@ Method:
      output_multiplier N (a frequency multiplier after the oscillator) adds 20 log10(N).
   4. Flicker noise of a source (input flicker {device, current, kf, af, bf}: S = kf |i|^af / df^bf) by the DC term of
      the ISF: L(df) = mult * 1/2 * (f0/df)^2 * mean_k(v_k |i_k|^(af/2))^2 * kf / df^bf.
+  5. Sources and devices inside a subcircuit of the design (a bench that instantiates the design): a source or a device
+     may name an instance {subckt, name} of the subcircuit instead of deck nodes. The operation inlines the include
+     file that defines the subcircuit, and then: a current source {pins: [i, j]} injects between the nodes of pins i
+     and j of the instance (inside the subcircuit); a series source {pin: i} puts a voltage source of value 0 in the
+     lead of pin i; a device {instance: {subckt, name}} takes its table lines from the instance line (the first two
+     pins become the swept nodes, the other pins ground, the parameters unchanged). The injection is in every instance
+     of the subcircuit; the bench must have one.
 Not included: noise of the bias circuits that is not a listed source, AM-to-PM conversion after the
 oscillator.
 """
@@ -94,6 +102,25 @@ def crossings(t, y):
         if y[i - 1] < 0 <= y[i] and y[i] != y[i - 1]:
             out.append(t[i - 1] + (t[i] - t[i - 1]) * (-y[i - 1]) / (y[i] - y[i - 1]))
     return out
+
+
+def startup_t90(t, y, amp):
+    """The start of the first cycle (between rising zero crossings of the whole run, from t = 0) whose half
+    peak-to-peak reaches 0.9 of the steady amplitude amp, or None."""
+    zc = crossings(t, y)
+    k = 0
+    for a, b in zip(zc, zc[1:]):
+        lo = hi = None
+        while k < len(t) and t[k] < a:
+            k += 1
+        j = k
+        while j < len(t) and t[j] <= b:
+            lo = y[j] if lo is None else min(lo, y[j])
+            hi = y[j] if hi is None else max(hi, y[j])
+            j += 1
+        if lo is not None and (hi - lo) / 2 >= 0.9 * amp:
+            return a
+    return None
 
 
 def interp(t, y, x):
@@ -204,7 +231,7 @@ def check_devices(devices):
     if not isinstance(devices, list):
         return "isf.devices must be a list"
     for d in devices:
-        if not (isinstance(d, dict) and isinstance(d.get("name"), str) and isinstance(d.get("lines"), list)
+        if not (isinstance(d, dict) and isinstance(d.get("name"), str) and (isinstance(d.get("lines"), list) or isinstance(d.get("instance"), dict))
                 and isinstance(d.get("sweep"), list) and len(d["sweep"]) == 2
                 and all(isinstance(x, list) and len(x) == 4 and isinstance(x[0], str) for x in d["sweep"])
                 and isinstance(d.get("axes"), list) and len(d["axes"]) == 2 and isinstance(d.get("at"), list)
@@ -213,6 +240,101 @@ def check_devices(devices):
                     "to, step]]), axes (two vectors of the table deck), at (the same two vectors in the oscillator deck) "
                     "and currents ({name: vector of the table deck})")
     return None
+
+
+SUBCKT_RE = r"^\s*\.subckt\s+%s\b"
+
+
+def subckt_block(circuit, name):
+    """(start, end) line indices of '.subckt name' ... '.ends' in the circuit, or None."""
+    rx = re.compile(SUBCKT_RE % re.escape(name), re.IGNORECASE)
+    for i, line in enumerate(circuit):
+        if rx.match(line):
+            for j in range(i + 1, len(circuit)):
+                if circuit[j].strip().lower().startswith(".ends"):
+                    return i, j
+    return None
+
+
+def inline_subckt(circuit, name):
+    """The circuit with the include file that defines subcircuit `name` inlined (if the deck does not define it)."""
+    if subckt_block(circuit, name):
+        return circuit
+    rx = re.compile(SUBCKT_RE % re.escape(name), re.IGNORECASE | re.MULTILINE)
+    for i, line in enumerate(circuit):
+        m = na.INCLUDE_LINE.match(line)
+        if not m or m.group(1).lower() == "lib":
+            continue
+        words = na.split_args(m.group(2))
+        path = os.path.expandvars(words[0]) if words else ""
+        if os.path.isfile(path) and rx.search(open(path, errors="replace").read()):
+            return circuit[:i] + na.circuit_lines(path) + circuit[i + 1:]
+    return circuit
+
+
+def instance_line(circuit, inst):
+    """(line index, node list, rest tokens) of instance inst = {subckt, name} inside its subcircuit, or None."""
+    blk = subckt_block(circuit, inst.get("subckt", ""))
+    if not blk:
+        return None
+    for i in range(blk[0] + 1, blk[1]):
+        f = circuit[i].split()
+        if f and f[0].lower() == str(inst.get("name", "")).lower():
+            plain = [x for x in f[1:] if "=" not in x]
+            if len(plain) < 2:
+                return None
+            return i, plain[:-1], [plain[-1]] + [x for x in f[1:] if "=" in x]
+    return None
+
+
+def resolve_instances(circuit, isf):
+    """Inline the subcircuits that sources and devices name, and turn them into deck forms. Returns (circuit, isf,
+    error). A current source gets nodes and '_subckt'; a series source gets a voltage source in the subcircuit."""
+    isf = json.loads(json.dumps(isf))
+    insts = [s["instance"] for s in isf.get("sources") or [] if isinstance(s, dict) and isinstance(s.get("instance"), dict)]
+    insts += [d["instance"] for d in isf.get("devices") or [] if isinstance(d, dict) and isinstance(d.get("instance"), dict)]
+    if not insts:
+        return circuit, isf, None
+    circuit = list(circuit)
+    for inst in insts:
+        circuit = inline_subckt(circuit, str(inst.get("subckt", "")))
+    for d in isf.get("devices") or []:
+        if isinstance(d, dict) and isinstance(d.get("instance"), dict):
+            found = instance_line(circuit, d["instance"])
+            if not found:
+                return circuit, isf, "isf device %s: no instance %s in subcircuit %s" % (d.get("name"), d["instance"].get("name"), d["instance"].get("subckt"))
+            _, nodes, rest = found
+            sw = [x[0] for x in d.get("sweep") or [] if isinstance(x, list) and x]
+            if len(sw) != 2:
+                return circuit, isf, "isf device %s: sweep needs two nodes" % d.get("name")
+            d["lines"] = ["x%s %s %s" % (d["name"], " ".join(sw + ["0"] * (len(nodes) - 2)), " ".join(rest))]
+    for s in isf.get("sources") or []:
+        if not (isinstance(s, dict) and isinstance(s.get("instance"), dict)):
+            continue
+        inst = s["instance"]
+        found = instance_line(circuit, inst)
+        if not found:
+            return circuit, isf, "isf source %s: no instance %s in subcircuit %s" % (s.get("name"), inst.get("name"), inst.get("subckt"))
+        i, nodes, rest = found
+        if "pin" in inst:
+            k = inst["pin"]
+            if not isinstance(k, int) or not 0 <= k < len(nodes):
+                return circuit, isf, "isf source %s: pin must be an index of the %d pins of %s" % (s.get("name"), len(nodes), inst["name"])
+            new = "simra_isf_%s" % s["name"]
+            vname = "Vsimra_isf_%s" % s["name"]
+            f = circuit[i].split()
+            orig = nodes[k]
+            f[1 + k] = new
+            circuit[i] = " ".join(f)
+            circuit.insert(i, "%s %s %s 0" % (vname, orig, new))
+            s["vsource"] = vname
+        else:
+            pins = inst.get("pins")
+            if not (isinstance(pins, list) and len(pins) == 2 and all(isinstance(x, int) and 0 <= x < len(nodes) for x in pins)):
+                return circuit, isf, "isf source %s: give instance.pins (two pin indices) or instance.pin (one)" % s.get("name")
+            s["nodes"] = "%s %s" % (nodes[pins[0]], nodes[pins[1]])
+            s["_subckt"] = inst["subckt"]
+    return circuit, isf, None
 
 
 def check_sources(sources, circuit, phases=32, devices=()):
@@ -279,6 +401,9 @@ def oscillator(request):
     mult_out = float(inputs.get("output_multiplier", 1))
     circuit = na.circuit_lines(deck_path)
     if isf is not None:
+        circuit, isf, error = resolve_instances(circuit, isf)
+        if error:
+            return na.failure(tool, error)
         error = check_devices(isf.get("devices", [])) or check_sources(
             isf.get("sources"), circuit, int(isf.get("phases", 32)), isf.get("devices", []))
         if error:
@@ -318,6 +443,8 @@ def oscillator(request):
     m["f_out_hz"] = {"value": f0 * mult_out, "unit": "Hz", "status": "measured"}
     m["amplitude_v"] = {"value": amp, "unit": "V", "status": "measured"}
     m["period_spread_rel"] = {"value": spread, "unit": None, "status": "measured"}
+    t90 = startup_t90(t, y, amp)
+    m["startup_t90_s"] = {"value": t90, "unit": "s", "status": "measured" if t90 is not None else "missing"}
     if spread > 1e-3:
         diagnostics.append({"severity": "warning", "source": "adapter", "message": (
             "the period changes by %.2g %% after settle_s: the oscillator is not in steady state; raise settle_s" % (100 * spread))})
@@ -325,7 +452,7 @@ def oscillator(request):
         diagnostics.append({"severity": "warning", "source": "adapter", "message": (
             "%.0f time steps per period: the zero crossings are coarse; use a smaller tstep_s" % (T / tstep))})
     result = {"f0_hz": f0, "f_out_hz": f0 * mult_out, "amplitude_v": amp, "period_spread_rel": spread,
-              "periods_measured": len(per)}
+              "periods_measured": len(per), "startup_t90_s": t90}
 
     # 2. ISF runs
     if isf is not None:
@@ -385,7 +512,11 @@ def oscillator(request):
                         body[i] = "%s %s %s %s" % (f[0], f[1], f[2], tri(sign * dl / w, td, w))
                     else:
                         a, b = s["nodes"].split()
-                        extra = ["Isimra_isf %s %s %s" % (a, b, tri(sign * dq / w, td, w))]
+                        line = "Isimra_isf %s %s %s" % (a, b, tri(sign * dq / w, td, w))
+                        if s.get("_subckt"):
+                            body.insert(subckt_block(body, s["_subckt"])[1], line)
+                        else:
+                            extra = [line]
                     name = "isf_%s_%02d_%s" % (s["name"], k, "p" if sign > 0 else "m")
                     jobs.append((work, root, name, deck_text(libs, body, settings, extra, tstep, tstop, probe, name + ".dat"),
                                  len(probe)))

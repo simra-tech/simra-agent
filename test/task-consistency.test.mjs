@@ -7,6 +7,8 @@
 //   det-cell-sg13g2/det_cell.spice
 //   det-cell-sg13g2-hard/det_cell.spice and tap.gds
 //   lna-sg13g2/lna_core.spice and em/<network>.s3p (see evals/lna-sg13g2/reference.mjs)
+//   pa-stage-sg13g2/pa_core.spice and em/<network>.s3p (see evals/pa-stage-sg13g2/reference.mjs)
+//   vco-sg13g2/vco_core.spice and em/vco_tank.s5p (see evals/vco-sg13g2/reference.mjs)
 // The task files simra.local.json must name an environment image with the PDK. A task without its reference
 // directory is reported as skipped: that check did not run.
 
@@ -34,7 +36,12 @@ async function agentRows(ws) {
 	return Object.fromEntries(verdict.rows.map((r) => [`${r.condition} ${r.requirement}`, { value: r.value ?? null, status: r.status }]));
 }
 
-function compare(agent, scorer) {
+/** The rows with one key format: a row without a condition is its requirement id alone (scorers write "null <id>" or "<id>"). */
+const norm = (rows) => Object.fromEntries(Object.entries(rows).map(([k, v]) => [k.replace(/^null /, ""), v]));
+
+function compare(agentRaw, scorerRaw) {
+	const agent = norm(agentRaw);
+	const scorer = norm(scorerRaw);
 	const diffs = [];
 	const keys = new Set([...Object.keys(agent), ...Object.keys(scorer)]);
 	for (const k of keys) {
@@ -101,3 +108,23 @@ test("lna-sg13g2: the agent check and the scorer give the same rows for the refe
 	const gate = Object.entries(agent).find(([k]) => k.includes("gate netlist"));
 	assert.ok(gate, "a netlist gate row");
 });
+
+/** A flat RF reference (evals/rf-reference.mjs): the agent check path in the reference root with the task requirements
+ * unchanged, against the verify function of the task scorer. */
+async function rfCase(t, task, core, firstEm, design) {
+	const s = setup(t, task, [core, firstEm]);
+	if (!s) return;
+	const { buildReference } = await import(`../evals/${task}/reference.mjs`);
+	await buildReference(s.ref, s.ws);
+	copyFileSync(join(evals, task, "requirements.json"), join(s.ws, "requirements.json"));
+	const text = readFileSync(join(s.ws, design), "utf8");
+	const agent = await agentRows(s.ws);
+	const { verify } = await import(`../evals/${task}/score.mjs`);
+	assert.deepEqual(compare(agent, scorerRows(await verify(text, s.verify, 5, s.ws))), []);
+}
+
+test("pa-stage-sg13g2: the agent check and the scorer give the same rows for the reference", { timeout: 7_200_000 }, (t) =>
+	rfCase(t, "pa-stage-sg13g2", "pa_core.spice", "em/pa_out.s3p", "pa_stage.spice"));
+
+test("vco-sg13g2: the agent check and the scorer give the same rows for the reference", { timeout: 7_200_000 }, (t) =>
+	rfCase(t, "vco-sg13g2", "vco_core.spice", "em/vco_tank.s5p", "vco.spice"));

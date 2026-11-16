@@ -19,6 +19,40 @@ class Helpers(unittest.TestCase):
             self.assertAlmostEqual(a, b, places=9)
         self.assertAlmostEqual(osc.interp([0, 1, 2], [0, 10, 0], 0.25), 2.5)
 
+    def test_startup_t90(self):
+        # a sine of 1 V whose amplitude grows linearly to 1 V at t = 10 (period 1), then stays
+        t = [k / 200.0 for k in range(0, 4001)]
+        y = [min(1.0, x / 10.0) * math.sin(2 * math.pi * x) for x in t]
+        t90 = osc.startup_t90(t, y, 1.0)
+        self.assertTrue(8.0 <= t90 <= 9.0, t90)
+        self.assertIsNone(osc.startup_t90(t, [0.1 * v for v in y], 2.0))
+
+    def test_resolve_instances(self):
+        d = tempfile.mkdtemp()
+        try:
+            with open(os.path.join(d, "core.spice"), "w") as fh:
+                fh.write(".subckt core a b\nxq1 a b e 0 npn13G2 Nx=2 selft=0\nr1 e 0 10\n.ends core\n")
+            circuit = ['.include "%s"' % os.path.join(d, "core.spice"), "xdut n1 n2 core", "v1 n1 0 1"]
+            isf = {"sources": [{"name": "ce", "instance": {"subckt": "core", "name": "xq1", "pins": [0, 2]}, "psd_a2_hz": 1e-22},
+                               {"name": "rb", "instance": {"subckt": "core", "name": "xq1", "pin": 1}, "psd_v2_hz": 1e-19}],
+                   "devices": [{"name": "q1", "instance": {"subckt": "core", "name": "xq1"},
+                                "sweep": [["c", 0, 1, 0.1], ["b", 0, 1, 0.1]]}]}
+            out, r, err = osc.resolve_instances(circuit, isf)
+            self.assertIsNone(err)
+            self.assertNotIn("include", out[0])  # the file that defines core is inlined
+            self.assertEqual(r["sources"][0]["nodes"], "a e")
+            self.assertEqual(r["sources"][0]["_subckt"], "core")
+            self.assertEqual(r["sources"][1]["vsource"], "Vsimra_isf_rb")
+            self.assertIn("Vsimra_isf_rb b simra_isf_rb 0", out)
+            self.assertIn("xq1 a simra_isf_rb e 0 npn13G2 Nx=2 selft=0", out)
+            self.assertIsNotNone(osc.series_line(out, "Vsimra_isf_rb"))
+            self.assertEqual(r["devices"][0]["lines"], ["xq1 c b 0 0 npn13G2 Nx=2 selft=0"])
+            self.assertIsNone(isf["sources"][0].get("nodes"))  # the input is not changed
+            _, _, err = osc.resolve_instances(circuit, {"sources": [{"name": "x", "instance": {"subckt": "core", "name": "xq9", "pins": [0, 1]}}]})
+            self.assertIn("no instance xq9", err)
+        finally:
+            shutil.rmtree(d)
+
     def test_triangle(self):
         self.assertEqual(osc.tri(2.0, 1e-9, 1e-12), "pwl(0 0 1e-09 0 1.001e-09 2 1.002e-09 0)")
 

@@ -358,7 +358,7 @@ export function inlineDeck(root: string, deck: string, seen = new Set<string>())
 }
 
 export interface Analysis {
-	kind: "op" | "dc" | "ac" | "sp" | "noise" | "tran" | "other";
+	kind: "op" | "dc" | "ac" | "sp" | "noise" | "tran" | "hb" | "other";
 	f_hz: [number, number] | null;
 	text: string;
 }
@@ -393,9 +393,10 @@ export interface FitBandFinding {
 /**
  * The fit-band check of one deck: each fitted model that the deck instantiates against each analysis of the deck.
  * Every analysis solves a DC point first, so a fit with uses.dc false fails in any deck. A transient analysis is not
- * checked (its spectrum is not a band); it is named in the reason.
+ * checked (its spectrum is not a band); it is named in the reason. extra: analyses that are not in the deck, for
+ * example the harmonic balance of an xyce hb experiment (band: the lowest tone to the highest harmonic).
  */
-export function fitBandFindings(root: string, deck: string, fits: FittedModel[]): FitBandFinding[] {
+export function fitBandFindings(root: string, deck: string, fits: FittedModel[], extra: Analysis[] = []): FitBandFinding[] {
 	const text = inlineDeck(root, deck);
 	const subs = subcircuits(text);
 	const used = new Map<string, FittedModel>();
@@ -404,7 +405,7 @@ export function fitBandFindings(root: string, deck: string, fits: FittedModel[])
 		if (fm) used.set(s.name, fm);
 	}
 	if (!used.size) return [];
-	const analyses = deckAnalyses(text);
+	const analyses = [...deckAnalyses(text), ...extra];
 	const out: FitBandFinding[] = [];
 	const tol = 1 + 1e-6;
 	for (const [name, fm] of used) {
@@ -413,7 +414,7 @@ export function fitBandFindings(root: string, deck: string, fits: FittedModel[])
 		if (!fm.dc && analyses.length) problems.push(`the fit is for AC only (uses.dc false), and every analysis solves a DC point`);
 		for (const a of analyses) {
 			if (a.kind === "tran") notes.push(`"${a.text}" not checked (a transient has no band)`);
-			if (!["ac", "sp", "noise"].includes(a.kind)) continue;
+			if (!["ac", "sp", "noise", "hb"].includes(a.kind)) continue;
 			if (!a.f_hz) {
 				problems.push(`"${a.text}": the sweep band cannot be read`);
 				continue;

@@ -61,10 +61,10 @@
         ]
       },
       "gap": "The npn13G2 card computes the transit time tf from the global temperature. A per-instance dtemp at a global 27 C leaves tf at its 27 C value.",
-      "symptom": "No message. At 125 C the device is too fast (optimistic), at -40 C too slow; tf scales with ((T + 273) / 300)^0.7.",
-      "workaround": "Set the global temperature (temp_c of the xyce adapter) to the corner. When a per-instance temperature is needed, scale vbic_tf in a copy of the corner section by ((T + 273) / 300)^0.7.",
+      "symptom": "With the global temperature at -40 C or 125 C, the HB of an HBT circuit often fails (DC point failed, or no HB Newton convergence) where 27 C converges. A per-instance dtemp alone gives no message but a wrong tf: at 125 C the device is too fast (optimistic), at -40 C too slow; tf scales with ((T + 273) / 300)^0.7.",
+      "workaround": "Use temperature_method dtemp_tf of the xyce hb operation (also hb_limits): a global 27 C, dtemp = T - 27 on every npn13G2 instance, and vbic_tf of a copy of the corner section scaled by ((T + 273) / 300)^0.7. The MIM capacitors and other devices stay at 27 C.",
       "status": "worked_around",
-      "evidence": "PDK file sg13g2_hbt_mod.lib (tf expression); found in a detector block of a reference design"
+      "evidence": "PDK file sg13g2_hbt_mod.lib (tf expression); found in a detector block of a reference design; a PA output stage task: global temperature fails at -40 C and 125 C (typ and corners), dtemp_tf converges at all four tested cases"
     },
     {
       "id": "xyce-sg13g2-hb-terminal-currents",

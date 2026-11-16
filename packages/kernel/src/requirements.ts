@@ -17,7 +17,7 @@
 // PDK facts.
 
 import { type ConnectionRow, connectionGate } from "./connections.ts";
-import { checkNetlist, fitBandFindings, fittedModels, type InstanceParamClass, type NetlistRules } from "./netlist.ts";
+import { type Analysis, checkNetlist, fitBandFindings, fittedModels, type InstanceParamClass, type NetlistRules } from "./netlist.ts";
 import { designTechnologyDirs, findPack } from "./packs.ts";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
@@ -84,9 +84,11 @@ export interface ConnectionsGate {
 export interface LimitsGate {
 	experiments?: string[];
 	technology?: string;
-	tran?: Record<string, { step_s: number; stop_s: number; start_s?: number }>;
+	tran?: Record<string, { step_s: number; stop_s: number; start_s?: number; dc?: "op" | "mean" }>;
 	/** Limits of the design (for example a minimum VCE); each cites an assumption of the file or gives a source. */
 	extra_limits?: { id: string; class: string; quantity: string; op: "<=" | ">="; limit: number; models?: string; source?: string; assumption?: string; description?: string; limit_source?: LimitSource }[];
+	/** Another value of a limit at the peak only (ngspice device_limits with tran), each with an assumption id. */
+	peak_overrides?: { id: string; limit: number; assumption: string; description?: string }[];
 }
 
 export interface StabilityGate {
@@ -176,8 +178,12 @@ export interface ExperimentTemplate {
 
 export interface RequirementsFile {
 	schema: typeof REQUIREMENTS_SCHEMA;
-	/** Each condition adds its inputs to the experiment inputs (a condition input replaces an input of the same name). */
-	conditions: Record<string, { description?: string; inputs?: Record<string, unknown>; assumptions?: string[] }>;
+	/**
+	 * Each condition adds its inputs to the experiment inputs (a condition input replaces an input of the same name).
+	 * experiment_inputs.<experiment> adds inputs for one experiment only, after inputs (for example the model libraries
+	 * of a second simulator).
+	 */
+	conditions: Record<string, { description?: string; inputs?: Record<string, unknown>; experiment_inputs?: Record<string, Record<string, unknown>>; assumptions?: string[] }>;
 	experiments: Record<string, ExperimentTemplate>;
 	requirements: Requirement[];
 	assumptions?: Record<string, Assumption>;
@@ -284,7 +290,10 @@ export function validateRequirements(file: RequirementsFile): string[] {
 		if (!e.adapter || !e.operation) errors.push(`experiment "${name}": adapter and operation are required`);
 		cites(`experiment "${name}"`, e.assumptions);
 	}
-	for (const [name, c] of Object.entries(conditions)) cites(`condition "${name}"`, c?.assumptions);
+	for (const [name, c] of Object.entries(conditions)) {
+		cites(`condition "${name}"`, c?.assumptions);
+		for (const e of Object.keys(c?.experiment_inputs ?? {})) if (!experiments[e]) errors.push(`condition "${name}": experiment_inputs.${e}: experiment "${e}" is not defined`);
+	}
 	const gate = file.gates?.stability;
 	for (const k of Object.keys(file.gates ?? {})) if (!["stability", "connections", "limits", "netlist"].includes(k)) errors.push(`gates.${k}: unknown gate; the gates are stability, connections, limits and netlist`);
 	const ng = file.gates?.netlist;
@@ -303,6 +312,11 @@ export function validateRequirements(file: RequirementsFile): string[] {
 				if (!(t && isNumber(t.step_s) && isNumber(t.stop_s) && t.step_s > 0 && t.step_s < t.stop_s && (t.start_s === undefined || (isNumber(t.start_s) && t.start_s >= 0 && t.start_s < t.stop_s)))) {
 					errors.push(`gates.limits.tran.${e}: give step_s < stop_s (and start_s < stop_s) in seconds`);
 				}
+				if (t && t.dc !== undefined && !["op", "mean"].includes(t.dc)) errors.push(`gates.limits.tran.${e}: dc is "op" or "mean"`);
+			}
+			for (const o of lg.peak_overrides ?? []) {
+				if (!o?.id || !isNumber(o.limit) || typeof o.assumption !== "string") errors.push(`gates.limits.peak_overrides "${o?.id}": id, limit and assumption are required`);
+				else if (!file.assumptions?.[o.assumption]) errors.push(`gates.limits.peak_overrides "${o.id}": assumption "${o.assumption}" is not defined`);
 			}
 			for (const l of lg.extra_limits ?? []) {
 				const w = `gates.limits.extra_limits "${l?.id}"`;
@@ -409,7 +423,8 @@ function substitute(value: unknown, condition: string): unknown {
 /** The inputs of one experiment at one condition (null: the template inputs only). */
 export function experimentInputs(file: RequirementsFile, experiment: string, condition: string | null): Record<string, unknown> {
 	if (condition === null) return { ...file.experiments[experiment].inputs };
-	const merged = { ...file.experiments[experiment].inputs, ...(file.conditions[condition].inputs ?? {}) };
+	const c = file.conditions[condition];
+	const merged = { ...file.experiments[experiment].inputs, ...(c.inputs ?? {}), ...(c.experiment_inputs?.[experiment] ?? {}) };
 	return substitute(merged, condition) as Record<string, unknown>;
 }
 
@@ -741,9 +756,20 @@ export function fitBandGateRows(file: RequirementsFile, root: string, experiment
 	const rows: VerdictRow[] = [];
 	for (const name of experiments) {
 		const t = file.experiments[name];
-		const deck = (t?.inputs as { deck?: unknown } | undefined)?.deck;
-		if (!t || t.operation !== "simulate" || !["ngspice", "xyce"].includes(t.adapter) || typeof deck !== "string" || deck.includes("{")) continue;
-		for (const f of fitBandFindings(root, deck, fits))
+		const inputs = (t?.inputs ?? {}) as { deck?: unknown; tones?: unknown; harmonics?: unknown };
+		const deck = inputs.deck;
+		const hb = t?.adapter === "xyce" && t.operation === "hb";
+		if (!t || (t.operation !== "simulate" && !hb) || !["ngspice", "xyce"].includes(t.adapter) || typeof deck !== "string" || deck.includes("{")) continue;
+		// harmonic balance: the band of the tones and their harmonics (default 25 per tone, as the xyce adapter)
+		const extra: Analysis[] = [];
+		if (hb) {
+			const tones = Array.isArray(inputs.tones) ? inputs.tones.filter(isNumber) : [];
+			const h = inputs.harmonics ?? 25;
+			const hs = tones.map((_, i) => (Array.isArray(h) ? Number(h[i]) : Number(h)));
+			const text = `hb tones ${tones.join(", ")} Hz, harmonics ${hs.join(", ")}`;
+			extra.push({ kind: "hb", f_hz: tones.length && hs.every((x) => x >= 1) ? [Math.min(...tones), Math.max(...tones.map((f, i) => f * hs[i]))] : null, text });
+		}
+		for (const f of fitBandFindings(root, deck, fits, extra))
 			rows.push({
 				requirement: `gate fit_band ${f.subckt}`, condition: null, measurement: `band of use of fit ${f.fit} in ${deck}`, op: "<=", limit: 0,
 				value: f.pass ? 0 : 1, unit: null, margin: f.pass ? 0 : -1, margin_rel: null, status: f.pass ? "pass" : "fail", experiment: null, reason: f.reason, at: null,
@@ -939,6 +965,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 			if (!hb) for (const k of ["deck", "libs", "params", "temp_c"]) if (all[k] !== undefined) inputs[k] = all[k];
 			if (!hb && lg?.tran?.[experiment]) inputs.tran = lg.tran[experiment];
 			if (lg?.extra_limits) inputs.extra_limits = lg.extra_limits;
+			if (!hb && lg?.peak_overrides) inputs.peak_overrides = lg.peak_overrides;
 			if (lg?.technology) inputs.technology = lg.technology;
 			const t = file.experiments[experiment];
 			const outcome = await runExperiment({
