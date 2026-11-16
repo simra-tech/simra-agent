@@ -55,5 +55,7 @@ copy(join(root, "node_modules/@earendil-works/pi-tui/native", os, "prebuilds", p
 // The adapters without their tests.
 copy(join(root, "adapters"), "adapters", (src) => !/\/(test_[^/]*\.py|fixtures|__pycache__)$/.test(src));
 copy(join(root, "technologies"), "technologies");
+// The workaround registry (simra workarounds, and the notes of the agent tools).
+copy(join(root, "workarounds"), "workarounds");
 for (const file of ["LICENSE", "NOTICE"]) copyFileSync(join(root, file), join(out, file));
 console.log(`built ${join(out, "simra")}`);

@@ -62,4 +62,6 @@ test("a malformed registry file is an error that names the file and the entry", 
 	assert.throws(() => loadWorkarounds([dir]), /does not match the file name/);
 	write({ schema: "simra.workarounds/0", simulator: "xyce", pdk: "*", versions: "7.10", entries: [{ ...entry, workaround: "" }] });
 	assert.throws(() => loadWorkarounds([dir]), /workaround is required/);
+	// A registry directory that does not exist is an error, not an empty registry.
+	assert.throws(() => loadWorkarounds([join(dir, "missing")]), /workaround registry directory .*missing does not exist/);
 });

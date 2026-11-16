@@ -32,12 +32,12 @@ export interface Workaround extends WorkaroundEntry {
 	file: string;
 }
 
-/** Every entry of the registry directories (default: the built-in one). Throws on a malformed file or a repeated id. */
+/** Every entry of the registry directories (default: the built-in one). Throws on a missing directory, a malformed file or a repeated id. */
 export function loadWorkarounds(dirs: string[] = [BUILTIN_WORKAROUND_DIR]): Workaround[] {
 	const out: Workaround[] = [];
 	const ids = new Set<string>();
 	for (const dir of dirs) {
-		if (!existsSync(dir)) continue;
+		if (!existsSync(dir)) throw new Error(`the workaround registry directory ${dir} does not exist: the installation is not complete (no known gaps and workarounds are available)`);
 		for (const sim of readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort()) {
 			for (const name of readdirSync(join(dir, sim)).filter((n) => n.endsWith(".json")).sort()) {
 				const file = join(dir, sim, name);

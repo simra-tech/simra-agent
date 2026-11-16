@@ -6,7 +6,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { connect } from "node:net";
@@ -15,6 +15,7 @@ import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { makePdf } from "../packages/kernel/test/pdf-fixture.ts";
+import { KERNEL_COMMANDS, loadWorkarounds, workaroundsFor } from "../packages/kernel/src/index.ts";
 import { SIMRA_PREAMBLE } from "../packages/pi-extension/index.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -190,6 +191,40 @@ const systemPrompt = (request) => {
 	const { content } = request.messages.find((m) => m.role === "system" || m.role === "developer");
 	return typeof content === "string" ? content : content.map((p) => p.text).join("");
 };
+
+test("every kernel command goes to the kernel", { skip }, (t) => {
+	const dir = tempDir(t, "commands");
+	assert.ok(KERNEL_COMMANDS.length >= 16);
+	for (const command of KERNEL_COMMANDS) {
+		// Without arguments a kernel command prints its result, the usage of the kernel (exit code 2) or an error of the
+		// kernel ("simra: ..."). pi would ask for a model: "No API key found" or "No models available".
+		const r = simra(t, dir, [command]);
+		const out = r.stdout + r.stderr;
+		assert.doesNotMatch(out, /API key|No models available/i, `simra ${command} went to pi: ${out}`);
+		assert.ok(r.status === 0 || (r.status === 2 && /^usage: simra run/.test(r.stderr)) || (r.status === 1 && /^simra: /.test(r.stderr)), `simra ${command}: exit ${r.status}: ${out}`);
+	}
+	const help = simra(t, dir, ["--help"]).stdout;
+	for (const command of KERNEL_COMMANDS) assert.match(help, new RegExp(`^  simra ${command}\\b`, "m"), `no help line for ${command}`);
+});
+
+test("the workaround registry comes from the folder of the binary", { skip }, (t) => {
+	const dir = tempDir(t, "registry");
+	const source = loadWorkarounds();
+	assert.ok(source.length >= 31, `the source registry has ${source.length} entries`);
+	const all = simra(t, dir, ["workarounds", "--pdk", "ihp-sg13g2"]);
+	assert.equal(all.status, 0, all.stderr);
+	const ids = [...all.stdout.matchAll(/^- (\S+) \(/gm)].map((m) => m[1]);
+	assert.deepEqual(ids.sort(), workaroundsFor({ pdk: "ihp-sg13g2" }, source).map((w) => w.id).sort());
+	// The registry files of the release are those of the source.
+	assert.equal(loadWorkarounds([join(dirname(realpathSync(binary)), "workarounds")]).length, source.length);
+	// A release without its registry: an error, not an empty list.
+	const copyDir = tempDir(t, "release");
+	cpSync(dirname(realpathSync(binary)), copyDir, { recursive: true });
+	rmSync(join(copyDir, "workarounds"), { recursive: true });
+	const broken = simra(t, dir, ["workarounds"], { bin: join(copyDir, "simra") });
+	assert.equal(broken.status, 1, broken.stdout);
+	assert.match(broken.stderr, /workaround registry directory .* does not exist/);
+});
 
 test("the extension loads its tools and its preamble", { skip, timeout: 60_000 }, async (t) => {
 	const [request] = await prompt(t, []);
