@@ -124,7 +124,10 @@ export function makeScorer({ here, design, tolerance }) {
 				.join("\n"),
 		);
 		const rows = Array.isArray(answer?.rows) ? answer.rows : [];
-		const keys = [...new Set([...reqRows, ...Object.keys(expected.rows ?? {}), ...Object.keys(verified?.rows ?? {})])];
+		// A "gate fit_band <network>" row names a fitted network of one design. The reference rows of this kind name the
+		// networks of the reference and do not apply to another design; these rows come from the verified run only.
+		const designRow = (k) => / gate fit_band /.test(k);
+		const keys = [...new Set([...reqRows, ...Object.keys(expected.rows ?? {}).filter((k) => !designRow(k)), ...Object.keys(verified?.rows ?? {})])];
 		report.max.requirements = keys.length;
 		let allPass = report.design === 2 && report.em_passive === 2;
 		for (const key of keys) {

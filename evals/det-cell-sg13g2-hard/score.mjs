@@ -80,7 +80,9 @@ export async function score(ws, expected = JSON.parse(readFileSync(join(here, "e
 			.join("\n"),
 	);
 	const rows = Array.isArray(answer?.rows) ? answer.rows : [];
-	const keys = [...new Set([...reqRows.map((r) => r.key), ...Object.keys(expected.rows ?? {}), ...Object.keys(verified?.rows ?? {})])];
+	// A "gate fit_band <network>" row of the reference names a network of the reference design; these rows come from the
+	// verified run of the design under test only.
+	const keys = [...new Set([...reqRows.map((r) => r.key), ...Object.keys(expected.rows ?? {}).filter((k) => !/ gate fit_band /.test(k)), ...Object.keys(verified?.rows ?? {})])];
 	report.max.requirements = keys.length;
 	let allPass = report.design === 2;
 	for (const key of keys) {

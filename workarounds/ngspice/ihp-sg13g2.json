@@ -96,6 +96,27 @@
       "workaround": "Set mm_ok=1 on each PDK device instance, or use the ngspice operation monte_carlo, which adds it and fails when no measurement varies over the seeds.",
       "status": "worked_around",
       "evidence": "PDK libraries *_mod_mismatch.lib (agauss(..., (mm_ok != 1 ? 0 : 1))); a 60-seed run of a detector cell gives offset sigma 3.9 mV with mm_ok=1"
+    },
+    {
+      "id": "ngspice-sg13g2-hbt-sw-nqs",
+      "applies_to": {
+        "device_classes": [
+          "hbt_npn13G2",
+          "hbt_npn13G2l",
+          "hbt_npn13G2v"
+        ],
+        "analyses": [
+          "ac",
+          "sp",
+          "noise",
+          "tran"
+        ]
+      },
+      "gap": "The ngspice HBT subcircuits of the PDK set sw_nqs=0 by default, so the excess-phase delay td = sw_nqs x 0.28 ps is off. The Xyce card has td on (no sw_nqs parameter).",
+      "symptom": "No message. At 122.5 GHz one Nx 4 device has |y21| 58.4 mS with the default, 61.4 mS with sw_nqs=1 and 60.9 mS in Xyce: ngspice and Xyce differ for the same netlist, and RF gain, phase, stability and oscillation frequency move.",
+      "workaround": "Set sw_nqs=1 on every HBT instance of an RF path in ngspice (instance parameter; no model card change). In a netlist gate, declare it: allow_params {\"npn13g2\": {\"sw_nqs\": [1]}} and, to enforce it, require_params {\"npn13g2\": {\"sw_nqs\": 1}}.",
+      "status": "worked_around",
+      "evidence": "PDK files sg13g2_hbt_mod.lib (ngspice: sw_nqs=0 and td = sw_nqs*2.80E-13; Xyce: td = 2.80E-13); one-device y-parameters at 122.5 GHz in a reference design (ngspice default, ngspice sw_nqs=1, Xyce); task references run with both settings (evals lna-sg13g2 and vco-sg13g2, expected_nqs1.json): LNA s22 at 122.5 GHz -10.18 to -8.84 dB, VCO phase noise at 1 MHz -87.96 to -89.89 dBc/Hz (tt) and -83.97 to -82.70 dBc/Hz (slow, 125 C)"
     }
   ]
 }

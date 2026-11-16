@@ -19,6 +19,7 @@ bench and the requirements. It gets no netlist and no result of the reference de
 | `score.mjs` | scorer (`evals/rf-score.mjs`) |
 | `reference.mjs` | reference run (`evals/rf-reference.mjs`): the reference core through the same bench and gates, writes `expected.json` |
 | `expected.json` | reference value of each row, with provenance |
+| `expected_nqs1.json` | the same reference with `sw_nqs=1` on every HBT (comparison only, not used by the scorer) |
 
 ## Deviations from the reference design
 
@@ -71,6 +72,27 @@ value; the reference passes it by 0.06 V. The fit-band gate gives no row here: a
 point of the fitted tank is checked by `uses.dc`. The design record of the reference reports band margin 1.95 GHz
 and −83.3 dBc/Hz (full ISF, all sources) at slow 125 °C; the values of this task differ by the bench (loads, kick,
 fitted tank) and by the partial source list.
+
+## Excess phase of the HBT model (sw_nqs)
+
+The ngspice HBT subcircuit of the PDK has `sw_nqs=0` by default, so the excess phase is off. The Xyce card always has
+it on (registry entry `ngspice-sg13g2-hbt-sw-nqs`). The reference values of this task use the default. This is a
+recorded assumption. The reference was run again with `sw_nqs=1` on every `npn13G2` instance (`expected_nqs1.json`,
+comparison only; simulated, ngspice 46):
+
+| Row | `sw_nqs=0` (of record) | `sw_nqs=1` |
+| --- | --- | --- |
+| `f_low`, tt / slow 125 °C / fast −40 °C | 58.28 / 57.01 / 59.09 GHz | 58.12 / 56.79 / 58.96 GHz |
+| `f_high`, same order | 64.99 / 62.46 / 66.68 GHz | 64.84 / 62.24 / 66.54 GHz |
+| `amp_v`, same order | 0.906 / 0.788 / 0.808 V | 0.935 / 0.810 / 0.826 V |
+| `t_start`, same order | 5.12 / 7.11 / 4.06 ns | 5.11 / 7.04 / 4.07 ns |
+| `pn_dev`, tt / slow 125 °C (≤ −83 dBc/Hz) | −87.96 / −83.97 dBc/Hz | −89.89 / −82.70 dBc/Hz, slow **fails** |
+| peak V<sub>CE</sub>, largest (≤ 2.5 V) | 2.442 V | 2.468 V |
+
+With the excess phase on, the `pn_dev` row at slow 125 °C fails by 0.30 dB, and the peak V<sub>CE</sub> margin falls
+to 0.03 V. The task stays at the default until a reference passes with `sw_nqs=1`; that work is not done. The netlist
+gate can require the setting (`require_params`) and allows it as a declared value only; other physics switches stay
+errors.
 
 ## Rows that the checks do not cover
 

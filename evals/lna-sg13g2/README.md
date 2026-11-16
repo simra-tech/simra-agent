@@ -24,6 +24,7 @@ network has S-parameters only.
 | `score.mjs` | scorer: device rules, the EM passive in the records, then the check of `requirements.json` through the kernel |
 | `reference.mjs` | reference run: the reference design through the same benches and gates, writes `expected.json` |
 | `expected.json` | reference value of each row, with provenance |
+| `expected_nqs1.json` | the same reference with `sw_nqs=1` on every HBT (comparison only, not used by the scorer) |
 
 ## Deviations from the reference design
 
@@ -61,6 +62,28 @@ band of use (no order meets 0.01 over the whole band); `lna_IS2` is fitted from 
 
 The test `test/task-consistency.test.mjs` runs this reference through the check path of the agent and through the
 scorer, and fails on any row difference (it needs the reference files; without them it is skipped).
+
+## Excess phase of the HBT model (sw_nqs)
+
+The ngspice HBT subcircuit of the PDK has `sw_nqs=0` by default, so the excess phase is off. The Xyce card always has
+it on. For one Nx 4 device at 122.5 GHz, y21 is 58.4 mS in ngspice with the default, 61.4 mS with `sw_nqs=1`, and
+60.9 mS in Xyce (registry entry `ngspice-sg13g2-hbt-sw-nqs`).
+
+The reference values of this task use the default (excess phase off). This is a recorded assumption. The reference
+was run again with `sw_nqs=1` on every `npn13G2` instance (`expected_nqs1.json`, comparison only; simulated, ngspice 46):
+
+| Row | `sw_nqs=0` (of record) | `sw_nqs=1` |
+| --- | --- | --- |
+| `gain` at tt (13 dB to 15 dB) | 13.31 dB | 13.08 dB |
+| `nf_db` at tt (≤ 6 dB) | 5.22 dB | 5.19 dB |
+| `s22` at tt (≤ −10 dB) | −10.18 dB | −8.84 dB, **fails** |
+| μ, smallest of five corners (> 1) | 1.0837 | 1.0896 |
+| supply current | unchanged | unchanged |
+
+With the excess phase on, the output match of the reference moves and the `s22` row fails by 1.16 dB. The task stays
+at the default until a reference with a new output match passes with `sw_nqs=1`; that work is not done. The netlist
+gate can require the setting (`require_params`) and allows it as a declared value only (`allow_params` with values);
+other physics switches stay errors.
 
 ## Scoring
 

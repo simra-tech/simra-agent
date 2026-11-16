@@ -41,6 +41,21 @@ experiment therefore uses `temperature_method: "dtemp_tf"` of the xyce adapter: 
 each HBT, and the transit time of the HBT corner section scaled to T (registry entry `xyce-sg13g2-hbt-dtemp`). The MIM
 capacitors stay at 27 °C in the harmonic balance. The S-parameter bench (ngspice) uses the global temperature.
 
+## Excess phase of the HBT model (sw_nqs)
+
+The two simulators do not use the same HBT model setting. The ngspice HBT subcircuit of the PDK has `sw_nqs=0` by
+default, so the excess phase is off. The Xyce card always has it on (the Xyce subcircuit has no `sw_nqs`
+parameter). For one Nx 4 device at 122.5 GHz, y21 is 58.4 mS in ngspice with the default, 61.4 mS in ngspice with
+`sw_nqs=1`, and 60.9 mS in Xyce (registry entry `ngspice-sg13g2-hbt-sw-nqs`).
+
+1. The harmonic-balance rows of this task (Xyce) include the excess phase.
+2. The S-parameter bench `sp.spice` (ngspice) for μ uses the default, so the stability gate runs without the excess
+   phase. The reference was run again on this bench with `sw_nqs=1` on both HBTs (simulated, ngspice 46): the
+   smallest μ is unchanged at each corner (1.0055 at tt, 1.0045 at fast), because the minimum is at 1 GHz, the
+   lower edge of the band. At 122 GHz μ goes from 1.639 to 1.687 (tt). The task keeps the default on this bench.
+   A different design can have its μ minimum at a high frequency; for such a design the setting can change the
+   gate result.
+
 ## Reference
 
 Every row passes (simulated, Xyce 7.10 and ngspice 46, step 8):

@@ -210,8 +210,11 @@ export interface NetlistRules {
 	fitted?: boolean;
 	/** At least this many fitted models with an openEMS record must be used by the block (default 0). */
 	em_passives_min?: number;
-	/** Instance parameters that the rules allow beyond the pack, by device: {"npn13g2": ["selft"]}. */
-	allow_params?: Record<string, string[]>;
+	/** Instance parameters that the rules allow beyond the pack, by device: {"npn13g2": ["selft"]}, or with the only
+	 * permitted values: {"npn13g2": {"sw_nqs": [1]}} (a named, declared setting; other values stay errors). */
+	allow_params?: Record<string, string[] | Record<string, number[]>>;
+	/** Instance parameters that every instance of a device must set to the value: {"npn13g2": {"sw_nqs": 1}}. */
+	require_params?: Record<string, Record<string, number>>;
 	/** The technology pack (default the pack of $PDK); used for the instance parameters of the devices. */
 	technology?: string;
 }
@@ -290,9 +293,18 @@ export function checkNetlist(text: string, rules: NetlistRules, opts: { classes?
 			const inst = Object.fromEntries(f.filter((x) => x.includes("=")).map((x) => [x.split("=")[0].toLowerCase(), x.slice(x.indexOf("=") + 1)]));
 			if (devices.has(name)) {
 				const cls = classOf(name);
-				const allowed = new Set([...(cls?.allowed ?? []), ...(cls?.allowed_per_device?.[name] ?? []), ...(rules.allow_params?.[name] ?? []).map((x) => x.toLowerCase())]);
+				const extra = rules.allow_params?.[name];
+				const values: Record<string, number[]> = extra && !Array.isArray(extra) ? Object.fromEntries(Object.entries(extra).map(([k, v]) => [k.toLowerCase(), v])) : {};
+				const required = Object.fromEntries(Object.entries(rules.require_params?.[name] ?? {}).map(([k, v]) => [k.toLowerCase(), v]));
+				const allowed = new Set([...(cls?.allowed ?? []), ...(cls?.allowed_per_device?.[name] ?? []), ...(Array.isArray(extra) ? extra : Object.keys(values)).map((x) => x.toLowerCase()), ...Object.keys(required)]);
+				for (const [p, want] of Object.entries(required)) {
+					if (inst[p] === undefined) err(line, `${f[0]}: ${name} needs ${p}=${want} (a required setting of the rules)`);
+					else if (spiceValue(inst[p], params) !== want) err(line, `${f[0]}: ${p}=${inst[p]} on ${name}: the rules require ${p}=${want}`);
+				}
 				for (const [p, v] of Object.entries(inst)) {
-					if (cls && !allowed.has(p)) {
+					if (values[p] && !values[p].includes(spiceValue(v, params))) {
+						err(line, `${f[0]}: ${p}=${v} on ${name}: the rules allow only ${p}=${values[p].join(" or ")}`);
+					} else if (cls && !allowed.has(p)) {
 						const what = cls.physics?.[p];
 						err(line, `${f[0]}: ${p}=${v} on ${name}: ${what ? `${what}; a parameter that changes the device physics` : "not an instance parameter that a design sets"} (allowed: ${[...allowed].join(", ")})`);
 					} else if (!Number.isFinite(spiceValue(v, params))) err(line, `${f[0]}: ${p}=${v} is not a number or an expression of .param values`);

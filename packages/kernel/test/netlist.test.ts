@@ -47,6 +47,24 @@ test("netlist: a physics parameter of a PDK device is rejected unless the rules 
 	assert.deepEqual(allowed.errors, []);
 });
 
+test("netlist: a declared setting (sw_nqs=1) is allowed with its value only, and can be required", (t) => {
+	const r = root(t);
+	const classes = instanceParamClasses(r, "ihp-sg13");
+	const rules = { ...RULES, allow_params: { npn13g2: { sw_nqs: [1] } }, require_params: { npn13g2: { sw_nqs: 1 } } };
+	const ok = ".subckt cell a b\nxq a b 0 0 npn13G2 Nx=2 sw_nqs=1\nr1 a b 10\n.ends\n";
+	assert.deepEqual(checkNetlist(ok, rules, { classes }).errors, []);
+	const zero = checkNetlist(ok.replace("sw_nqs=1", "sw_nqs=0"), rules, { classes }).errors.map((e) => e.message);
+	assert.ok(zero.some((m) => /the rules require sw_nqs=1/.test(m)) && zero.some((m) => /allow only sw_nqs=1/.test(m)), zero.join("; "));
+	const missing = checkNetlist(ok.replace(" sw_nqs=1", ""), rules, { classes }).errors.map((e) => e.message);
+	assert.deepEqual(missing, ["xq: npn13g2 needs sw_nqs=1 (a required setting of the rules)"]);
+	// another physics switch stays an error
+	const other = checkNetlist(ok.replace("sw_nqs=1", "sw_nqs=1 selft=0"), rules, { classes }).errors.map((e) => e.message);
+	assert.equal(other.length, 1);
+	assert.match(other[0], /selft=0 on npn13g2: .*a parameter that changes the device physics/);
+	// allowed but not required: absent is fine
+	assert.deepEqual(checkNetlist(ok.replace(" sw_nqs=1", ""), { ...RULES, allow_params: { npn13g2: { sw_nqs: [1] } } }, { classes }).errors, []);
+});
+
 test("netlist: pins, ideal elements, given subcircuits and sources", () => {
 	const text = ".subckt cell b a\nv1 a 0 1\nr1 a b 1k\nxl a b tm2_w6\n.ends\n.include x.lib\n";
 	const msgs = checkNetlist(text, RULES).errors.map((e) => e.message);

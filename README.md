@@ -1036,7 +1036,10 @@ the evaluation scorers use. The check adds one row (`gate netlist`, the count of
    (`ngspice.instance_params.<pdk>.classes`, taken from the PDK model cards; IHP SG13G2: HBT `Nx`, `Ny`, `m`; MIM `w`,
    `l`, `m`; resistors `w`, `l`, `b`, `m`; MOS `w`, `l`, `ng`, `m` and the diffusion geometry). A parameter that
    changes the device physics (for example `selft`, `dtemp`, `mm_ok`, `trise`) is an error with its meaning, unless
-   `allow_params` names it for that device.
+   `allow_params` names it for that device. `allow_params` can also give the only permitted values, as a named,
+   declared setting: `{"npn13g2": {"sw_nqs": [1]}}` (another value is an error). `require_params` makes a setting
+   necessary on every instance of the device: `{"npn13g2": {"sw_nqs": 1}}`. Example: in ngspice the IHP SG13G2 HBT has
+   the excess phase off by default (`sw_nqs=0`); the Xyce card has it on (registry `ngspice-sg13g2-hbt-sw-nqs`).
 2. Values may be numbers, numbers with a SPICE suffix, or `{expressions}` of `.param` values of the file.
 3. A block whose element lines equal a subcircuit of a completed `fit_to_spice` record (output unchanged) is a fitted
    model: its sources are allowed. `em_passives_min` counts the fitted models whose Touchstone input is an openEMS
