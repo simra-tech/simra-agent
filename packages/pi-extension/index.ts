@@ -40,6 +40,7 @@ import {
 	formatWorkarounds,
 	runPdk,
 	workaroundsFor,
+	answerConsistency,
 	emSParameters,
 	formatSPoints,
 	sParametersAt,
@@ -284,6 +285,13 @@ export function endGuardItems(cwd: string, deliverables: string[]): string[] {
 	} catch {
 		design = undefined;
 	}
+	const answer = deliverables.find((f) => /(^|\/)answer\.json$/.test(f));
+	if (answer && existsSync(join(root, answer)) && typeof design === "string") {
+		// the answer must belong to the final design file and its check (kernel answerConsistency)
+		const c = answerConsistency(root, answer, design);
+		for (const x of c.items) if (!items.includes(x)) items.push(x);
+		return items;
+	}
 	const designPath = typeof design === "string" ? join(root, design) : null;
 	if (designPath && existsSync(designPath) && statSync(designPath).mtimeMs > Date.parse(last.created_at)) {
 		items.push(`${design} changed after the last check (${last.id}). No check covers the final design.`);
@@ -513,7 +521,11 @@ export default function (pi: ExtensionAPI) {
 			};
 		});
 		pi.on("agent_settled", async (event, ctx) => {
-			record(ctx.cwd, { settled: { at: new Date().toISOString(), aborted: event.aborted, reentries, items: endGuardItems(ctx.cwd, deliverables) } });
+			const items = endGuardItems(ctx.cwd, deliverables);
+			// The end state: with items left after the re-entry the session ends as "inconsistent answer" (or "no answer").
+			const answer = deliverables.find((f) => /(^|\/)answer\.json$/.test(f));
+			const state = items.length === 0 ? "consistent" : answer && !existsSync(join(findRoot(ctx.cwd) ?? ctx.cwd, answer)) ? "no_answer" : "inconsistent_answer";
+			record(ctx.cwd, { settled: { at: new Date().toISOString(), aborted: event.aborted, reentries, items, end_state: state } });
 		});
 	}
 

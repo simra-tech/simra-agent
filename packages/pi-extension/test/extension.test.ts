@@ -4,11 +4,12 @@
 // image of page N that it renders first.
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
-import { validateRequirements } from "@simra-tech/kernel";
+import { answerConsistency, validateRequirements } from "@simra-tech/kernel";
 import { makePdf } from "../../kernel/test/pdf-fixture.ts";
 import extension, { endGuardItems, endGuardMessage, END_GUARD_TYPE, checkHints, leanContext, netlistsOf, readsOutputs, readPath, readsRecords, REQUIREMENTS_EXAMPLE, sessionClock } from "../index.ts";
 
@@ -465,13 +466,15 @@ test("end guard: one re-entry with the missing items, recorded; none when the de
 	assert.match(first.entries[0].content, /answer\.json does not exist/);
 	// The agent writes the file and a complete check; a second end gets no re-entry (bounded), and the trace has both.
 	writeFileSync(join(root, "answer.json"), "{}");
-	writeFileSync(join(check, "verdict.json"), verdict(Date.now() + 60_000, "completed"));
+	const sha = createHash("sha256").update(readFileSync(join(root, "vco.spice"))).digest("hex");
+	writeFileSync(join(check, "verdict.json"), JSON.stringify({ ...JSON.parse(verdict(Date.now() + 60_000, "completed")), design_file: { path: "vco.spice", sha256: sha }, rows: [] }));
 	assert.equal(await beforeSettle({ type: "agent_before_settle", entries: [], continue: false }, ctx), undefined);
 	await settled({ type: "agent_settled", aborted: false }, ctx);
 	const trace = JSON.parse(readFileSync(join(root, "simra", "end_guard.json"), "utf8"));
 	assert.equal(trace.reentry.items.length, 3);
 	assert.deepEqual(trace.settled.items, []);
 	assert.equal(trace.settled.reentries, 1);
+	assert.equal(trace.settled.end_state, "consistent");
 
 	// Still incomplete at the second end: no second re-entry.
 	rmSync(join(root, "answer.json"));
@@ -482,4 +485,65 @@ test("end guard: one re-entry with the missing items, recorded; none when the de
 	const off = new Map<string, any>();
 	extension({ registerTool: () => {}, registerCommand: () => {}, on: (name: string, h: any) => off.set(name, h) } as any);
 	assert.equal(off.has("agent_before_settle"), false);
+});
+
+test("end guard: the answer must belong to the final design and its check, else the session ends as inconsistent answer", async (t) => {
+	const root = mkdtempSync(join(tmpdir(), "simra-answer-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	writeFileSync(join(root, "simra.config.json"), "{}");
+	writeFileSync(join(root, "requirements.json"), JSON.stringify({ gates: { netlist: { file: "vco.spice" } } }));
+	writeFileSync(join(root, "vco.spice"), "* v1\n");
+	const hash = () => createHash("sha256").update(readFileSync(join(root, "vco.spice"))).digest("hex");
+	const rows = [
+		{ requirement: "f_low", condition: "tt", value: 57630481831.4, status: "pass" },
+		{ requirement: "pn_dev", condition: "slow_hot", value: -88.1948, status: "pass" },
+		{ requirement: "gate netlist", condition: null, value: 0, status: "pass", gate: { name: "netlist" } },
+	];
+	const writeCheck = (id: string, sha: string, r = rows, status = "completed") => {
+		mkdirSync(join(root, "simra", "checks", id), { recursive: true });
+		writeFileSync(join(root, "simra", "checks", id, "verdict.json"), JSON.stringify({ id, created_at: new Date().toISOString(), design_file: { path: "vco.spice", sha256: sha }, experiments: [{ experiment: "osc_low", condition: "tt", status }], rows: r }));
+	};
+	const answer = (a: object) => writeFileSync(join(root, "answer.json"), JSON.stringify(a));
+	const good = { meets_spec: true, rows: [{ corner: "tt", requirement: "f_low", value: 5.763e10 }, { corner: "slow_hot", requirement: "pn_dev", value: -88.19 }] };
+	writeCheck("20261116-120000-aaaaaa", hash());
+	answer(good);
+	assert.deepEqual(answerConsistency(root, "answer.json", "vco.spice").items, []);
+	assert.equal(answerConsistency(root, "answer.json", "vco.spice").check, "20261116-120000-aaaaaa");
+
+	// The pilot of step 9: the agent wrote the answer, changed the design, ran no complete check of it.
+	const later = new Date(Date.now() + 5_000);
+	writeFileSync(join(root, "vco.spice"), "* v2\n");
+	utimesSync(join(root, "vco.spice"), later, later);
+	let c = answerConsistency(root, "answer.json", "vco.spice");
+	assert.equal(c.consistent, false);
+	assert.match(c.items[0], /answer\.json is older than vco\.spice/);
+	assert.match(c.items[1], /No check of the final vco\.spice is recorded \(the last check, 20261116-120000-aaaaaa, was of another version/);
+
+	// A check of v2 with other values, and an answer that still has the values of v1.
+	writeCheck("20261116-130000-bbbbbb", hash(), [{ ...rows[0], value: 60.9e9, status: "fail" }, rows[1], rows[2]]);
+	const after = new Date(Date.now() + 10_000);
+	answer(good);
+	utimesSync(join(root, "answer.json"), after, after);
+	c = answerConsistency(root, "answer.json", "vco.spice");
+	assert.equal(c.check, "20261116-130000-bbbbbb");
+	assert.equal(c.items.length, 2);
+	assert.match(c.items[0], /1 value of answer\.json differ.*tt f_low: 57630000000 in answer\.json, 60900000000 in the check/);
+	assert.match(c.items[1], /meets_spec is true in answer\.json; in the check of the final design \(20261116-130000-bbbbbb\) not every row passes/);
+
+	// A check of the final design with a run that did not complete.
+	writeCheck("20261116-140000-cccccc", hash(), rows, "failed");
+	assert.match(answerConsistency(root, "answer.json", "vco.spice").items[0], /has 1 run that did not complete \(first: osc_low at tt\)/);
+
+	// The stub session: the guard names the items once, and the end is recorded as inconsistent_answer.
+	const handlers = new Map<string, any>();
+	process.env.SIMRA_DELIVERABLES = JSON.stringify(["vco.spice", "answer.json"]);
+	t.after(() => delete process.env.SIMRA_DELIVERABLES);
+	extension({ registerTool: () => {}, registerCommand: () => {}, on: (name: string, h: any) => handlers.set(name, h) } as any);
+	const first = await handlers.get("agent_before_settle")({ type: "agent_before_settle", entries: [], continue: false }, { cwd: root });
+	assert.equal(first.continue, true);
+	assert.match(first.entries[0].content, /did not complete/);
+	await handlers.get("agent_settled")({ type: "agent_settled", aborted: false }, { cwd: root });
+	const trace = JSON.parse(readFileSync(join(root, "simra", "end_guard.json"), "utf8"));
+	assert.equal(trace.settled.end_state, "inconsistent_answer");
+	assert.ok(trace.settled.items.length >= 1);
 });

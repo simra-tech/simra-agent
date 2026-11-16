@@ -51,7 +51,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { connect, createServer as createNetServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { loadConfig } from "@simra-tech/kernel";
+import { answerConsistency, loadConfig } from "@simra-tech/kernel";
 import { containerImageId, containerUser } from "../packages/kernel/src/environments.ts";
 
 const repo = new URL("../", import.meta.url).pathname;
@@ -446,6 +446,24 @@ export function endGuardRecord(ws) {
 	}
 }
 
+/**
+ * The end state of a session, from the workspace after the session (also after a hard end, when the agent had no
+ * last turn): "consistent", "inconsistent_answer" (the answer file does not belong to the final design and its last
+ * check; see answerConsistency) or "no_answer". null when the task names no answer file and design file.
+ */
+export function endState(ws, task) {
+	const answer = (task.deliverables ?? []).find((f) => /(^|\/)answer\.json$/.test(f));
+	if (!answer) return null;
+	let design = null;
+	try {
+		design = JSON.parse(readFileSync(join(ws, "requirements.json"), "utf8")).gates?.netlist?.file ?? null;
+	} catch {
+		design = null;
+	}
+	const c = answerConsistency(ws, answer, design);
+	return { state: !existsSync(join(ws, answer)) ? "no_answer" : c.consistent ? "consistent" : "inconsistent_answer", ...c };
+}
+
 async function main() {
 	const args = process.argv.slice(2);
 	const taskDir = resolve(args[0] ?? "");
@@ -558,12 +576,13 @@ async function main() {
 		sandbox: { engine, image: env.image, image_id: imageId, network: "none", read_only_root: true, mounts: { [WORK]: "ws", [STATE]: "state", [PROXY_DIR]: "proxy", ...(cmd.codex ? { [CODEX_DIR]: "codex package (read-only)" } : {}), ...(companion ? { [COMPANION_DIR]: "companion (read-only)" } : {}) } },
 		contamination,
 		end_guard: endGuardRecord(ws),
+		end_state: endState(ws, task),
 		score: await score(ws, undefined, WORK),
 	};
 	writeFileSync(join(run, "score.json"), `${JSON.stringify(summary, null, 2)}\n`);
 	const s = summary.score;
 	const parts = Object.entries(s.max).map(([k, max]) => `${k} ${s[k]}/${max}`);
-	console.log(`${run}\n${contamination.length ? `CONTAMINATED (${contamination.join(", ")}) ` : ""}${task.name} ${arm}: ${parts.join(", ")}, ${summary.model_calls} model calls, ${summary.duration_s} s`);
+	console.log(`${run}\n${contamination.length ? `CONTAMINATED (${contamination.join(", ")}) ` : ""}${task.name} ${arm}: ${parts.join(", ")}, ${summary.model_calls} model calls, ${summary.duration_s} s${summary.end_state ? `, end ${summary.end_state.state}` : ""}`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) await main();

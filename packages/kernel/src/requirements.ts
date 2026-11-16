@@ -251,6 +251,8 @@ export interface VerdictRecord {
 	requirements_file: { path: string; sha256: string };
 	selection: { requirements: string[] | null; conditions: string[] | null };
 	design: ExperimentRecord["design"];
+	/** The design file of the netlist gate (gates.netlist.file) with its hash at the start of the check, or null. */
+	design_file?: { path: string; sha256: string } | null;
 	simra: { kernel_version: string };
 	/** Each experiment of the check, with its error and warning diagnostics (for example a design error with its file and line). */
 	experiments: { id: string; experiment: string; condition: string | null; status: ExecutionStatus; diagnostics: Diagnostic[] }[];
@@ -977,6 +979,9 @@ export function loadRequirements(root: string, file = REQUIREMENTS_FILE): { path
 export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: string; verdict: VerdictRecord }> {
 	const root = resolve(opts.root);
 	const { path, file } = loadRequirements(root, opts.file);
+	// The design file at the start of the check: an answer is consistent only with a check of the final file.
+	const designRel = file.gates?.netlist?.file;
+	const designFile = typeof designRel === "string" && existsSync(join(root, designRel)) ? { path: designRel, sha256: sha256File(join(root, designRel)) } : null;
 	const known = new Set(file.requirements.map((r) => r.id));
 	for (const id of opts.requirements ?? []) if (!known.has(id)) throw new Error(`requirement "${id}" is not defined`);
 	for (const c of opts.conditions ?? []) if (!file.conditions[c]) throw new Error(`condition "${c}" is not defined`);
@@ -1130,6 +1135,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 		requirements_file: { path: relative(root, path), sha256: sha256File(path) },
 		selection: { requirements: opts.requirements ?? null, conditions: opts.conditions ?? null },
 		design: gitState(root),
+		design_file: designFile,
 		simra: { kernel_version: KERNEL_VERSION },
 		experiments,
 		rows,

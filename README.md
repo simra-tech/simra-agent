@@ -630,11 +630,21 @@ Set `SIMRA_DELIVERABLES` to a JSON list of file paths (relative to the working d
 2. With a `requirements.json` in the design root: a `check_requirements` run is recorded.
 3. The last check has no run that did not complete (an aborted simulation gives rows that are not run).
 4. The design file of the netlist gate (`gates.netlist.file`) did not change after the last check.
+5. When the list has an `answer.json`: the answer belongs to the final design. The answer file is not older than the
+   design file; a check of the final design file exists (each check records the hash of the file at its start,
+   `design_file` of `verdict.json`); that check completed every run; each value of the answer equals the value of
+   the row of that check (0.2 % relative); and `meets_spec` equals "every row of that check passes" (kernel
+   `answerConsistency`).
 
 If an item fails, the session gets one more turn with a message that names each missing item. This occurs one time
 per session. The event is a custom message of type `simra-end-guard` in the session, and the file
 `simra/end_guard.json` of the design root records the items at the re-entry and the items at the end. The eval runner
 sets the variable from `deliverables` of `task.json` and copies the record into `score.json` (`end_guard`).
+
+The end state of a session is `consistent`, `inconsistent_answer` (items of rule 5 remain after the re-entry) or
+`no_answer`. The extension records it at the end (`settled.end_state`). The eval runner computes it again from the
+workspace after the session, so that a session that the time limit stops (no last turn) also has one
+(`end_state` in `score.json`, with the items). The end state does not change the points of the scorer.
 
 ## Operating point
 
@@ -725,6 +735,17 @@ The operation `oscillator` of the ngspice adapter gives the steady-state frequen
    identical sources by symmetry.
    `flicker: {device, current, kf, af, bf}` on a source adds flicker noise S = kf |i|^af / df^bf by the DC term of the
    ISF: L(df) = mult x 1/2 x (f0/df)^2 x mean(ISF x |i|^(af/2))^2 x kf / df^bf.
+   `thermal_ohm: R` on a source gives S = 4 k T / R (a current source) or 4 k T R (a series source), with T from
+   `temp_c` of the condition, not a fixed 300 K.
+   `isf.quasi_static: [{source, step_a}]`: the slow path of the flicker current of a source. The ISF reads the phase
+   35 to 45 periods after the injection, so a path with nanosecond time constants (for example the base current
+   through the base bias resistors) is only partly in it. Two more transients with a DC current of +step_a and
+   −step_a (default 1 µA) between the nodes of the source give K = (f(+) − f(−)) / (2 step_a) in Hz/A, and
+   L_qs(df) = mult x 1/2 x K^2 x kf x mean(|i|^(af/2))^2 / df^bf / df^2. The flicker term of the source is the larger
+   of the ISF term and L_qs (the sum would count the common part twice).
+   `terminal: {current: vector}` on a device checks its conduction table: the mean table current over the phases
+   must equal the mean terminal current of the reference run over whole periods within `isf.table_tol` (default
+   10 %); the charge currents have no mean. A table made at another corner or temperature fails the check.
 3. For each source and each of `phases` phases, two runs inject +q and -q with a short triangle pulse. The shift of
    the output zero crossings in `window_periods` (default 35 to 45 periods after the injection) gives the ISF. Then
    L(df) = mult x 1/2 x (f0/df)^2 x mean(ISF^2 x S) for each source, and the total is the sum.
@@ -740,6 +761,14 @@ The operation `oscillator` of the ngspice adapter gives the steady-state frequen
 5. `output_multiplier` gives L after an ideal frequency multiplier (+20 log10 of it). The measurements are
    `l_<offset>_hz_dbc`, for example `l_1e+06_hz_dbc`, and `l_white_<offset>_hz_dbc` when a source has flicker.
    `work/oscillator.json` has the ISF, the PSD, the conduction currents and L of each source.
+6. Start check (`start_check`, default on; `false` turns it off; `{factor, start_v}` changes it). An oscillator that
+   does not start uses the full `ref_stop_s` of each run. So the reference run stops early when the output does not
+   grow: at `settle_s`/2 and at 3 `settle_s`/4 the operation compares the amplitude (half the peak-to-peak output)
+   of two windows of `settle_s`/8. When the later amplitude is below `factor` (default 0.9) times the earlier one
+   and below `start_v` (default 0.05 V), or below 1 µV, the run stops. The response is then failed with "the oscillator does not start", the time and
+   both values, and the measurement `start_check_stop_s`. No ISF run starts. The test `StartCheck` of
+   [adapters/ngspice/test_oscillator.py](adapters/ngspice/test_oscillator.py) runs an LC oscillator that decays (it
+   stops at 4 ns), one that starts slowly and one that starts (both run to the end).
 
 AM-to-PM conversion after the oscillator is not included. The test
 [test/ngspice-oscillator.test.mjs](test/ngspice-oscillator.test.mjs) uses an LC oscillator with a limiting negative
