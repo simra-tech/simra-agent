@@ -1133,6 +1133,11 @@ temperature finding: the row passes, and its reason gives the differences. The t
 the reference temperature and a different temperature dependence (ihp-sg13g2: registry entry
 `xyce-sg13g2-hbt-temperature`). List the corner conditions of the task in `conditions`, not only the typical one.
 
+A y difference at a frequency below a few hundred MHz can come from the self-heating network of the HBT card. In
+ngspice the AC self-heating term of npn13G2 has the wrong sign (registry `ngspice-sg13g2-hbt-selft-ac`): Re(y22) at
+1 kHz is −291.8 µS against a DC slope dIc/dVce of +453 µS; Xyce gives +450.2 µS, equal to its DC slope (simulated,
+Nx 1, 2.03 mA, VCE 1.2 V). With `selft=0` the two simulators agree. RF frequencies are not affected.
+
 ### Limit sources
 
 A requirement or an extra limit can carry `limit_source`: `{ "kind": "specification" | "pdk" | "reference_design" |
