@@ -1136,7 +1136,8 @@ the reference temperature and a different temperature dependence (ihp-sg13g2: re
 A y difference at a frequency below a few hundred MHz can come from the self-heating network of the HBT card. In
 ngspice the AC self-heating term of npn13G2 has the wrong sign (registry `ngspice-sg13g2-hbt-selft-ac`): Re(y22) at
 1 kHz is −291.8 µS against a DC slope dIc/dVce of +453 µS; Xyce gives +450.2 µS, equal to its DC slope (simulated,
-Nx 1, 2.03 mA, VCE 1.2 V). With `selft=0` the two simulators agree. RF frequencies are not affected.
+Nx 1, 2.03 mA, VCE 1.2 V). With `selft=0` the two simulators agree, but the DC point moves, so `selft=0` is not a
+fix. RF frequencies are not affected.
 
 ### Limit sources
 
