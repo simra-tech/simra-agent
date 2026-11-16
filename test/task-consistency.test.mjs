@@ -39,7 +39,12 @@ async function agentRows(ws) {
 /** The rows with one key format: a row without a condition is its requirement id alone (scorers write "null <id>" or "<id>"). */
 const norm = (rows) => Object.fromEntries(Object.entries(rows).map(([k, v]) => [k.replace(/^null /, ""), v]));
 
-function compare(agentRaw, scorerRaw) {
+/**
+ * abs: {row key: tolerance} for rows of an experiment that does not repeat to the last digit. openEMS tests its end
+ * criterion at intervals of wall time, so the last timestep and the S-parameters depend on the load of the machine
+ * (seen: S21 of the tap -0.20713 dB against -0.20460 dB in two runs of the same layout).
+ */
+function compare(agentRaw, scorerRaw, abs = {}) {
 	const agent = norm(agentRaw);
 	const scorer = norm(scorerRaw);
 	const diffs = [];
@@ -49,7 +54,7 @@ function compare(agentRaw, scorerRaw) {
 		const s = scorer[k];
 		if (!a || !s) diffs.push(`${k}: only in the ${a ? "agent check" : "scorer"}`);
 		else if (a.status !== s.status) diffs.push(`${k}: status ${a.status} (agent) against ${s.status} (scorer)`);
-		else if (a.value !== s.value && !(typeof a.value === "number" && typeof s.value === "number" && Math.abs(a.value - s.value) <= 1e-9 * Math.max(Math.abs(a.value), Math.abs(s.value))))
+		else if (a.value !== s.value && !(typeof a.value === "number" && typeof s.value === "number" && Math.abs(a.value - s.value) <= Math.max(abs[k] ?? 0, 1e-9 * Math.max(Math.abs(a.value), Math.abs(s.value)))))
 			diffs.push(`${k}: value ${a.value} (agent) against ${s.value} (scorer)`);
 	}
 	return diffs;
@@ -88,7 +93,7 @@ test("det-cell-sg13g2-hard: the agent check and the scorer give the same rows fo
 	writeFileSync(join(s.ws, "det_cell.spice"), text);
 	copyFileSync(join(s.ref, "tap.gds"), join(s.ws, "tap.gds"));
 	const { verify } = await import("../evals/det-cell-sg13g2-hard/score.mjs");
-	const diffs = compare(await agentRows(s.ws), scorerRows(await verify(join(evals, "det-cell-sg13g2-hard"), text, s.verify, join(s.ref, "tap.gds"))));
+	const diffs = compare(await agentRows(s.ws), scorerRows(await verify(join(evals, "det-cell-sg13g2-hard"), text, s.verify, join(s.ref, "tap.gds"))), { tap_s21: 0.01, tap_s31: 0.01 });
 	assert.deepEqual(diffs, []);
 });
 

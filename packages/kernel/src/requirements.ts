@@ -105,6 +105,10 @@ export interface DeviceCheckGate {
 	devices: { name: string; cell: string; params?: Record<string, number>; pins: string[]; bias_v: [number, number]; ngspice_params?: Record<string, number>; xyce_params?: Record<string, number> }[];
 	freqs_hz: number[];
 	tolerance?: { dc_rel?: number; y_rel?: number };
+	/** The temperature at which the two model cards are expected to agree (default 27). At a condition with another
+	 * temperature the check runs both; a difference only at the temperature of the condition is a finding in the reason
+	 * of the row, not a failure. */
+	reference_temp_c?: number;
 	environment?: string;
 }
 
@@ -768,7 +772,9 @@ export function deviceCheckGateRows(runs: { device: string; condition: string; i
 		}
 		const found = run.result.diagnostics.filter((d) => d.severity === "warning" && d.message.startsWith("finding: ")).map((d) => d.message.slice(9));
 		const worst = `largest difference: DC ${(100 * (m.dc_rel_max?.value ?? 0)).toFixed(2)} %, y ${(100 * (m.y_rel_max?.value ?? 0)).toFixed(2)} %`;
-		const reason = n > 0 ? `${found.slice(0, 2).join("; ")}${found.length > 2 ? `; and ${found.length - 2} more` : ""}; the simulators do not agree for this device (see the workaround registry of the PDK)` : worst;
+		const atTemp = run.result.diagnostics.filter((d) => d.severity === "warning" && d.message.startsWith("temperature finding: ")).map((d) => d.message.slice(21));
+		const tempNote = atTemp.length ? `; ${atTemp.length} temperature finding${atTemp.length === 1 ? "" : "s"} (the simulators agree at the reference temperature, so this is a finding and not an error): ${atTemp.slice(0, 2).join("; ")}${atTemp.length > 2 ? `; and ${atTemp.length - 2} more` : ""}` : "";
+		const reason = n > 0 ? `${found.slice(0, 2).join("; ")}${found.length > 2 ? `; and ${found.length - 2} more` : ""}; the simulators do not agree for this device (see the workaround registry of the PDK)` : `${worst}${tempNote}`;
 		return { ...base, value: n, margin: -n, status: n > 0 ? "fail" : "pass", reason } as VerdictRow;
 	});
 }
@@ -1074,7 +1080,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 					xyce_libs: xy.libs,
 					ngspice_params: { ...required, ...(d.ngspice_params ?? {}) },
 					...(d.xyce_params ? { xyce_params: d.xyce_params } : {}),
-					...(ng.temp_c !== undefined ? { temp_c: ng.temp_c } : {}),
+					...(ng.temp_c !== undefined ? { temp_c: ng.temp_c, reference_temp_c: dgate!.reference_temp_c ?? 27 } : {}),
 					...(dgate!.tolerance ? { tolerance: dgate!.tolerance } : {}),
 				};
 				const outcome = await runExperiment({ root, adapter: "xyce", operation: "device_crosscheck", inputs, environment: dgate!.environment ?? file.experiments[dgate!.xyce_experiment].environment, purpose: `check ${id}: gate device_check ${d.name} at ${condition}`, signal: opts.signal });

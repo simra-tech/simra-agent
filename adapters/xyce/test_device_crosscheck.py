@@ -21,6 +21,20 @@ class InputsAndDecks(unittest.TestCase):
             _, error = dc.check_inputs(dict(INPUTS, **bad))
             self.assertIsNotNone(error, bad)
 
+    def test_reference_temperature(self):
+        spec, _ = dc.check_inputs(dict(INPUTS, temp_c=125, reference_temp_c=27))
+        self.assertEqual((spec["temp"], spec["ref_temp"]), (125, 27))
+        # The same temperature twice is one run.
+        self.assertIsNone(dc.check_inputs(dict(INPUTS, temp_c=27, reference_temp_c=27))[0]["ref_temp"])
+        self.assertIsNone(dc.check_inputs(INPUTS)[0]["ref_temp"])
+        self.assertIsNotNone(dc.check_inputs(dict(INPUTS, reference_temp_c="27"))[1])
+        # The reference run has its own files.
+        ref = dict(spec, temp=27)
+        self.assertIn("wrdata ng_ref_op.dat", dc.ngspice_deck(ref, [("m.lib", "hbt_typ")], "_ref"))
+        self.assertIn(".temp 27", dc.ngspice_deck(ref, [("m.lib", "hbt_typ")], "_ref"))
+        self.assertIn("file=xy_ref_d1.csv", dc.xyce_deck(ref, [("m.lib", "hbt_typ")], 1, "_ref"))
+        self.assertIn(".options device temp=125", dc.xyce_deck(spec, [("m.lib", "hbt_typ")], 0))
+
     def test_the_setting_of_one_simulator_goes_to_its_deck_only(self):
         spec, _ = dc.check_inputs(INPUTS)
         ng = dc.ngspice_deck(spec, [("/pdk/hbt.lib", "hbt_typ")])

@@ -80,6 +80,10 @@
     "tt gate limits hbt_vbe_max peak": 1.0384157867532362,
     "null gate netlist": 0,
     "tt gate device_check npn13G2_nx8": 0,
+    "slow_hot gate device_check npn13G2_nx8": 0,
+    "slow_cold gate device_check npn13G2_nx8": 0,
+    "fast_hot gate device_check npn13G2_nx8": 0,
+    "fast_cold gate device_check npn13G2_nx8": 0,
     "null gate fit_band pa_isb": 0,
     "null gate fit_band pa_out": 0
   }

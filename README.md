@@ -1098,6 +1098,12 @@ per terminal; `bias_v` is the DC voltage of port 1 and of port 2. The row `gate 
 of findings (a DC current or a y-parameter that differs by more than the tolerance); it passes with 0. A selection
 of requirements leaves the gate out. The gate does not say which simulator is right.
 
+At a condition with a temperature other than `reference_temp_c` (default 27) the check runs at both temperatures.
+A difference at the reference temperature fails the row. A difference only at the temperature of the condition is a
+temperature finding: the row passes, and its reason gives the differences. The two cards then have the same model at
+the reference temperature and a different temperature dependence (ihp-sg13g2: registry entry
+`xyce-sg13g2-hbt-temperature`). List the corner conditions of the task in `conditions`, not only the typical one.
+
 ### Limit sources
 
 A requirement or an extra limit can carry `limit_source`: `{ "kind": "specification" | "pdk" | "reference_design" |

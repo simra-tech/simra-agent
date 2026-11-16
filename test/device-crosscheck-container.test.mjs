@@ -64,4 +64,15 @@ test("device_crosscheck: npn13G2 of ihp-sg13g2, the excess phase default is a fi
 	assert.equal(nqs.status, "completed", why(nqs));
 	assert.equal(nqs.measurements.findings.value, 0, why(nqs));
 	assert.ok(nqs.measurements.y_rel_max.value < 0.02);
+	assert.equal(nqs.measurements.temperature_findings, undefined, "no reference temperature, no temperature findings");
+
+	// At 125 C with the reference temperature 27 C: the cards agree at 27 C, so a difference at 125 C is a temperature
+	// finding and is not counted in findings.
+	const hot = (await runExperiment({ root, adapter: "xyce", operation: "device_crosscheck", environment: "eda", inputs: inputs({ ngspice_params: { sw_nqs: 1 }, temp_c: 125, reference_temp_c: 27 }) })).result;
+	assert.equal(hot.status, "completed", why(hot));
+	assert.equal(hot.measurements.findings.value, 0, why(hot));
+	assert.ok(hot.measurements.ref_y_rel_max.value < 0.02 && hot.measurements.ref_dc_rel_max.value < 0.02);
+	assert.equal(hot.measurements.temperature_findings.value, hot.diagnostics.filter((d) => /^temperature finding: /.test(d.message)).length);
+	t.diagnostic(`npn13G2 Nx 4 at 125 C, sw_nqs=1: DC difference ${(100 * hot.measurements.dc_rel_max.value).toFixed(2)} %, y difference ${(100 * hot.measurements.y_rel_max.value).toFixed(2)} %, ${hot.measurements.temperature_findings.value} temperature findings`);
+	for (const d of hot.diagnostics.filter((x) => /^temperature finding: /.test(x.message))) t.diagnostic(d.message);
 });

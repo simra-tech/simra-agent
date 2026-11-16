@@ -50,16 +50,32 @@ The two simulators do not use the same default of the HBT model. The ngspice HBT
 
 1. The netlist gate requires `sw_nqs=1` on every `npn13G2` instance. The S-parameter bench (ngspice) then has the
    excess phase, as the harmonic balance (Xyce) has. Xyce accepts the parameter on the instance.
-2. The gate `device_check` runs one `npn13G2` Nx 8 in both simulators at tt (V<sub>BE</sub> 0.88 V, V<sub>CE</sub>
-   0.9 V, 122.5 GHz and 245 GHz) and fails when a DC current or a y-parameter differs by more than 2 %. The
-   reference: 0 findings.
-3. The reference values did not change by more than 1e-9 (`expected_nqs0.json` has the step 8 values): the smallest
+2. The gate `device_check` runs one `npn13G2` Nx 8 in both simulators at each corner (V<sub>BE</sub> 0.88 V,
+   V<sub>CE</sub> 0.9 V, 122.5 GHz and 245 GHz). It fails when a DC current or a y-parameter differs by more than
+   2 % at 27 °C. The reference: 0 findings at every corner (largest y difference at 27 °C: 1.4 % typical, 1.0 %
+   slow, 1.8 % fast).
+3. At −40 °C and 125 °C the gate also compares the corner temperature. A difference there is a temperature
+   finding in the reason of the row, not a failure, because the 27 °C values agree (registry entry
+   `xyce-sg13g2-hbt-temperature`). The reference rows (simulated, equal base voltage, Xyce against ngspice):
+
+   | Corner | DC current | y21 at 122.5 GHz | y21 at 245 GHz | Temperature findings |
+   | --- | --- | --- | --- | --- |
+   | slow, 125 °C | 1.6 % | 9.1 % (110.8 mS at −64.3° against 116.3 mS at −60.0°) | 10.7 % | 8 |
+   | fast, 125 °C | 2.1 % | 10.5 % (187.0 mS at −58.0° against 197.0 mS at −52.9°) | 13.6 % | 9 |
+   | slow, −40 °C | 0.5 % | 4.3 % (57.79 mS at −49.2° against 57.28 mS at −51.6°) | 5.7 % | 4 |
+   | fast, −40 °C | 0.8 % | 3.3 % (94.49 mS at −34.6° against 94.36 mS at −36.5°) | 5.4 % | 4 |
+
+   So the hot and cold rows of this task carry a model uncertainty between the stability rows (ngspice) and the
+   power rows (Xyce). Which simulator is closer to silicon is not known. The check uses the global temperature in
+   both simulators; the `hb` experiment uses the `dtemp_tf` method (see "Temperature in Xyce"), which this check
+   does not compare.
+4. The reference values did not change by more than 1e-9 (`expected_nqs0.json` has the step 8 values): the smallest
    μ is at 1 GHz, the lower edge of the band, where the excess phase has no effect; at 122 GHz μ goes from 1.639 to
    1.687 (tt). A different design can have its μ minimum at a high frequency.
 
 ## Reference
 
-Every row passes (simulated, Xyce 7.10 and ngspice 46, step 8):
+Every row passes (simulated, Xyce 7.10 and ngspice 46, step 9):
 
 | Row | tt | Worst corner |
 | --- | --- | --- |

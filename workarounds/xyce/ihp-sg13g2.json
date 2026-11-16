@@ -78,6 +78,27 @@
       "workaround": "Check the cycle means (exact: a charging current has zero mean over a period) and the peak terminal voltages (operation hb_limits, gate limits on an hb experiment). The instantaneous conduction current needs a DC table of the device at the internal junction voltages (as in the ngspice oscillator operation); for HB it is not run.",
       "status": "open",
       "evidence": "simulated, Xyce 7.10, IHP SG13G2: the terminal base current of the cascode driver of a public 122 GHz radar PA (minimum -42 mA, cycle mean +14 to +37 uA); the hb_limits container run of a 61 GHz CE stage"
+    },
+    {
+      "id": "xyce-sg13g2-hbt-temperature",
+      "applies_to": {
+        "device_classes": [
+          "hbt_npn13G2",
+          "hbt_npn13G2l",
+          "hbt_npn13G2v"
+        ],
+        "analyses": [
+          "ac",
+          "sp",
+          "hb",
+          "tran"
+        ]
+      },
+      "gap": "With the excess phase on in both simulators (ngspice sw_nqs=1), the ngspice and the Xyce HBT cards of the PDK agree at 27 C and do not have the same temperature dependence of the small-signal parameters.",
+      "symptom": "No message. One npn13G2 at equal collector current: y21 of Xyce against ngspice is +0.7 to +1.2 % at -40 C, -0.3 to -0.5 % at 27 C and -2.6 to -4.2 % at 125 C (phase +2 degrees at -40 C, -4 degrees at 125 C), with the same sign at the typical, slow and fast HBT corners. At equal base voltage the difference is larger: Nx 4 at VBE 0.88 V, VCE 1.2 V, 125 C: DC current 1.9 %, y21 5.2 % at 61 GHz and 8.9 % at 122.5 GHz, y11 7.5 % at 122.5 GHz (Xyce lower).",
+      "workaround": "None in the models. Run the device check at the corner temperatures of the design: operation device_crosscheck with temp_c and reference_temp_c, or the device_check gate with the corner conditions; it reports a difference at a corner temperature as a temperature finding when the 27 C values agree. Treat a hot or cold row that both simulators contribute to (for example ngspice stability and Xyce harmonic balance) as uncertain by this difference, and state it. Which simulator is closer to silicon is not known.",
+      "status": "open",
+      "evidence": "simulated, ngspice 46 and Xyce 7.10, IHP SG13G2: the design record of a public 122 GHz radar design (equal collector current; -40, 27 and 125 C; typical, slow and fast HBT); device_crosscheck in the environment image at 125 C with reference 27 C (test device-crosscheck-container): 0 findings at 27 C, 7 temperature findings at 125 C; the device_check gate of the task evals/pa-stage-sg13g2 (Nx 8, slow and fast HBT, -40 and 125 C, equal base voltage): y21 at 122.5 GHz 3.3 to 4.3 % apart at -40 C and 9.1 to 10.5 % at 125 C. Not run: the cause in the model equations (which temperature coefficient differs)"
     }
   ]
 }
