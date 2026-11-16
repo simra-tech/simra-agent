@@ -445,6 +445,8 @@ test("end guard: one re-entry with the missing items, recorded; none when the de
 	assert.match(items[1], /The last check \(c1\) has 1 run that did not complete: osc_low at tt \(failed\)/);
 	assert.match(items[2], /vco\.spice changed after the last check \(c1\)/);
 	assert.match(endGuardMessage(items, 53), /1\. answer\.json does not exist\.[\s\S]*Session time left: 53 min\.[\s\S]*comes once/);
+	// Seen in a pilot: after the re-entry the agent changed the design and left the old answer file.
+	assert.match(endGuardMessage(items, 53), /Do not start new design work in this turn\. If you change the design file, write the answer file again/);
 
 	// A stub session: the handlers of the extension with SIMRA_DELIVERABLES set.
 	const handlers = new Map<string, any[]>();

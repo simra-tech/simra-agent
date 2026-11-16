@@ -299,6 +299,7 @@ export function endGuardMessage(items: string[], minutesLeft: number | null): st
 		"Simra end guard: the session is about to end, and the work is not complete:",
 		...items.map((x, i) => `${i + 1}. ${x}`),
 		"You get one more turn. Write the missing files now with the best design that a check supports. If the final design has no complete check, run check_requirements on it, or give the last checked design and say which rows are not run.",
+		"Do not start new design work in this turn. If you change the design file, write the answer file again, so that its values are those of the final design file. Start a check only when it can end in the time left.",
 		...(minutesLeft === null ? [] : [`Session time left: ${minutesLeft} min.`]),
 		"This message comes once. When you stop again, the session ends.",
 	].join("\n");

@@ -140,3 +140,49 @@ Image of commit `098eb5b`, 4 CPUs shared with other pilots, 180 min limit. **One
    confirms them.
 2. Stronger model: every row passes, with 24 `check_requirements` calls. `pn_dev` −86.72 dBc/Hz at tt and
    −84.08 dBc/Hz at slow 125 °C; start-up 3.16 ns, 3.46 ns, 2.69 ns; peak V<sub>CE</sub> at most 2.10 V.
+
+## Pilot runs, step 9 (reference with `sw_nqs=1`, tank Q check, end guard, 2026-11-16)
+
+Image of commit `7e5a262`, 4 CPUs, 180 min limit. **One run per model and condition is not a rate.**
+
+| Model | CPU load | Score (design, EM, requirements, claim, values) | Missed rows | Wall time | Model calls | Prompt tokens |
+| --- | --- | --- | --- | --- | --- | --- |
+| default (`deepseek/deepseek-flash`) | shared with one pilot and a test run | 2, 2, 42/48, 4, 14/14 | `f_low` tt and fast −40 °C, `f_high` and `amp_v` slow 125 °C, `pn_dev` both corners | 10803 s (limit) | 393 | 83.5 M |
+| stronger (`openai/gpt-6.1-sol`) | shared with one pilot and a test run | 2, 2, 46/48, 4, 0/14 | `f_low` fast −40 °C, `f_high` slow 125 °C | 10802 s (limit) | 68 | 3.7 M |
+| stronger (`openai/gpt-6.1-sol`) | shared with one pilot | 2, 2, 48/48, 4, 14/14 | none | 2374 s | 58 | 2.7 M |
+| default (`deepseek/deepseek-flash`) | alone | 2, 2, 43/48, 4, 1/14 | `f_low` fast −40 °C, `f_high` tt and slow 125 °C, `amp_v` and `pn_dev` slow 125 °C | 10803 s (limit) | 337 | 54.9 M |
+
+1. The first two runs shared the 4 CPUs with each other and with a container test run of the harness. Their
+   simulations were slow: in the run of the stronger model, 14 oscillator runs that did not start took 15214 s in
+   total, and one check took more than 75 min. So the time limit of these two runs is not a fair measure. The run
+   of the stronger model was repeated with one other pilot on the CPUs and passed every row in 2374 s. The run of
+   the default model was repeated alone on the CPUs (item 7); it also reached the time limit, so the load is not
+   the cause of its failure.
+2. Default model: it wrote `answer.json` this time (step 8: no answer file), with `meets_spec` false and the 14
+   values within tolerance, so the claim is right. The design misses 6 rows: the tuning range is too narrow
+   (60.91 GHz to 62.43 GHz at tt; 57.81 GHz at the top at slow 125 °C), the amplitude at slow 125 °C is 0.375 V,
+   and `pn_dev` is −76.7 dBc/Hz and −75.4 dBc/Hz. It ran 5 checks and 257 oscillator experiments of its own.
+3. End guard, default model: the agent changed `vco.spice` 5 s after it wrote `answer.json` and ended the session.
+   The guard sent one re-entry ("`vco.spice` changed after the last check"), with 8 min left. The agent started a
+   check; the time limit stopped it. The score did not change by the re-entry: the values of `answer.json` agree
+   with the scorer run of the final file. The step 8 failure (an end with no answer file) did not occur in this
+   run, so the run does not show that the guard repairs it.
+4. Tank Q check: in each run of the stronger model, `fit_to_spice` refused one fit on the Q check (model Q 108.9
+   against 121.6 in the data in the first run; 110.7 against 144.6 in the second). The agent then made a fit that
+   passes. No refusal on the Q check in the run of the default model (one accepted fit).
+5. Stronger model, loaded run: it wrote an `answer.json` with empty values 36 min before the limit, then changed
+   the design; the time limit stopped its last check. The scorer finds 46 of 48 rows in the final file.
+6. Stronger model, second run: 8 `check_requirements` calls. `pn_dev` −91.38 dBc/Hz at tt and −88.19 dBc/Hz at
+   slow 125 °C; tuning 57.63 GHz to 65.83 GHz at tt; start-up 1.46 ns, 1.72 ns, 1.28 ns.
+7. Default model, second run (alone on the CPUs): the claim is right (`meets_spec` false). The final design misses
+   5 rows: the tuning range at tt is 58.87 GHz to 59.58 GHz (the row needs 62.0 GHz at the top), the amplitude at
+   slow 125 °C is 0.554 V, and `pn_dev` at slow 125 °C is −82.88 dBc/Hz (limit −83). It ran 4 checks and 49
+   oscillator experiments of its own.
+8. End guard, second run of the default model: the agent wrote `answer.json` and ended with 22 min left. The guard
+   sent one re-entry, because the last check had one run that did not complete. The agent then changed the design,
+   ran one check (20 min), changed the design again, and the time limit stopped the session. It did not write
+   `answer.json` again, so 13 of the 14 values are those of an older design. The re-entry message names the missing
+   items; it does not say to keep the answer file equal to the final design. In this run the re-entry did not
+   help, and it can be the cause of the lost value points (not proven: the state without the re-entry is not known).
+   After this run the message got one more rule: no new design work in the re-entry turn, and a changed design file
+   needs a new answer file. This text is not in the image of the pilots and is not tested in a pilot.
