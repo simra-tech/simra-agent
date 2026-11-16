@@ -45,6 +45,14 @@ What the reference values do not prove:
    cell. The public design has no EM record of its tap: the tap rows have no reference value from the design.
 3. Two EM runs of the same tap gave S21 −0.2071 dB and −0.2046 dB (different CPU sets); the value tolerance is 0.05 dB.
 
+## Excess phase of the HBT model (sw_nqs)
+
+Since step 9 the netlist gate requires `sw_nqs=1` on every `npn13G2` instance (the excess phase of the HBT model is
+on; the ngspice default of the PDK is off; registry entry `ngspice-sg13g2-hbt-sw-nqs`), and the reference has it.
+Every row of the reference still passes. The rectified output changes by at most 0.5 % (`vout_m10_v` at tt:
+0.9599 mV to 0.9621 mV; at slow 125 °C: 0.6752 mV to 0.6772 mV); the other rows change by less than 0.2 %.
+`expected_nqs0.json` has the values of the earlier steps (`sw_nqs=0`, comparison only).
+
 ## Scoring
 
 - design (2): the subcircuit, the pin order and the device rules of `det-cell-sg13g2`.

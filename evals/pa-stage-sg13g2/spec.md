@@ -34,6 +34,9 @@ Ground is node `0`.
 ## Devices
 
 1. HBT: `npn13G2` (subcircuit of the PDK HBT library; parameter `Nx` for the number of emitters).
+   Write `sw_nqs=1` on every `npn13G2` instance: it turns on the excess phase of the HBT model, which the ngspice
+   model has off by default. The netlist gate requires it; another value is a rule error. Xyce accepts the parameter; its model has
+   the excess phase always on.
 2. MIM capacitor: `cap_cmim` (parameters `w`, `l`).
 3. EM passives: a passive structure that you draw (GDS, IHP SG13G2 layers), simulate with `em_sparameters` on the PDK
    stackup and fit with `fit_to_spice`. Copy the fitted subcircuit into `pa_stage.spice`. It counts only when the

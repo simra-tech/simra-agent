@@ -66,7 +66,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 	const rows = Object.fromEntries(verdict.rows.map((x) => [`${x.condition} ${x.requirement}`, x.value ?? null]));
 	const expected = {
 		provenance:
-			"simulated, ngspice 46, IHP SG13G2: the LNA of phase 1 of a public 122 GHz radar design (three CE stages, EM matching networks fitted to SPICE by fit_to_spice records, PDK resistors), through sp.spice, noise.spice and requirements.json of this task with all gates (em_passives_min 0)",
+			"simulated, ngspice 46, IHP SG13G2, sw_nqs=1 on every HBT: the LNA of phase 1 of a public 122 GHz radar design (three CE stages, EM matching networks fitted to SPICE by fit_to_spice records, PDK resistors), through sp.spice, noise.spice and requirements.json of this task with all gates (em_passives_min 0)",
 		all_pass: verdict.rows.every((x) => x.status === "pass"),
 		failed: verdict.rows.filter((x) => x.status !== "pass").map((x) => `${x.condition} ${x.requirement}: ${x.status}${x.reason ? ` (${x.reason})` : ""}`),
 		rows,

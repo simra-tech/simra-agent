@@ -19,7 +19,7 @@ bench and the requirements. It gets no netlist and no result of the reference de
 | `score.mjs` | scorer (`evals/rf-score.mjs`) |
 | `reference.mjs` | reference run (`evals/rf-reference.mjs`): the reference core through the same bench and gates, writes `expected.json` |
 | `expected.json` | reference value of each row, with provenance |
-| `expected_nqs1.json` | the same reference with `sw_nqs=1` on every HBT (comparison only, not used by the scorer) |
+| `expected_nqs0.json` | the step 8 reference values, with `sw_nqs=0` and the phase-noise run after 8 ns (comparison only, not used by the scorer) |
 
 ## Deviations from the reference design
 
@@ -53,7 +53,8 @@ run on that oscillator: −88.6 dBc/Hz against −87.8 ± 0.2 dBc/Hz at 1 MHz.
 
 ## Reference
 
-Every row passes (simulated, ngspice 46, step 8):
+Every row passes. The table has the step 8 values (simulated, ngspice 46, `sw_nqs=0`); the values of record since
+step 9 are in the section "Excess phase of the HBT model" and in `expected.json`:
 
 | Row | tt | slow, 125 °C | fast, −40 °C |
 | --- | --- | --- | --- |
@@ -76,23 +77,38 @@ fitted tank) and by the partial source list.
 ## Excess phase of the HBT model (sw_nqs)
 
 The ngspice HBT subcircuit of the PDK has `sw_nqs=0` by default, so the excess phase is off. The Xyce card always has
-it on (registry entry `ngspice-sg13g2-hbt-sw-nqs`). The reference values of this task use the default. This is a
-recorded assumption. The reference was run again with `sw_nqs=1` on every `npn13G2` instance (`expected_nqs1.json`,
-comparison only; simulated, ngspice 46):
+it on (registry entry `ngspice-sg13g2-hbt-sw-nqs`). Since step 9 the task uses the model of record of the reference
+design: the netlist gate requires `sw_nqs=1` on every `npn13G2` instance, and the reference has it.
 
-| Row | `sw_nqs=0` (of record) | `sw_nqs=1` |
+With `sw_nqs=1` the reference of step 8 read −82.70 dBc/Hz for `pn_dev` at slow 125 °C (limit −83). The cause was
+the bench, not the core: at that corner the start-up takes 7.0 ns, and the phase-noise run read the oscillator after
+8 ns, when the amplitude still drifts (period spread 6.5e-4 against 5.6e-5 at tt). One change:
+
+| Change | Before | After |
 | --- | --- | --- |
-| `f_low`, tt / slow 125 °C / fast −40 °C | 58.28 / 57.01 / 59.09 GHz | 58.12 / 56.79 / 58.96 GHz |
-| `f_high`, same order | 64.99 / 62.46 / 66.68 GHz | 64.84 / 62.24 / 66.54 GHz |
-| `amp_v`, same order | 0.906 / 0.788 / 0.808 V | 0.935 / 0.810 / 0.826 V |
-| `t_start`, same order | 5.12 / 7.11 / 4.06 ns | 5.11 / 7.04 / 4.07 ns |
-| `pn_dev`, tt / slow 125 °C (≤ −83 dBc/Hz) | −87.96 / −83.97 dBc/Hz | −89.89 / −82.70 dBc/Hz, slow **fails** |
+| settle time of the phase-noise experiment `osc_pn` (`settle_s`, `ref_stop_s`) | 8 ns, 9 ns | 14 ns, 15 ns |
+
+The core is not changed. Limit of the method that this shows: with the same core, `pn_dev` at tt reads −89.89 dBc/Hz
+after 8 ns and −88.39 dBc/Hz after 14 ns, so a row margin below about 1.5 dB is not a safe margin.
+
+| Row | step 8 (`sw_nqs=0`, `expected_nqs0.json`) | step 9 (`sw_nqs=1`) |
+| --- | --- | --- |
+| `f_low`, tt / slow 125 °C / fast −40 °C (≤ 60.5 GHz) | 58.28 / 57.01 / 59.09 GHz | 58.12 / 56.79 / 58.96 GHz |
+| `f_high`, same order (≥ 62.0 GHz) | 64.99 / 62.46 / 66.68 GHz | 64.84 / 62.24 / 66.54 GHz |
+| `amp_v`, same order (≥ 0.6 V) | 0.906 / 0.788 / 0.808 V | 0.935 / 0.810 / 0.826 V |
+| `t_start`, same order (≤ 7.5 ns) | 5.12 / 7.11 / 4.06 ns | 5.11 / 7.04 / 4.07 ns |
+| `pn_dev`, tt / slow 125 °C (≤ −83 dBc/Hz) | −87.96 / −83.97 dBc/Hz (after 8 ns) | −88.39 / −84.83 dBc/Hz (after 14 ns) |
 | peak V<sub>CE</sub>, largest (≤ 2.5 V) | 2.442 V | 2.468 V |
 
-With the excess phase on, the `pn_dev` row at slow 125 °C fails by 0.30 dB, and the peak V<sub>CE</sub> margin falls
-to 0.03 V. The task stays at the default until a reference passes with `sw_nqs=1`; that work is not done. The netlist
-gate can require the setting (`require_params`) and allows it as a declared value only; other physics switches stay
-errors.
+The smallest margins of the reference: `f_high` at slow 125 °C 0.24 GHz, start-up at slow 125 °C 0.46 ns, peak
+V<sub>CE</sub> 0.03 V.
+
+## Tank fit
+
+The fit of the tank carries a Q check (`fit_to_spice` input `checks`): the differential Q between the device ends
+with the supply lead at AC ground, 58 GHz to 64 GHz, tolerance 5 %. The netlist gate requires such a check on at
+least one fitted model of the core (`fit_checks`). The 130 GHz fit of the reference passes; the 260 GHz fit of
+deviation 1 is refused by this check (test `TankFitAcceptance`, with the reference files).
 
 ## Rows that the checks do not cover
 

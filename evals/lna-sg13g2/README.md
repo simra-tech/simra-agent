@@ -24,7 +24,7 @@ network has S-parameters only.
 | `score.mjs` | scorer: device rules, the EM passive in the records, then the check of `requirements.json` through the kernel |
 | `reference.mjs` | reference run: the reference design through the same benches and gates, writes `expected.json` |
 | `expected.json` | reference value of each row, with provenance |
-| `expected_nqs1.json` | the same reference with `sw_nqs=1` on every HBT (comparison only, not used by the scorer) |
+| `expected_nqs0.json` | the step 8 reference values, with `sw_nqs=0` and `lv4` 3 pH (comparison only, not used by the scorer) |
 
 ## Deviations from the reference design
 
@@ -44,7 +44,9 @@ network has S-parameters only.
 one `fit_to_spice` record per EM network, then `lna.spice` as the four fit outputs followed by the rest of the block.
 It runs the full requirements of the task, the netlist gate included, with one exception: `em_passives_min` is 0,
 because the EM data of the reference comes from the design and not from an openEMS record of the root. Every row
-passes (simulated, ngspice 46, step 8; step 6 values in brackets, with the design's own netlist and noiseless fits):
+passes. The table has the step 8 values (simulated, ngspice 46, `sw_nqs=0`; step 6 values in brackets, with the
+design's own netlist and noiseless fits). The values of record since step 9 (`sw_nqs=1`) are in the section
+"Excess phase of the HBT model" and in `expected.json`:
 
 | Row | Reference |
 | --- | --- |
@@ -66,24 +68,29 @@ scorer, and fails on any row difference (it needs the reference files; without t
 ## Excess phase of the HBT model (sw_nqs)
 
 The ngspice HBT subcircuit of the PDK has `sw_nqs=0` by default, so the excess phase is off. The Xyce card always has
-it on. For one Nx 4 device at 122.5 GHz, y21 is 58.4 mS in ngspice with the default, 61.4 mS with `sw_nqs=1`, and
-60.9 mS in Xyce (registry entry `ngspice-sg13g2-hbt-sw-nqs`).
+it on. For one Nx 4 device at 122.5 GHz, y21 is 60.9 mS at −37.3° in ngspice with the default and 62.97 mS at −45.1°
+in Xyce; with `sw_nqs=1` the two agree within 1.2 % (registry entry `ngspice-sg13g2-hbt-sw-nqs`, operation
+`device_crosscheck`).
 
-The reference values of this task use the default (excess phase off). This is a recorded assumption. The reference
-was run again with `sw_nqs=1` on every `npn13G2` instance (`expected_nqs1.json`, comparison only; simulated, ngspice 46):
+Since step 9 the task uses the model of record of the reference design: the netlist gate requires `sw_nqs=1` on
+every `npn13G2` instance (`require_params`; another value is a rule error), and the reference has it. With the
+excess phase on, the reference of step 8 failed the `s22` row (−8.84 dB). One change makes it pass:
 
-| Row | `sw_nqs=0` (of record) | `sw_nqs=1` |
+| Change | Before | After |
 | --- | --- | --- |
-| `gain` at tt (13 dB to 15 dB) | 13.31 dB | 13.08 dB |
-| `nf_db` at tt (≤ 6 dB) | 5.22 dB | 5.19 dB |
-| `s22` at tt (≤ −10 dB) | −10.18 dB | −8.84 dB, **fails** |
-| μ, smallest of five corners (> 1) | 1.0837 | 1.0896 |
-| supply current | unchanged | unchanged |
+| lead inductance `lv4` of the decoupling capacitor of the output stub (an ideal L, wiring model) | 3 pH | 10 pH |
 
-With the excess phase on, the output match of the reference moves and the `s22` row fails by 1.16 dB. The task stays
-at the default until a reference with a new output match passes with `sw_nqs=1`; that work is not done. The netlist
-gate can require the setting (`require_params`) and allows it as a declared value only (`allow_params` with values);
-other physics switches stay errors.
+Other values that were tried (simulated, tt): a smaller output series capacitor passes `s22` but lowers the smallest
+μ to 1.0004; `lv4` 15 pH gives −13.3 dB and a μ of 0.984 at fast −40 °C (fails). The reference design itself has
+not made this step: its record has the `sw_nqs=0` values.
+
+| Row | step 8 (`sw_nqs=0`, `expected_nqs0.json`) | step 9 (`sw_nqs=1`, `lv4` 10 pH) |
+| --- | --- | --- |
+| `gain` at tt (13 dB to 15 dB) | 13.31 dB | 13.40 dB |
+| `nf_db` at tt (≤ 6 dB) | 5.22 dB | 5.19 dB |
+| `s22` at tt (≤ −10 dB) | −10.18 dB | −11.39 dB |
+| μ, smallest of five corners (> 1) | 1.084 (fast −40 °C) | 1.035 (fast −40 °C) |
+| supply current | 12.1 mA to 21.1 mA | unchanged |
 
 ## Scoring
 

@@ -82,12 +82,13 @@ What the harness has now, and what a task needs that it does not have yet.
 | Kind of block | Tools that exist | Tool that is missing |
 | --- | --- | --- |
 | LNA, gain stage | `sp` and noise benches (ngspice), stability gate, `device_budget`, operating-limit gate | compression of a hot corner when the Xyce DC point fails |
+| Any block in two simulators | `device_crosscheck` (one device in ngspice and Xyce: DC currents and y-parameters), device-check gate | the cause of a finding (the tool shows the difference, not its source) |
 | Power amplifier | Xyce `hb`, `hb_limits` (cycle means and peak voltages) | the conduction part of the instantaneous base current |
-| Oscillator | `oscillator` (f0, amplitude, start-up, ISF phase noise with named sources) | a source list made from the design (resistor and EM-port thermal noise) |
+| Oscillator | `oscillator` (f0, amplitude, start-up, ISF phase noise with named sources), `fit_to_spice` with a Q check of the tank | a source list made from the design (resistor and EM-port thermal noise) |
 | Frequency multiplier, buffer | Xyce `hb` (driven) | none known |
 | Frequency divider | ngspice transient | a division-ratio and input-sensitivity measurement |
 | Mixer | Xyce `hb` with two tones (conversion gain, compression) | noise figure of a periodically driven circuit |
-| EM passive (line, splitter, hybrid) | `em_sparameters` (openEMS), `fit_to_spice`, fit-band gate | none known |
+| EM passive (line, splitter, hybrid) | `em_sparameters` (openEMS), `fit_to_spice` with band-of-use checks (Q, Re Z), fit-band gate | none known |
 | Antenna | `em_sparameters` (S11) | far-field gain and pattern |
 | Baseband amplifier, filter, regulator | ngspice ac, noise, transient, `monte_carlo` | loop gain at an internal node (a loop-probe operation) |
 | Bias reference with trim | ngspice, `monte_carlo` | a trim search per Monte Carlo seed |
@@ -620,6 +621,21 @@ After 50 % and after 80 % of the time, the extension adds a note to the next too
 time that is left and tells the agent to write its output files with the best result so far. The eval runner
 `evals/run-arm.mjs` sets this variable from `--timeout-min`.
 
+## End guard
+
+Set `SIMRA_DELIVERABLES` to a JSON list of file paths (relative to the working directory), for example
+`["vco.spice", "answer.json"]`. When the agent ends its work, the extension checks these items:
+
+1. Each file of the list exists and is not empty.
+2. With a `requirements.json` in the design root: a `check_requirements` run is recorded.
+3. The last check has no run that did not complete (an aborted simulation gives rows that are not run).
+4. The design file of the netlist gate (`gates.netlist.file`) did not change after the last check.
+
+If an item fails, the session gets one more turn with a message that names each missing item. This occurs one time
+per session. The event is a custom message of type `simra-end-guard` in the session, and the file
+`simra/end_guard.json` of the design root records the items at the re-entry and the items at the end. The eval runner
+sets the variable from `deliverables` of `task.json` and copies the record into `score.json` (`end_guard`).
+
 ## Operating point
 
 The operation `operating_point` of the ngspice adapter shows the DC operating point of each MOS device of a
@@ -1052,6 +1068,35 @@ When the design root has `fit_to_spice` records, the check reads the band of use
 uses. The row fails when an `ac`, `sp` or `noise` sweep goes outside the band of use (the model is an extrapolation
 there), when the fit is for AC only and the bench solves a DC point, or when a noise analysis uses a model without
 port noise or outside its noise band. A transient is not checked; the reason names it.
+
+A small max |dS| does not bound the loss of a resonator: a tank fit with max |dS| 0.011 had a Q of 13.7 against 15.8
+in the EM data, and the oscillator did not start. `fit_to_spice` therefore takes band-of-use checks (input `checks`):
+`{"name": "tank_q", "kind": "q", "ports": [1, 2], "short": [5], "band_hz": [58e9, 64e9], "tol_rel": 0.05}` compares
+the Q (|Im Z| / Re Z) between ports 1 and 2, with port 5 at AC ground and the other ports open, in the model and in
+the data at each data point of the band. `kind: "re_z"` compares Re Z. A fit that fails a check is refused. The
+netlist gate can require such a check on the fitted models of a block:
+`"fit_checks": [{"kind": "q", "band_hz": [58e9, 64e9], "tol_rel_max": 0.05, "min": 1}]`.
+
+### Device-check gate
+
+Two simulators can give different results for the same netlist with no message, when their model cards or their
+defaults differ. Example: the ngspice HBT model of IHP SG13G2 has the excess phase off by default (`sw_nqs=0`), and
+the Xyce card has it on; y21 of one device at 122.5 GHz differs by 13.7 %. The gate runs each device of its list
+alone in both simulators (xyce adapter, operation `device_crosscheck`) at each condition of the gate:
+
+```json
+"device_check": {
+  "ngspice_experiment": "sp", "xyce_experiment": "hb", "conditions": ["tt"],
+  "devices": [{"name": "npn13G2_nx8", "cell": "npn13G2", "params": {"Nx": 8}, "pins": ["p2", "p1", "0", "0"], "bias_v": [0.88, 0.9]}],
+  "freqs_hz": [122.5e9, 245e9], "tolerance": {"dc_rel": 0.02, "y_rel": 0.02}
+}
+```
+
+The model libraries of each simulator come from the inputs of the two named experiments. The settings that the
+netlist gate requires on the device (`require_params`) go to the ngspice device. `pins` gives one of `p1`, `p2`, `0`
+per terminal; `bias_v` is the DC voltage of port 1 and of port 2. The row `gate device_check <name>` has the number
+of findings (a DC current or a y-parameter that differs by more than the tolerance); it passes with 0. A selection
+of requirements leaves the gate out. The gate does not say which simulator is right.
 
 ### Limit sources
 

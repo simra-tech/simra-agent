@@ -22,7 +22,7 @@ if (errors.length) throw new Error(`the reference breaks the device rules: ${err
 const v = await verify(here, text, resolve(root));
 const rows = Object.fromEntries(Object.entries(v.rows).map(([k, r]) => [k, r.value]));
 const expected = {
-	provenance: "simulated, ngspice 46, IHP SG13G2: the detector cell of record (revision A, r2_det_cell_ir) of a public 122 GHz radar design, through verify.spice and requirements.json of this task",
+	provenance: "simulated, ngspice 46, IHP SG13G2, sw_nqs=1 on every HBT: the detector cell of record (revision A, r2_det_cell_ir) of a public 122 GHz radar design, through verify.spice and requirements.json of this task",
 	all_pass: Object.values(v.rows).every((r) => r.pass),
 	failed: Object.entries(v.rows).filter(([, r]) => !r.pass).map(([k]) => k),
 	rows,

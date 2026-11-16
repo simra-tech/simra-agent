@@ -38,6 +38,24 @@ refuses or reports these cases:
 | an MPI start failure | retried two times |
 | HB of an HBT circuit fails at a global −40 C or 125 C (DC point failed, or no HB Newton convergence) where 27 C converges | `temperature_method: "dtemp_tf"` (hb, hb_limits): a global 27 C, `dtemp` = T − 27 on every npn13G2 instance of the deck and its includes, `vbic_tf` of the cornerHBT.lib section scaled by ((T + 273) / 300)^0.7; other devices (MIM) stay at 27 C. A PA output stage: global fails at 4 of 4 cases, dtemp_tf converges at 4 of 4 |
 
+## Cross-simulator device check
+
+Operation `device_crosscheck`: one device of a named model in ngspice and in Xyce at the same bias and frequencies.
+It compares the DC port currents and the y-parameters (see the docstring of `device_crosscheck.py` for the inputs
+and the method). A difference above the tolerance (default 2 %) is a finding. The operation does not say which
+simulator is right.
+
+Result on ihp-sg13g2, `npn13G2` Nx 4, V<sub>BE</sub> 0.88 V, V<sub>CE</sub> 1.2 V, 27 °C (simulated, ngspice 46 and
+Xyce 7.10):
+
+| ngspice setting | DC difference | Largest y difference at 61 GHz and 122.5 GHz | Findings |
+| --- | --- | --- | --- |
+| default (`sw_nqs=0`) | 0.02 % | 13.7 % (y21 at 122.5 GHz: 60.9 mS at −37.3° against 62.97 mS at −45.1°) | y21 at both frequencies, y11 and y22 at 122.5 GHz |
+| `sw_nqs=1` | 0.02 % | 1.2 % (y21 at 122.5 GHz) | none |
+
+With `sw_nqs=1` and a frequency list that includes 1 GHz, one finding stays: y22 at 1 GHz is 0.114 mS in ngspice
+and 0.068 mS in Xyce (3.5 % of the largest y). Its cause is not known; both cards have self-heating on.
+
 ## Evaluation on two technologies
 
 The tests in `test/xyce-pdk-container.test.mjs` run in an image with both PDKs (`SIMRA_TEST_IMAGE`).

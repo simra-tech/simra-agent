@@ -15,10 +15,11 @@ no netlist and no result of the reference design.
 | `spec.md` | the specification rows, the pins, the devices, the corners and the requirements |
 | `hb.spice` | Xyce harmonic-balance bench: 50 Ω source with +3 dBm available power at 122.5 GHz, 50 Ω load, `VCCPA` current |
 | `sp.spice` | ngspice S-parameter bench: `pa_stage.s2p`, 1 GHz to 300 GHz, for μ |
-| `requirements.json` | five corners, four requirements (15 rows), the stability gate, the operating-limit gate on `hb`, the netlist gate (the fit-band gate adds its rows) |
+| `requirements.json` | five corners, four requirements (15 rows), the stability gate, the operating-limit gate on `hb`, the netlist gate, the device-check gate (the fit-band gate adds its rows) |
 | `score.mjs` | scorer (`evals/rf-score.mjs`): device rules, the EM passive in the records, the check of `requirements.json` through the kernel |
 | `reference.mjs` | reference run (`evals/rf-reference.mjs`): the reference stage through the same benches and gates, writes `expected.json` |
 | `expected.json` | reference value of each row, with provenance |
+| `expected_nqs0.json` | the step 8 reference values, with `sw_nqs=0` and without the device-check gate (comparison only) |
 
 ## Deviations from the reference design
 
@@ -43,18 +44,18 @@ capacitors stay at 27 °C in the harmonic balance. The S-parameter bench (ngspic
 
 ## Excess phase of the HBT model (sw_nqs)
 
-The two simulators do not use the same HBT model setting. The ngspice HBT subcircuit of the PDK has `sw_nqs=0` by
-default, so the excess phase is off. The Xyce card always has it on (the Xyce subcircuit has no `sw_nqs`
-parameter). For one Nx 4 device at 122.5 GHz, y21 is 58.4 mS in ngspice with the default, 61.4 mS in ngspice with
-`sw_nqs=1`, and 60.9 mS in Xyce (registry entry `ngspice-sg13g2-hbt-sw-nqs`).
+The two simulators do not use the same default of the HBT model. The ngspice HBT subcircuit of the PDK has
+`sw_nqs=0` by default, so the excess phase is off. The Xyce card always has it on (registry entry
+`ngspice-sg13g2-hbt-sw-nqs`). Since step 9:
 
-1. The harmonic-balance rows of this task (Xyce) include the excess phase.
-2. The S-parameter bench `sp.spice` (ngspice) for μ uses the default, so the stability gate runs without the excess
-   phase. The reference was run again on this bench with `sw_nqs=1` on both HBTs (simulated, ngspice 46): the
-   smallest μ is unchanged at each corner (1.0055 at tt, 1.0045 at fast), because the minimum is at 1 GHz, the
-   lower edge of the band. At 122 GHz μ goes from 1.639 to 1.687 (tt). The task keeps the default on this bench.
-   A different design can have its μ minimum at a high frequency; for such a design the setting can change the
-   gate result.
+1. The netlist gate requires `sw_nqs=1` on every `npn13G2` instance. The S-parameter bench (ngspice) then has the
+   excess phase, as the harmonic balance (Xyce) has. Xyce accepts the parameter on the instance.
+2. The gate `device_check` runs one `npn13G2` Nx 8 in both simulators at tt (V<sub>BE</sub> 0.88 V, V<sub>CE</sub>
+   0.9 V, 122.5 GHz and 245 GHz) and fails when a DC current or a y-parameter differs by more than 2 %. The
+   reference: 0 findings.
+3. The reference values did not change by more than 1e-9 (`expected_nqs0.json` has the step 8 values): the smallest
+   μ is at 1 GHz, the lower edge of the band, where the excess phase has no effect; at 122 GHz μ goes from 1.639 to
+   1.687 (tt). A different design can have its μ minimum at a high frequency.
 
 ## Reference
 

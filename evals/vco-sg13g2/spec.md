@@ -42,12 +42,18 @@ Ground is node `0`.
 
 1. HBT: `npn13G2` (parameter `Nx`; `selft` 0 or 1 is allowed in this task: the thermal time constant is much longer
    than the transients).
+   Write `sw_nqs=1` on every `npn13G2` instance: it turns on the excess phase of the HBT model, which the ngspice
+   model has off by default. The netlist gate requires it; another value is a rule error.
 2. MIM capacitor `cap_cmim`, varactor `sg13_hv_svaricap`, resistors `rppd`, `rsil`, `rhigh`.
 3. EM passives: a structure that you draw (GDS, IHP SG13G2 layers), simulate with `em_sparameters` on the PDK stackup
    and fit with `fit_to_spice`. Copy the fitted subcircuit into `vco.spice` unchanged. The design must have at least
    one EM passive (normally the tank inductor). The fit-band gate checks the DC point of the transient: give `fit_to_spice`
-   `uses.dc` true. Check the fitted tank against the EM data at the oscillation frequency (Q and reactance): a small
-   |dS| over a wide band can still change the tank loss by more than 10 %.
+   `uses.dc` true. A small |dS| over a wide band can still change the tank loss by more than 10 %. For this reason
+   the netlist gate requires that at least one fitted model of the core comes from a fit with a Q check: give
+   `fit_to_spice` the input `checks`, for example
+   `[{"name": "tank_q", "kind": "q", "ports": [1, 2], "band_hz": [58e9, 64e9], "tol_rel": 0.05}]` (the Q between
+   ports 1 and 2 of your structure; `short` lists ports at AC ground). The band must overlap 58 GHz to 64 GHz and
+   the tolerance must be 0.05 or less. A fit that fails the check is refused; fit a narrower band (`fit_band_hz`).
 4. Ideal R, L and C only as a model of wiring (each ideal C ≤ 50 fF, each ideal L ≤ 50 pH, each ideal R ≤ 50 Ω).
 5. No ideal sources in the core, except inside an EM passive from `fit_to_spice`.
 
@@ -80,7 +86,9 @@ each of 16 phases of the period, two transient runs inject a small charge (+q an
 crossings 35 to 45 periods later. The phase noise is L(Δf) = 1/2 (f0/Δf)² mean(ISF² S) per source, summed, plus the
 flicker term from the DC part of the ISF, +6 dB for the doubler. The sources are the shot noise of the collector and base
 conduction currents of the core transistor `xq1` (from a DC table of the device at the transient junction voltages) and
-its base flicker noise, times 2 for `xq2`.
+its base flicker noise, times 2 for `xq2`. The phase-noise run reads the oscillator after 14 ns (the other runs:
+after 8 ns): the ISF needs a settled amplitude. At slow 125 °C the amplitude still drifts at 8 ns, and the row then
+reads 2 dB worse.
 
 Naming rule: the two cross-coupled core transistors are the instances `xq1` and `xq2` (npn13G2) of the subcircuit `vco`,
 with the pins in the PDK order (collector, base, emitter, substrate). The check injects at the pins of `xq1`.

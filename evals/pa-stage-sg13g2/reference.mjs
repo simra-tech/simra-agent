@@ -37,7 +37,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 	const rows = Object.fromEntries(verdict.rows.map((x) => [`${x.condition} ${x.requirement}`, x.value ?? null]));
 	const expected = {
 		provenance:
-			"simulated, Xyce 7.10 (harmonic balance) and ngspice 46 (S-parameters), IHP SG13G2: the output stage of the PA of a public 122 GHz radar design (revision B2a; EM networks fitted to SPICE by fit_to_spice records), through hb.spice, sp.spice and requirements.json of this task with all gates (em_passives_min 0)",
+			"simulated, Xyce 7.10 (harmonic balance) and ngspice 46 (S-parameters), IHP SG13G2, sw_nqs=1 on every HBT: the output stage of the PA of a public 122 GHz radar design (revision B2a; EM networks fitted to SPICE by fit_to_spice records), through hb.spice, sp.spice and requirements.json of this task with all gates (em_passives_min 0)",
 		all_pass: verdict.rows.every((x) => x.status === "pass"),
 		failed: verdict.rows.filter((x) => x.status !== "pass").map((x) => `${x.condition} ${x.requirement}: ${x.status}${x.reason ? ` (${x.reason})` : ""}`),
 		rows,

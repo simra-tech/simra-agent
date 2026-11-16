@@ -28,6 +28,10 @@
       "value": 2.5,
       "unit": "V",
       "source": "interface specification (open decision on peak V_CE) and task"
+    },
+    "hbt_excess_phase": {
+      "description": "sw_nqs=1 on every npn13G2 instance: the excess phase of the HBT model is on, as in the design rule of the reference design and as in the Xyce model card. The ngspice default of the PDK is sw_nqs=0.",
+      "source": "task"
     }
   },
   "conditions": {
@@ -218,8 +222,8 @@
           "n": "outn"
         },
         "tstep_s": 1e-13,
-        "settle_s": 8e-09,
-        "ref_stop_s": 9e-09,
+        "settle_s": 1.4e-08,
+        "ref_stop_s": 1.5e-08,
         "output_multiplier": 2,
         "isf": {
           "phases": 16,
@@ -468,9 +472,15 @@
         "rhigh"
       ],
       "allow_params": {
-        "npn13g2": [
-          "selft"
-        ]
+        "npn13g2": {
+          "selft": [
+            0,
+            1
+          ],
+          "sw_nqs": [
+            1
+          ]
+        }
       },
       "wiring": {
         "r_ohm": 50,
@@ -480,7 +490,23 @@
       "couplings": true,
       "fitted": true,
       "em_passives_min": 1,
-      "technology": "ihp-sg13"
+      "technology": "ihp-sg13",
+      "require_params": {
+        "npn13g2": {
+          "sw_nqs": 1
+        }
+      },
+      "fit_checks": [
+        {
+          "kind": "q",
+          "band_hz": [
+            58000000000.0,
+            64000000000.0
+          ],
+          "tol_rel_max": 0.05,
+          "min": 1
+        }
+      ]
     }
   }
 }

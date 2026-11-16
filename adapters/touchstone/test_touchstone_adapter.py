@@ -260,6 +260,101 @@ class TouchstoneTest(unittest.TestCase):
         self.assertEqual(resp["measurements"]["fit_max_abs_ds"]["status"], "measured")
 
 
+def lossy_pi(f, l=200e-12, c=20e-15, r0=1.0, f0=60e9, skin=True):
+    """A pi network: C and 0.2 mS to the reference at each port and a series L with the loss r0 * sqrt(f / f0) (skin effect), or
+    with a constant loss r0 (a lumped network, which a rational model fits exactly)."""
+    y = np.empty((len(f), 2, 2), dtype=complex)
+    for k, fk in enumerate(f):
+        w = 2 * math.pi * fk
+        ys = 1 / (r0 * (math.sqrt(fk / f0) if skin else 1.0) + 0.05 + 1j * w * l)
+        yc = 2e-4 + 1j * w * c
+        y[k] = [[ys + yc, -ys], [-ys, ys + yc]]
+    return s_from_y(y, [50.0, 50.0])
+
+
+@unittest.skipIf(np is None, "numpy is not installed")
+class BandOfUseChecks(unittest.TestCase):
+    F = np.linspace(1e9, 2e11, 200)
+
+    def fit(self, extra, skin=True):
+        inputs = {"touchstone": "pi.s2p", "uses": {"band_hz": [5e10, 7e10], "dc": False}, "verify": []}
+        inputs.update(extra)
+        resp, root = run(inputs, {"pi.s2p": touchstone_text(self.F, lossy_pi(self.F, skin=skin), [50, 50], "pi.s2p")})
+        self.addCleanup(shutil.rmtree, root)
+        return resp
+
+    def test_port_impedance_is_the_analytic_value(self):
+        f = np.array([6e10])
+        z = rational.port_impedance(lossy_pi(f), np.array([50.0, 50.0]), [1, 2])[0]
+        w = 2 * math.pi * 6e10
+        zs = 1.0 + 0.05 + 1j * w * 200e-12
+        yc = 2e-4 + 1j * w * 20e-15
+        expect = zs * (2 / yc) / (zs + 2 / yc)
+        self.assertAlmostEqual(abs(z / expect - 1), 0, places=9)
+        # Port 2 shorted: port 1 sees C in parallel with the series branch.
+        z1 = rational.port_impedance(lossy_pi(f), np.array([50.0, 50.0]), [1], short=[2])[0]
+        self.assertAlmostEqual(abs(z1 / (1 / (1 / zs + yc)) - 1), 0, places=9)
+
+    def test_a_good_fit_passes_the_q_check(self):
+        resp = self.fit({"checks": [{"name": "tank_q", "kind": "q", "ports": [1, 2], "band_hz": [5.8e10, 6.2e10], "tol_rel": 0.05},
+                                    {"name": "tank_r", "kind": "re_z", "ports": [1, 2], "band_hz": [5.8e10, 6.2e10], "tol_rel": 0.05}]}, skin=False)
+        self.assertEqual(resp["status"], "completed", resp["diagnostics"])
+        m = resp["measurements"]
+        self.assertLessEqual(m["check_tank_q_max_rel_error"]["value"], 0.05)
+        self.assertLessEqual(m["check_tank_r_max_rel_error"]["value"], 0.05)
+        self.assertTrue(any(line.startswith("check tank_q (Q") and line.endswith("pass") for line in resp["report"]))
+
+    def test_a_fit_inside_the_ds_limit_with_a_wrong_q_is_refused(self):
+        # A skin-effect loss with the default limit (max |dS| 0.01): the S-parameters are close, the loss is not.
+        loose = {}
+        plain = self.fit(dict(loose))
+        self.assertEqual(plain["status"], "completed", plain["diagnostics"])
+        resp = self.fit(dict(loose, checks=[{"name": "tank_q", "kind": "q", "ports": [1, 2], "band_hz": [5.8e10, 6.2e10], "tol_rel": 0.05}]))
+        self.assertEqual(resp["status"], "failed")
+        self.assertIn("check 'tank_q'", resp["diagnostics"][0]["message"])
+        self.assertIn("does not bound", resp["diagnostics"][0]["message"])
+        self.assertGreater(resp["measurements"]["check_tank_q_max_rel_error"]["value"], 0.05)
+        self.assertFalse(any(o.get("role") == "subckt" for o in resp["outputs"]))
+
+    def test_check_inputs(self):
+        for bad in ([{"name": "a", "kind": "x", "ports": [1], "band_hz": [1e10, 2e10], "tol_rel": 0.1}],
+                    [{"name": "a", "kind": "q", "ports": [3], "band_hz": [1e10, 2e10], "tol_rel": 0.1}],
+                    [{"name": "a", "kind": "q", "ports": [1], "short": [1], "band_hz": [1e10, 2e10], "tol_rel": 0.1}],
+                    [{"name": "a", "kind": "q", "ports": [1], "band_hz": [1e10, 2e10]}]):
+            self.assertEqual(self.fit({"checks": bad})["status"], "failed")
+        none = self.fit({"checks": [{"name": "a", "kind": "q", "ports": [1, 2], "band_hz": [3e11, 4e11], "tol_rel": 0.1}]})
+        self.assertIn("no point", none["diagnostics"][0]["message"])
+
+
+REFS = os.environ.get("SIMRA_TEST_REFERENCES")
+TANK = os.path.join(REFS, "vco-sg13g2", "em", "vco_tank.s5p") if REFS else None
+
+
+@unittest.skipIf(np is None or not TANK or not os.path.isfile(TANK), "SIMRA_TEST_REFERENCES has no vco-sg13g2/em/vco_tank.s5p")
+class TankFitAcceptance(unittest.TestCase):
+    """The EM tank of the VCO reference: the fit to 260 GHz meets max |dS| 0.012 and has a wrong Q at 61 GHz; the fit to
+    130 GHz has the Q of the data."""
+    CHECK = [{"name": "tank_q", "kind": "q", "ports": [1, 2], "short": [5], "band_hz": [5.8e10, 6.4e10], "tol_rel": 0.05}]
+
+    def fit(self, band, limit):
+        with open(TANK) as fh:
+            text = fh.read()
+        resp, root = run({"touchstone": "vco_tank.s5p", "name": "vco_tank", "uses": {"band_hz": [1e9, band], "dc": True}, "fit_band_hz": [0, band],
+                          "limits": {"max_abs_ds": limit}, "checks": self.CHECK, "verify": []}, {"vco_tank.s5p": text})
+        self.addCleanup(shutil.rmtree, root)
+        return resp
+
+    def test_the_260_ghz_fit_is_refused_by_the_q_check(self):
+        resp = self.fit(2.6e11, 0.012)
+        self.assertEqual(resp["status"], "failed")
+        self.assertIn("check 'tank_q'", resp["diagnostics"][0]["message"])
+
+    def test_the_130_ghz_fit_passes(self):
+        resp = self.fit(1.3e11, 0.01)
+        self.assertEqual(resp["status"], "completed", resp["diagnostics"])
+        self.assertLessEqual(resp["measurements"]["check_tank_q_max_rel_error"]["value"], 0.05)
+
+
 if __name__ == "__main__":
     unittest.main()
 

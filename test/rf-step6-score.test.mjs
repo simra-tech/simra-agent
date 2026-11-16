@@ -12,7 +12,7 @@ import { checkDesign, copyFitRecords, emFits, paramTable, score as lnaScore, val
 
 const FIT = ".subckt em_match p1 p1_ref p2 p2_ref\nvsense1 p1 s1 0\ngport1 s1 p1_ref s1 p1_ref 0.02\ngr1_1_1 p1_ref s1 x1_1 0 1e3\ncx1_1 x1_1 0 1e-12\n.ends em_match\n";
 const LNA = (fit) =>
-	`.subckt lna rfin rfout vcc18 iref1 iref2 iref3\nxq1 c1 b1 0 0 npn13G2 Nx=4\nxm rfin 0 b1 0 em_match\nxl c1 rfout tm2_w13 len=200e-6\nxc rfout 0 cap_cmim w=2u l=2u\n.ends\n${fit}`;
+	`.subckt lna rfin rfout vcc18 iref1 iref2 iref3\nxq1 c1 b1 0 0 npn13G2 Nx=4 sw_nqs=1\nxm rfin 0 b1 0 em_match\nxl c1 rfout tm2_w13 len=200e-6\nxc rfout 0 cap_cmim w=2u l=2u\n.ends\n${fit}`;
 const sha = (text) => createHash("sha256").update(text).digest("hex");
 
 function record(ws, id, adapter, operation, result) {
@@ -81,7 +81,7 @@ test("lna scorer: gate rows count as requirements, values only for requirement r
 
 test("det-cell-hard scorer: rows without a condition (the EM tap rows)", async (t) => {
 	const ws = workspace(t);
-	writeFileSync(join(ws, "det_cell.spice"), ".subckt det_cell lin vcc18 outd outr iref\nxq vcc18 lin outd 0 npn13G2\n.ends\n");
+	writeFileSync(join(ws, "det_cell.spice"), ".subckt det_cell lin vcc18 outd outr iref\nxq vcc18 lin outd 0 npn13G2 sw_nqs=1\n.ends\n");
 	const req = JSON.parse(readFileSync(new URL("../evals/det-cell-sg13g2-hard/requirements.json", import.meta.url), "utf8"));
 	const rows = {};
 	for (const r of req.requirements) for (const c of r.conditions ?? [null]) rows[rowKey(c, r.id)] = { value: -30, pass: true };

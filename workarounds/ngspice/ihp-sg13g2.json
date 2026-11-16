@@ -113,10 +113,10 @@
         ]
       },
       "gap": "The ngspice HBT subcircuits of the PDK set sw_nqs=0 by default, so the excess-phase delay td = sw_nqs x 0.28 ps is off. The Xyce card has td on (no sw_nqs parameter).",
-      "symptom": "No message. At 122.5 GHz one Nx 4 device has |y21| 58.4 mS with the default, 61.4 mS with sw_nqs=1 and 60.9 mS in Xyce: ngspice and Xyce differ for the same netlist, and RF gain, phase, stability and oscillation frequency move.",
-      "workaround": "Set sw_nqs=1 on every HBT instance of an RF path in ngspice (instance parameter; no model card change). In a netlist gate, declare it: allow_params {\"npn13g2\": {\"sw_nqs\": [1]}} and, to enforce it, require_params {\"npn13g2\": {\"sw_nqs\": 1}}.",
+      "symptom": "No message. At 122.5 GHz one Nx 4 device (VBE 0.88 V, VCE 1.2 V) has y21 60.9 mS at -37.3 deg with the default and 62.97 mS at -45.1 deg in Xyce (13.7 % apart); with sw_nqs=1 the two agree within 1.2 %. ngspice and Xyce differ for the same netlist, and RF gain, phase, match, stability and oscillation frequency move.",
+      "workaround": "Set sw_nqs=1 on every HBT instance of an RF path in ngspice (instance parameter; no model card change). In a netlist gate, declare it: allow_params {\"npn13g2\": {\"sw_nqs\": [1]}} and, to enforce it, require_params {\"npn13g2\": {\"sw_nqs\": 1}}. To find such a difference before a design uses both simulators: xyce adapter, operation device_crosscheck, or the device_check gate of a requirements file.",
       "status": "worked_around",
-      "evidence": "PDK files sg13g2_hbt_mod.lib (ngspice: sw_nqs=0 and td = sw_nqs*2.80E-13; Xyce: td = 2.80E-13); one-device y-parameters at 122.5 GHz in a reference design (ngspice default, ngspice sw_nqs=1, Xyce); task references run with both settings (evals lna-sg13g2 and vco-sg13g2, expected_nqs1.json): LNA s22 at 122.5 GHz -10.18 to -8.84 dB, VCO phase noise at 1 MHz -87.96 to -89.89 dBc/Hz (tt) and -83.97 to -82.70 dBc/Hz (slow, 125 C)"
+      "evidence": "PDK files sg13g2_hbt_mod.lib (ngspice: sw_nqs=0 and td = sw_nqs*2.80E-13; Xyce: td = 2.80E-13); one-device y-parameters at 122.5 GHz in a reference design (ngspice default, ngspice sw_nqs=1, Xyce); task references run with both settings (evals lna-sg13g2 and vco-sg13g2, expected_nqs0.json against expected.json): LNA s22 at 122.5 GHz -10.18 to -8.84 dB, VCO phase noise at 1 MHz -87.96 to -89.89 dBc/Hz (tt) and -83.97 to -82.70 dBc/Hz (slow, 125 C); device_crosscheck in the environment image (test device-crosscheck-container). Open: with sw_nqs=1, y22 at 1 GHz is 0.114 mS in ngspice and 0.068 mS in Xyce (cause not known; both cards have self-heating on)"
     }
   ]
 }

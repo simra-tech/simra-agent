@@ -33,6 +33,8 @@ Ground is node `0`.
 ## Devices
 
 1. HBT: `npn13G2` (subcircuit of the PDK HBT library; parameter `Nx` for the number of emitters).
+   Write `sw_nqs=1` on every `npn13G2` instance: it turns on the excess phase of the HBT model, which the ngspice
+   model has off by default. The netlist gate requires it; another value is a rule error.
 2. MIM capacitor: `cap_cmim` (parameters `w`, `l`).
 3. Resistors: `rppd`, `rsil`, `rhigh` (parameters `w`, `l`).
 4. Ideal R, L and C only as a model of wiring (each ideal C ≤ 50 fF, each ideal L ≤ 50 pH, each ideal R ≤ 50 Ω),

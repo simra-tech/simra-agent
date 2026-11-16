@@ -547,3 +547,24 @@ def series_lq(s, f, z0):
         return None, None
     w = 2 * np.pi * f
     return z.imag / w, z.imag / z.real
+
+
+def port_impedance(s, z0, ports, short=()):
+    """The impedance seen at a port (ports = [i]) or between two ports (ports = [i, j]: z_ii - z_ij - z_ji + z_jj) at
+    each frequency, with the ports of "short" shorted to the reference and every other port open. Ports are numbered
+    from 1. Returns a complex array."""
+    n = s.shape[1]
+    keep = [k for k in range(n) if (k + 1) not in short]
+    idx = [keep.index(p - 1) for p in ports]
+    g = np.diag(1.0 / np.sqrt(z0))
+    eye = np.eye(n)
+    out = np.empty(len(s), dtype=complex)
+    for m, sk in enumerate(s):
+        y = g @ (eye - sk) @ np.linalg.inv(eye + sk) @ g
+        z = np.linalg.inv(y[np.ix_(keep, keep)])
+        if len(idx) == 1:
+            out[m] = z[idx[0], idx[0]]
+        else:
+            i, j = idx
+            out[m] = z[i, i] - z[i, j] - z[j, i] + z[j, j]
+    return out

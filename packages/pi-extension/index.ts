@@ -18,6 +18,10 @@
 // the last is left out, and the arguments of every state_note call but the last are shortened. The state_note tool
 // keeps a short running note that the agent writes itself (simra/state_note.md). SIMRA_CONTEXT=full sends the whole
 // transcript, as before.
+// End guard (SIMRA_DELIVERABLES, a JSON list of file paths): when the agent ends its work and a deliverable is
+// missing, or the last check has runs that did not complete, or the checked design changed after the last check,
+// the session gets one more turn with the missing items named. It happens once per session, and the event is
+// recorded in simra/end_guard.json (see endGuardItems).
 // All logic lives in @simra-tech/kernel, which works without pi.
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
@@ -235,6 +239,71 @@ export function sessionClock(start: number, deadline: number) {
 	};
 }
 
+/**
+ * The end guard: the items that are missing when a session ends, as sentences. deliverables are file paths relative to
+ * cwd. An item is: a deliverable that does not exist or is empty; with a requirements.json in the design root, no
+ * recorded check, a last check with runs that did not complete, or a checked design file (gates.netlist.file) that
+ * changed after the last check. An empty list means that the session may end.
+ */
+export function endGuardItems(cwd: string, deliverables: string[]): string[] {
+	const items: string[] = [];
+	for (const f of deliverables) {
+		const p = isAbsolute(f) ? f : join(cwd, f);
+		if (!existsSync(p)) items.push(`${f} does not exist.`);
+		else if (statSync(p).size === 0) items.push(`${f} is empty.`);
+	}
+	const root = findRoot(cwd) ?? cwd;
+	const reqPath = join(root, "requirements.json");
+	if (!existsSync(reqPath)) return items;
+	const checks = join(root, "simra", "checks");
+	const verdicts = (existsSync(checks) ? readdirSync(checks) : [])
+		.map((id) => join(checks, id, "verdict.json"))
+		.filter((p) => existsSync(p))
+		.map((p) => {
+			try {
+				return JSON.parse(readFileSync(p, "utf8")) as { id: string; created_at: string; experiments?: { experiment: string; condition: string | null; status: string }[] };
+			} catch {
+				return null;
+			}
+		})
+		.filter((v): v is NonNullable<typeof v> => v !== null && Number.isFinite(Date.parse(v.created_at)))
+		.sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+	const last = verdicts.at(-1);
+	if (!last) {
+		items.push("No check_requirements run is recorded for requirements.json.");
+		return items;
+	}
+	const failed = (last.experiments ?? []).filter((e) => e.status !== "completed");
+	if (failed.length) {
+		const names = failed.slice(0, 4).map((e) => `${e.experiment}${e.condition ? ` at ${e.condition}` : ""} (${e.status})`);
+		items.push(`The last check (${last.id}) has ${failed.length} run${failed.length === 1 ? "" : "s"} that did not complete: ${names.join(", ")}${failed.length > 4 ? ", ..." : ""}. Their rows are not run.`);
+	}
+	let design: string | undefined;
+	try {
+		design = JSON.parse(readFileSync(reqPath, "utf8")).gates?.netlist?.file;
+	} catch {
+		design = undefined;
+	}
+	const designPath = typeof design === "string" ? join(root, design) : null;
+	if (designPath && existsSync(designPath) && statSync(designPath).mtimeMs > Date.parse(last.created_at)) {
+		items.push(`${design} changed after the last check (${last.id}). No check covers the final design.`);
+	}
+	return items;
+}
+
+export const END_GUARD_TYPE = "simra-end-guard";
+
+/** The message of the one re-entry of the end guard. minutesLeft is null when the session has no deadline. */
+export function endGuardMessage(items: string[], minutesLeft: number | null): string {
+	return [
+		"Simra end guard: the session is about to end, and the work is not complete:",
+		...items.map((x, i) => `${i + 1}. ${x}`),
+		"You get one more turn. Write the missing files now with the best design that a check supports. If the final design has no complete check, run check_requirements on it, or give the last checked design and say which rows are not run.",
+		...(minutesLeft === null ? [] : [`Session time left: ${minutesLeft} min.`]),
+		"This message comes once. When you stop again, the session ends.",
+	].join("\n");
+}
+
 export const SIMRA_PREAMBLE = [
 	"You are Simra Agent, a chip design assistant. You help with work across the chip design process, including modeling, design,",
 	"verification, layout and tapeout preparation. Work with the tools, adapters and technology data available for the task,",
@@ -407,6 +476,45 @@ export default function (pi: ExtensionAPI) {
 		return { content: [...event.content, ...notes.map((text) => ({ type: "text" as const, text }))], structuredContent: event.structuredContent };
 	});
 
+
+	// End guard: one re-entry when the agent ends without its deliverables. The event goes into the session (a custom
+	// message) and into simra/end_guard.json of the design root.
+	let deliverables: string[] = [];
+	try {
+		const parsed = JSON.parse(process.env.SIMRA_DELIVERABLES ?? "[]");
+		if (Array.isArray(parsed)) deliverables = parsed.filter((x): x is string => typeof x === "string");
+	} catch {
+		deliverables = [];
+	}
+	if (deliverables.length) {
+		let reentries = 0;
+		const record = (cwd: string, data: Record<string, unknown>) => {
+			const dir = join(findRoot(cwd) ?? cwd, "simra");
+			try {
+				mkdirSync(dir, { recursive: true });
+				const file = join(dir, "end_guard.json");
+				const before = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : { schema: "simra.end_guard/0", deliverables };
+				writeFileSync(file, `${JSON.stringify({ ...before, ...data }, null, 2)}\n`);
+			} catch {
+				// the record is a trace; a write error must not stop the session
+			}
+		};
+		pi.on("agent_before_settle", async (event, ctx) => {
+			if (reentries >= 1) return;
+			const items = endGuardItems(ctx.cwd, deliverables);
+			if (items.length === 0) return;
+			reentries++;
+			const left = Number.isFinite(deadline) ? Math.max(0, Math.round((deadline - Date.now()) / 60_000)) : null;
+			record(ctx.cwd, { reentry: { at: new Date().toISOString(), items, minutes_left: left } });
+			return {
+				entries: [...event.entries, { type: "custom_message" as const, customType: END_GUARD_TYPE, content: endGuardMessage(items, left), display: true, details: { items } }],
+				continue: true,
+			};
+		});
+		pi.on("agent_settled", async (event, ctx) => {
+			record(ctx.cwd, { settled: { at: new Date().toISOString(), aborted: event.aborted, reentries, items: endGuardItems(ctx.cwd, deliverables) } });
+		});
+	}
 
 	const contextMode = (process.env.SIMRA_CONTEXT ?? "lean").toLowerCase();
 	if (contextMode !== "full") {

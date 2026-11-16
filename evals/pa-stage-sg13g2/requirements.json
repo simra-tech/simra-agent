@@ -53,6 +53,10 @@
       },
       "unit": "V",
       "source": "interface specification (VCCPA trimmed, 0.70 V to 1.10 V) and task"
+    },
+    "hbt_excess_phase": {
+      "description": "sw_nqs=1 on every npn13G2 instance: the excess phase of the HBT model is on in the ngspice bench, as in the Xyce model card (Xyce accepts the parameter and has the excess phase always on). The ngspice default of the PDK is sw_nqs=0.",
+      "source": "task"
     }
   },
   "conditions": {
@@ -440,7 +444,53 @@
       "couplings": true,
       "fitted": true,
       "em_passives_min": 1,
-      "technology": "ihp-sg13"
+      "technology": "ihp-sg13",
+      "allow_params": {
+        "npn13g2": {
+          "sw_nqs": [
+            1
+          ]
+        }
+      },
+      "require_params": {
+        "npn13g2": {
+          "sw_nqs": 1
+        }
+      }
+    },
+    "device_check": {
+      "ngspice_experiment": "sp",
+      "xyce_experiment": "hb",
+      "conditions": [
+        "tt"
+      ],
+      "devices": [
+        {
+          "name": "npn13G2_nx8",
+          "cell": "npn13G2",
+          "params": {
+            "Nx": 8
+          },
+          "pins": [
+            "p2",
+            "p1",
+            "0",
+            "0"
+          ],
+          "bias_v": [
+            0.88,
+            0.9
+          ]
+        }
+      ],
+      "freqs_hz": [
+        122500000000.0,
+        245000000000.0
+      ],
+      "tolerance": {
+        "dc_rel": 0.02,
+        "y_rel": 0.02
+      }
     }
   }
 }

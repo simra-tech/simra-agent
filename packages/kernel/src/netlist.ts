@@ -119,7 +119,18 @@ export interface FitUses {
 	noise_band_hz?: [number, number];
 }
 
+/** A band-of-use check of a fit_to_spice record (input "checks"); a completed record passed each of its checks. */
+export interface FitCheck {
+	name: string;
+	kind: string;
+	ports: number[];
+	band_hz: [number, number];
+	tol_rel: number;
+}
+
 export interface FittedModel {
+	/** The band-of-use checks that the fit passed. */
+	checks?: FitCheck[];
 	/** The subcircuit name in the fit output. */
 	name: string;
 	body: string[];
@@ -180,7 +191,7 @@ export function fittedModels(root: string): { found: FittedModel[]; refused: { f
 				continue;
 			}
 			for (const s of subcircuits(readFileSync(path, "utf8")).values())
-				found.push({ name: s.name, body: s.body, fit: r.id, em, uses, band_hz: band, dc: uses.dc !== false, noise_band_hz: Array.isArray(uses.noise_band_hz) ? [uses.noise_band_hz[0], uses.noise_band_hz[1]] : null });
+				found.push({ name: s.name, body: s.body, fit: r.id, em, uses, checks: Array.isArray((r.exp.inputs ?? {}).checks) ? ((r.exp.inputs ?? {}).checks as FitCheck[]) : [], band_hz: band, dc: uses.dc !== false, noise_band_hz: Array.isArray(uses.noise_band_hz) ? [uses.noise_band_hz[0], uses.noise_band_hz[1]] : null });
 		}
 	}
 	return { found, refused };
@@ -215,6 +226,13 @@ export interface NetlistRules {
 	allow_params?: Record<string, string[] | Record<string, number[]>>;
 	/** Instance parameters that every instance of a device must set to the value: {"npn13g2": {"sw_nqs": 1}}. */
 	require_params?: Record<string, Record<string, number>>;
+	/**
+	 * Band-of-use checks that the fits of the block must carry: for each entry, at least `min` (default 1) fitted
+	 * models that the block uses come from a fit_to_spice record with a check of this kind, a band that overlaps
+	 * band_hz and a tolerance of at most tol_rel_max. The limit on max |dS| of a fit does not bound the loss of a
+	 * resonator.
+	 */
+	fit_checks?: { kind: "q" | "re_z"; band_hz: [number, number]; tol_rel_max: number; min?: number }[];
 	/** The technology pack (default the pack of $PDK); used for the instance parameters of the devices. */
 	technology?: string;
 }

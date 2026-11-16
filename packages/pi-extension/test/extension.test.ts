@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { validateRequirements } from "@simra-tech/kernel";
 import { makePdf } from "../../kernel/test/pdf-fixture.ts";
-import extension, { checkHints, leanContext, netlistsOf, readsOutputs, readPath, readsRecords, REQUIREMENTS_EXAMPLE, sessionClock } from "../index.ts";
+import extension, { endGuardItems, endGuardMessage, END_GUARD_TYPE, checkHints, leanContext, netlistsOf, readsOutputs, readPath, readsRecords, REQUIREMENTS_EXAMPLE, sessionClock } from "../index.ts";
 
 const fakeAdapters = new URL("../../kernel/test/fixtures/adapters", import.meta.url).pathname;
 
@@ -424,4 +424,60 @@ test("readsOutputs finds the calls that read simulator logs and tables", () => {
 	assert.equal(readsOutputs(bash("python3 -c 'print(1)' run.raw")), true);
 	assert.equal(readsOutputs({ toolName: "read", input: { path: "simra/experiments/x/work/out.dat" } } as any), true);
 	assert.equal(readsOutputs(bash("cat lna.spice")), false);
+});
+
+test("end guard: one re-entry with the missing items, recorded; none when the deliverables are complete", async (t) => {
+	const root = mkdtempSync(join(tmpdir(), "simra-guard-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	writeFileSync(join(root, "simra.config.json"), "{}");
+	writeFileSync(join(root, "requirements.json"), JSON.stringify({ gates: { netlist: { file: "vco.spice" } } }));
+	writeFileSync(join(root, "vco.spice"), ".subckt vco a b\n.ends\n");
+	const deliverables = ["vco.spice", "answer.json"];
+	assert.deepEqual(endGuardItems(root, deliverables), ["answer.json does not exist.", "No check_requirements run is recorded for requirements.json."]);
+
+	// A last check with an aborted run, older than the design file.
+	const check = join(root, "simra", "checks", "c1");
+	mkdirSync(check, { recursive: true });
+	const verdict = (at: number, status: string) => JSON.stringify({ id: "c1", created_at: new Date(at).toISOString(), experiments: [{ experiment: "osc_low", condition: "tt", status }] });
+	writeFileSync(join(check, "verdict.json"), verdict(Date.now() - 60_000, "failed"));
+	const items = endGuardItems(root, deliverables);
+	assert.equal(items.length, 3);
+	assert.match(items[1], /The last check \(c1\) has 1 run that did not complete: osc_low at tt \(failed\)/);
+	assert.match(items[2], /vco\.spice changed after the last check \(c1\)/);
+	assert.match(endGuardMessage(items, 53), /1\. answer\.json does not exist\.[\s\S]*Session time left: 53 min\.[\s\S]*comes once/);
+
+	// A stub session: the handlers of the extension with SIMRA_DELIVERABLES set.
+	const handlers = new Map<string, any[]>();
+	const stub = { registerTool: () => {}, registerCommand: () => {}, on: (name: string, h: any) => handlers.set(name, [...(handlers.get(name) ?? []), h]) };
+	process.env.SIMRA_DELIVERABLES = JSON.stringify(deliverables);
+	t.after(() => delete process.env.SIMRA_DELIVERABLES);
+	extension(stub as any);
+	const [beforeSettle] = handlers.get("agent_before_settle") ?? [];
+	const [settled] = handlers.get("agent_settled") ?? [];
+	assert.ok(beforeSettle && settled, "the end guard handlers are registered");
+	const ctx = { cwd: root };
+	const first = await beforeSettle({ type: "agent_before_settle", entries: [], continue: false }, ctx);
+	assert.equal(first.continue, true);
+	assert.equal(first.entries.length, 1);
+	assert.equal(first.entries[0].customType, END_GUARD_TYPE);
+	assert.match(first.entries[0].content, /answer\.json does not exist/);
+	// The agent writes the file and a complete check; a second end gets no re-entry (bounded), and the trace has both.
+	writeFileSync(join(root, "answer.json"), "{}");
+	writeFileSync(join(check, "verdict.json"), verdict(Date.now() + 60_000, "completed"));
+	assert.equal(await beforeSettle({ type: "agent_before_settle", entries: [], continue: false }, ctx), undefined);
+	await settled({ type: "agent_settled", aborted: false }, ctx);
+	const trace = JSON.parse(readFileSync(join(root, "simra", "end_guard.json"), "utf8"));
+	assert.equal(trace.reentry.items.length, 3);
+	assert.deepEqual(trace.settled.items, []);
+	assert.equal(trace.settled.reentries, 1);
+
+	// Still incomplete at the second end: no second re-entry.
+	rmSync(join(root, "answer.json"));
+	assert.equal(await beforeSettle({ type: "agent_before_settle", entries: [], continue: false }, ctx), undefined);
+
+	// Without SIMRA_DELIVERABLES the guard is off.
+	delete process.env.SIMRA_DELIVERABLES;
+	const off = new Map<string, any>();
+	extension({ registerTool: () => {}, registerCommand: () => {}, on: (name: string, h: any) => off.set(name, h) } as any);
+	assert.equal(off.has("agent_before_settle"), false);
 });

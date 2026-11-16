@@ -53,6 +53,7 @@ The adapter needs Python 3.6 or later and numpy. ngspice and Xyce are necessary 
 | model not passive after enforcement | failed |
 | `uses.noise_band_hz` wider than 5 % of its centre | refused |
 | error in the band of use above `limits.use_max_abs_ds` or `limits.use_max_abs_db` | failed |
+| a band-of-use check (`checks`: Q or Re Z of a port or a port pair) above its `tol_rel` | failed |
 | port noise differs from 4kT Re Z by more than 2 % | error diagnostic |
 | subcircuit differs from the model in a simulator | error diagnostic for that simulator |
 
@@ -64,3 +65,23 @@ The adapter needs Python 3.6 or later and numpy. ngspice and Xyce are necessary 
   and Xyce. The local case needs ngspice, Xyce and numpy on the host; the container case needs `SIMRA_TEST_IMAGE`.
 - `evals/rf-passive-gain`: a demo task that uses the subcircuit in a Xyce deck. In the reference run, the fit
   has order 4 and a largest error of 5.9e-4; the re-simulation error is the same in ngspice and Xyce.
+
+## Band-of-use checks
+
+The limit on max |dS| does not bound a derived quantity. Example: a 5-port tank fitted from 0 Hz to 260 GHz (order
+12, max |dS| 0.0114) has a differential Q of 13.7 at 61 GHz against 15.8 in the data; the fit from 0 Hz to 130 GHz
+(order 6, max |dS| 0.0058) has 15.45. An oscillator with the first model does not start.
+
+Input `checks`, a list of:
+
+| Field | Meaning |
+| --- | --- |
+| `name` | a name for the measurements |
+| `kind` | `"q"`: \|Im Z\| / Re Z; `"re_z"`: Re Z |
+| `ports` | `[i]`: the impedance at port i; `[i, j]`: the impedance between ports i and j (z_ii − z_ij − z_ji + z_jj) |
+| `short` | optional: ports at AC ground; every other port is open |
+| `band_hz` | `[f_lo, f_hi]`: the data points of this band are compared |
+| `tol_rel` | the largest permitted relative error of the model against the data |
+
+A check above its tolerance refuses the fit; the message gives both values and the frequency. Measurements:
+`check_<name>_max_rel_error`, `check_<name>_data`, `check_<name>_model` (at the worst point). `fit.json` has the list.

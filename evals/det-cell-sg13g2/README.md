@@ -25,6 +25,14 @@ the five corners. At tt the bench gives 0.960 mV at −10 dBm, 8.99 mV at 0 dBm,
 (simulated, ngspice 46). The reference design records 0.95 mV and 8.89 mV (Xyce harmonic balance) and 2.23 µV rms,
 and 0.209 mA for two cells, so the bench and the reference agree.
 
+## Excess phase of the HBT model (sw_nqs)
+
+Since step 9 the netlist gate requires `sw_nqs=1` on every `npn13G2` instance (the excess phase of the HBT model is
+on; the ngspice default of the PDK is off; registry entry `ngspice-sg13g2-hbt-sw-nqs`), and the reference has it.
+Every row of the reference still passes. The rectified output changes by at most 0.5 % (`vout_m10_v` at tt:
+0.9599 mV to 0.9621 mV; at slow 125 °C: 0.6752 mV to 0.6772 mV); the other rows change by less than 0.2 %.
+`expected_nqs0.json` has the values of the earlier steps (`sw_nqs=0`, comparison only).
+
 ## Scoring
 
 - design (2): the subcircuit, the pin order and the device rules of `spec.md`.

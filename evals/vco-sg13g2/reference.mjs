@@ -20,7 +20,15 @@ const here = new URL(".", import.meta.url).pathname;
 /** The tank: DC and 1 GHz to 130 GHz (the fundamental and the second harmonic of 61 GHz), fitted from 0 Hz to 130 GHz
  * (order 6, max |dS| 0.0058). A fit to 260 GHz (order 12, max |dS| 0.0114) gives a differential Q of 13.7 at 61 GHz
  * against 15.8 in the EM data, and the core then does not start: the |dS| limit does not bound the tank loss. */
-export const fitInputs = (name) => ({ touchstone: `em/${name}.s5p`, name, uses: { band_hz: [1e9, 130e9], dc: true }, fit_band_hz: [0, 130e9], verify: ["ngspice"] });
+export const fitInputs = (name) => ({
+	touchstone: `em/${name}.s5p`,
+	name,
+	uses: { band_hz: [1e9, 130e9], dc: true },
+	fit_band_hz: [0, 130e9],
+	// The differential Q between the device ends (ports 1 and 2) with the supply lead (port 5) at AC ground.
+	checks: [{ name: "tank_q", kind: "q", ports: [1, 2], short: [5], band_hz: [58e9, 64e9], tol_rel: 0.05 }],
+	verify: ["ngspice"],
+});
 export const buildReference = (dir, root) =>
 	buildFlatReference({ here, dir, root, networks: ["vco_tank"], fitInputs, core: "vco_core.spice", design: "vco.spice", ext: "s5p" });
 
@@ -35,7 +43,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 	const rows = Object.fromEntries(verdict.rows.map((x) => [`${x.condition} ${x.requirement}`, x.value ?? null]));
 	const expected = {
 		provenance:
-			"simulated, ngspice 46, IHP SG13G2: the 61 GHz core of the VCO of a public 122 GHz radar design (revision A core; the EM tank fitted to SPICE by a fit_to_spice record), through osc.spice and requirements.json of this task with all gates (em_passives_min 0)",
+			"simulated, ngspice 46, IHP SG13G2, sw_nqs=1 on every HBT: the 61 GHz core of the VCO of a public 122 GHz radar design (revision A core; the EM tank fitted to SPICE by a fit_to_spice record), through osc.spice and requirements.json of this task with all gates (em_passives_min 0)",
 		all_pass: verdict.rows.every((x) => x.status === "pass"),
 		failed: verdict.rows.filter((x) => x.status !== "pass").map((x) => `${x.condition} ${x.requirement}: ${x.status}${x.reason ? ` (${x.reason})` : ""}`),
 		rows,

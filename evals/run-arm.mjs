@@ -435,6 +435,17 @@ function waitExit(child, timeoutMs, onTimeout) {
 	});
 }
 
+/** The end-guard record of the session (simra/end_guard.json of the workspace), or null: no guard, or it did not act. */
+export function endGuardRecord(ws) {
+	const file = join(ws, "simra", "end_guard.json");
+	if (!existsSync(file)) return null;
+	try {
+		return JSON.parse(readFileSync(file, "utf8"));
+	} catch {
+		return null;
+	}
+}
+
 async function main() {
 	const args = process.argv.slice(2);
 	const taskDir = resolve(args[0] ?? "");
@@ -499,8 +510,10 @@ async function main() {
 	const name = `simra-arm-${runName}`;
 	const toolEnv = sandboxToolEnv(env);
 	// The Simra extension tells the agent how much session time is left (other arms ignore the variable).
+	// task.json "deliverables" (file paths in the workspace) turns on the end guard of the Simra extension: one re-entry
+	// when the agent ends without them or without a complete check of the final design.
 	const deadline = new Date(Date.now() + timeoutMin * 60_000).toISOString();
-	const argv = sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar: model.keyVar, env: { ...toolEnv, ...cmd.env, SIMRA_SESSION_DEADLINE: deadline, SIMRA_CONTEXT: contextMode }, readOnly, command: cmd.command });
+	const argv = sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar: model.keyVar, env: { ...toolEnv, ...cmd.env, SIMRA_SESSION_DEADLINE: deadline, SIMRA_CONTEXT: contextMode, ...(Array.isArray(task.deliverables) ? { SIMRA_DELIVERABLES: JSON.stringify(task.deliverables) } : {}) }, readOnly, command: cmd.command });
 	const started = new Date();
 	const child = spawn(engine, argv, { env: engineEnv(), stdio: ["ignore", "pipe", "pipe"] });
 	child.stdout.pipe(createWriteStream(join(run, cmd.codex ? "stdout.log" : "transcript.jsonl")));
@@ -544,6 +557,7 @@ async function main() {
 		exit,
 		sandbox: { engine, image: env.image, image_id: imageId, network: "none", read_only_root: true, mounts: { [WORK]: "ws", [STATE]: "state", [PROXY_DIR]: "proxy", ...(cmd.codex ? { [CODEX_DIR]: "codex package (read-only)" } : {}), ...(companion ? { [COMPANION_DIR]: "companion (read-only)" } : {}) } },
 		contamination,
+		end_guard: endGuardRecord(ws),
 		score: await score(ws, undefined, WORK),
 	};
 	writeFileSync(join(run, "score.json"), `${JSON.stringify(summary, null, 2)}\n`);

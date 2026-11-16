@@ -253,6 +253,73 @@ def noise_check(lib, name, n, z0, model, f0, work_dir):
 
 
 # -------------------------------------------------------------------------------------------------------- operation
+CHECK_KINDS = ("q", "re_z")
+
+
+def parse_checks(checks, n):
+    """(list of checks, None) or (None, message). A check: {name, kind "q" or "re_z", ports [i] or [i, j], band_hz
+    [f_lo, f_hi], tol_rel, short (optional list of ports)}."""
+    if checks is None:
+        return [], None
+    if not isinstance(checks, list):
+        return None, "input 'checks' must be a list"
+    out, names = [], set()
+    for c in checks:
+        if not isinstance(c, dict):
+            return None, "input 'checks': each check is an object"
+        name = c.get("name")
+        if not isinstance(name, str) or not re.match(r"^[A-Za-z_]\w*$", name) or name in names:
+            return None, "input 'checks': each check needs its own 'name' (letters, digits, _)"
+        names.add(name)
+        ports, short, band, tol = c.get("ports"), c.get("short") or [], c.get("band_hz"), c.get("tol_rel")
+        ok_port = lambda p: isinstance(p, int) and not isinstance(p, bool) and 1 <= p <= n
+        if c.get("kind") not in CHECK_KINDS:
+            return None, "check '%s': kind must be \"q\" (|Im Z| / Re Z) or \"re_z\" (Re Z)" % name
+        if not (isinstance(ports, list) and len(ports) in (1, 2) and all(ok_port(p) for p in ports) and len(set(ports)) == len(ports)):
+            return None, "check '%s': ports must be [i] or [i, j], port numbers from 1 to %d" % (name, n)
+        if not (isinstance(short, list) and all(ok_port(p) for p in short) and not set(short) & set(ports)):
+            return None, "check '%s': short must list ports other than the ports of the check" % name
+        if not (isinstance(band, list) and len(band) == 2 and all(isinstance(x, (int, float)) for x in band) and 0 < band[0] <= band[1]):
+            return None, "check '%s': band_hz must be [f_lo, f_hi] with 0 < f_lo <= f_hi" % name
+        if not (isinstance(tol, (int, float)) and not isinstance(tol, bool) and tol > 0):
+            return None, "check '%s': tol_rel must be a positive number (for example 0.05)" % name
+        out.append({"name": name, "kind": c["kind"], "ports": ports, "short": short, "band": [float(band[0]), float(band[1])], "tol": float(tol)})
+    return out, None
+
+
+def run_checks(checks, rational, f, s, s_fit, z0):
+    """The band-of-use checks: for each, the quantity from the data and from the model at the data points of its band,
+    and the largest relative error. Returns (results, first problem or None)."""
+    import numpy as np
+    results, problem = [], None
+    for c in checks:
+        m = (f >= c["band"][0] * (1 - REL_TOL)) & (f <= c["band"][1] * (1 + REL_TOL)) & (f > 0)
+        what = "%s of port%s %s" % ("Q" if c["kind"] == "q" else "Re Z", "s" if len(c["ports"]) == 2 else "", " and ".join(str(p) for p in c["ports"]))
+        r = {"name": c["name"], "kind": c["kind"], "ports": c["ports"], "short": c["short"], "band_hz": c["band"], "tol_rel": c["tol"],
+             "points": int(np.sum(m)), "status": "not run", "max_rel_error": None}
+        results.append(r)
+        if not np.any(m):
+            r["reason"] = "no data point in the band"
+            problem = problem or "refused: check '%s' (%s): the data has no point from %.6g Hz to %.6g Hz" % (c["name"], what, c["band"][0], c["band"][1])
+            continue
+        zd = rational.port_impedance(s[m], z0, c["ports"], c["short"])
+        zm = rational.port_impedance(s_fit[m], z0, c["ports"], c["short"])
+        qd, qm = (np.abs(zd.imag) / zd.real, np.abs(zm.imag) / zm.real) if c["kind"] == "q" else (zd.real, zm.real)
+        if not np.all(np.isfinite(qd)) or np.any(qd == 0) or not np.all(np.isfinite(qm)):
+            r["reason"] = "the quantity is not finite or zero in the data"
+            problem = problem or "refused: check '%s' (%s): the quantity is zero or not finite in the band" % (c["name"], what)
+            continue
+        rel = np.abs(qm / qd - 1)
+        k = int(np.argmax(rel))
+        r.update({"status": "pass" if rel[k] <= c["tol"] else "fail", "max_rel_error": float(rel[k]), "at_hz": float(f[m][k]),
+                  "data": float(qd[k]), "model": float(qm[k])})
+        if rel[k] > c["tol"]:
+            problem = problem or ("refused: check '%s': %s is %.4g in the model and %.4g in the data at %.6g Hz, a relative error of %.3g, above "
+                                  "the tolerance %.3g. The limit on max |dS| does not bound this quantity; fit a narrower band (fit_band_hz) "
+                                  "or another order" % (c["name"], what, qm[k], qd[k], f[m][k], rel[k], c["tol"]))
+    return results, problem
+
+
 def fit_to_spice(request):
     root, work_dir = request["root"], request["work_dir"]
     inputs = request.get("inputs") or {}
@@ -320,6 +387,9 @@ def fit_to_spice(request):
         if error:
             return failure(tool, error, measurements, files)
 
+    checks, error = parse_checks(inputs.get("checks"), n)
+    if error:
+        return failure(tool, error, measurements, files)
     limits = inputs.get("limits") or {}
     max_ds = float(limits.get("max_abs_ds", 0.01))
     name = inputs.get("name") or re.sub(r"\W", "_", os.path.splitext(os.path.basename(path))[0])
@@ -395,12 +465,19 @@ def fit_to_spice(request):
         measurements["use_max_abs_ds"] = {"value": ue["max"], "unit": None, "status": "measured"}
         measurements["use_max_abs_db"] = {"value": db, "unit": "dB", "status": "measured"}
 
+    check_results, check_problem = run_checks(checks, rational, f, s, s_fit, z0)
+    for r in check_results:
+        if r["max_rel_error"] is not None:
+            measurements["check_%s_max_rel_error" % r["name"]] = {"value": r["max_rel_error"], "unit": None, "status": "measured"}
+            measurements["check_%s_data" % r["name"]] = {"value": r["data"], "unit": None if r["kind"] == "q" else "ohm", "status": "measured"}
+            measurements["check_%s_model" % r["name"]] = {"value": r["model"], "unit": None if r["kind"] == "q" else "ohm", "status": "measured"}
+
     poles_hz = [[float(p.real * model.w / (2 * math.pi)), float(p.imag * model.w / (2 * math.pi))] for p in model.poles]
     report_json = {
         "numbers": "simulated (a rational fit of the data)",
         "input": display_path(full, root), "nports": n, "z0_ohm": z0.tolist(),
         "band_hz": [float(f[0]), float(f[-1])], "points": int(len(f)), "dc_point_in_data": bool(f[0] == 0),
-        "uses": inputs.get("uses"), "dc_policy": dc_policy, "use_error": use_err,
+        "uses": inputs.get("uses"), "dc_policy": dc_policy, "use_error": use_err, "checks": check_results,
         "fit": {"order": model.order, "poles_hz": poles_hz, "search": search, "seconds": round(fit_s, 2),
                 "error_vs_data": err, "limits": {"max_abs_ds": max_ds}, "lq": lq_err},
         "passivity": {"passive_before": bool(before is not None and not before), "enforced": enforced,
@@ -413,6 +490,10 @@ def fit_to_spice(request):
            "fit max |dS| %.3g, rms %.3g (limit %.3g)" % (err["max"], err["rms"], max_ds),
            "passive %s (enforced %s, margin %.3g, max singular value %.6f at %.6g Hz)" % (
                passive, enforced, margin, float(np.max(sig)), report_json["passivity"]["at_hz"])]
+    for r in check_results:
+        if r["max_rel_error"] is not None:
+            rpt.append("check %s (%s, ports %s): model %.4g, data %.4g at %.6g Hz, relative error %.3g (tolerance %.3g): %s" % (
+                r["name"], "Q" if r["kind"] == "q" else "Re Z", r["ports"], r["model"], r["data"], r["at_hz"], r["max_rel_error"], r["tol_rel"], r["status"]))
     diagnostics = []
     if dc and f[0] > 0:
         diag = ", ".join("S%d%d(0) = %.4g" % (i + 1, i + 1, s_dc[i, i].real) for i in range(n))
@@ -435,6 +516,8 @@ def fit_to_spice(request):
         problem = "refused: the L error %.3g is above the limit %.3g" % (lq_err["l"], float(limits["l_rel_error"]))
     elif lq_err and "q_rel_error" in limits and lq_err["q"] > float(limits["q_rel_error"]):
         problem = "refused: the Q error %.3g is above the limit %.3g" % (lq_err["q"], float(limits["q_rel_error"]))
+    elif check_problem:
+        problem = check_problem
     elif not passive:
         problem = "refused: the model is not passive after enforcement (margin %.3g); a non-passive model can oscillate in one circuit and not in another" % margin
     commands = []

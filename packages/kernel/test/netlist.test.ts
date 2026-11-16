@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { checkNetlist, deckAnalyses, fitBandFindings, fittedModels, instanceParamClasses, type NetlistRules, spiceValue } from "../src/index.ts";
+import { checkNetlist, deckAnalyses, deviceCheckGateRows, fitBandFindings, fittedModels, instanceParamClasses, netlistGateRows, type NetlistRules, type RequirementsFile, type ResultRecord, spiceValue, validateRequirements } from "../src/index.ts";
 
 const packs = new URL("../../../technologies/", import.meta.url).pathname;
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -119,4 +119,66 @@ test("netlist: a fitted model of a record may hold sources; the fit band gate ch
 	assert.equal(hb(2)[0].pass, true);
 	assert.equal(hb(3)[0].pass, false);
 	assert.match(hb(3)[0].reason, /hb tones 61e9 Hz, harmonics 3" sweeps 61000000000 Hz to 183000000000 Hz/);
+});
+
+test("netlist gate: fit_checks needs a fitted model with a band-of-use check of the kind, band and tolerance", (t) => {
+	const r = root(t);
+	const fit = "* simra-fit\n.subckt tank p1 p2\nvsense1 p1 n1 0\ng1 n1 0 n1 0 1e-3\nr2 n1 p2 1\n.ends tank\n";
+	const record = (checks: unknown) => {
+		const d = join(r, "simra", "experiments", "e1");
+		mkdirSync(join(d, "work"), { recursive: true });
+		writeFileSync(join(d, "experiment.json"), JSON.stringify({ id: "e1", adapter: { name: "touchstone" }, operation: "fit_to_spice", inputs: { uses: { band_hz: [1e9, 130e9] }, ...(checks ? { checks } : {}) } }));
+		writeFileSync(join(d, "result.json"), JSON.stringify({ status: "completed", outputs: [{ path: "simra/experiments/e1/work/tank.lib", sha256: sha(fit), role: "subckt" }] }));
+		writeFileSync(join(d, "work", "tank.lib"), fit);
+	};
+	writeFileSync(join(r, "cell.spice"), `.subckt cell a b\nxm a b tank\n.ends\n${fit}`);
+	const file = { gates: { netlist: { ...RULES, fit_checks: [{ kind: "q", band_hz: [58e9, 64e9], tol_rel_max: 0.05 }] } } } as unknown as RequirementsFile;
+	record(null);
+	let row = netlistGateRows(file, r)[0];
+	assert.equal(row.status, "fail");
+	assert.match(row.reason ?? "", /0 of the fitted models of cell has a Q check from 58 GHz to 64 GHz/);
+	// a check with a wide tolerance, or in another band, does not count
+	record([{ name: "q", kind: "q", ports: [1, 2], band_hz: [60e9, 62e9], tol_rel: 0.2 }]);
+	assert.equal(netlistGateRows(file, r)[0].status, "fail");
+	record([{ name: "q", kind: "q", ports: [1, 2], band_hz: [100e9, 120e9], tol_rel: 0.05 }]);
+	assert.equal(netlistGateRows(file, r)[0].status, "fail");
+	record([{ name: "q", kind: "q", ports: [1, 2], band_hz: [60e9, 62e9], tol_rel: 0.05 }]);
+	row = netlistGateRows(file, r)[0];
+	assert.equal(row.status, "pass", row.reason ?? "");
+});
+
+test("device-check gate: validation and rows", () => {
+	const file = {
+		schema: "simra.requirements/0",
+		conditions: { tt: {} },
+		experiments: { sp: { adapter: "ngspice", operation: "simulate", inputs: {} }, hb: { adapter: "xyce", operation: "hb", inputs: {} } },
+		requirements: [{ id: "x", experiment: "sp", measurement: "m", op: "<=", limit: 1, conditions: ["tt"], limit_source: { kind: "task", ref: "test" } }],
+		gates: { device_check: { ngspice_experiment: "sp", xyce_experiment: "hbx", conditions: ["cold"], devices: [{ name: "q", cell: "npn13G2", pins: ["p2", "p1", "0", "0"] }], freqs_hz: [] } },
+	};
+	const errors = validateRequirements(file).join("\n");
+	assert.match(errors, /gates\.device_check\.xyce_experiment: experiment "hbx" is not defined/);
+	assert.match(errors, /gates\.device_check: condition "cold" is not defined/);
+	assert.match(errors, /gates\.device_check: freqs_hz must list the frequencies/);
+	assert.match(errors, /gates\.device_check\.devices "q": name, cell, pins and bias_v/);
+	const bad = validateRequirements({ ...file, gates: { netlist: { ...RULES, fit_checks: [{ kind: "q", band_hz: [58e9, 64e9], tol_rel_max: 0.05 }, { kind: "x", band_hz: [1], tol_rel_max: 0 }] } } } as unknown as RequirementsFile).join("\n");
+	assert.match(bad, /gates\.netlist\.fit_checks\[1\]: kind/);
+	assert.doesNotMatch(bad, /fit_checks\[0\]/);
+
+	const result = (findings: number, diagnostics: { severity: string; message: string }[] = []) =>
+		({ status: "completed", measurements: { findings: { value: findings, unit: null }, dc_rel_max: { value: 0.0002, unit: null }, y_rel_max: { value: findings ? 0.137 : 0.012, unit: null } }, diagnostics }) as unknown as ResultRecord;
+	const rows = deviceCheckGateRows([
+		{ device: "q", condition: "tt", id: "e1", result: result(0) },
+		{ device: "q", condition: "hot", id: "e2", result: result(1, [{ severity: "warning", message: "finding: y21 at 122.5 GHz: ngspice 60.9 mS, Xyce 62.97 mS, difference 13.7 % (tolerance 2 %)" }]) },
+		{ device: "q", condition: "cold", id: "e3", result: { status: "failed", measurements: {}, diagnostics: [] } as unknown as ResultRecord },
+		{ device: "q", condition: "x", id: null, result: null, why: "not selected in this check" },
+	]);
+	assert.deepEqual(rows.map((x) => [x.requirement, x.condition, x.status, x.value]), [
+		["gate device_check q", "tt", "pass", 0],
+		["gate device_check q", "hot", "fail", 1],
+		["gate device_check q", "cold", "not_run", null],
+		["gate device_check q", "x", "not_run", null],
+	]);
+	assert.match(rows[0].reason ?? "", /largest difference: DC 0\.02 %, y 1\.20 %/);
+	assert.match(rows[1].reason ?? "", /y21 at 122\.5 GHz.*the simulators do not agree/);
+	assert.equal(rows[3].reason, "not selected in this check");
 });

@@ -91,6 +91,23 @@ export interface LimitsGate {
 	peak_overrides?: { id: string; limit: number; assumption: string; description?: string }[];
 }
 
+/**
+ * The device-check gate: each device of the list runs alone in ngspice and in Xyce (xyce adapter, operation
+ * device_crosscheck) at each condition of the gate, and a difference of the DC currents or of the y-parameters above
+ * the tolerance fails its row. The model libraries of each simulator come from the inputs of the named experiments.
+ * The instance settings that the netlist gate requires (gates.netlist.require_params) go to the ngspice device.
+ */
+export interface DeviceCheckGate {
+	/** An experiment of the file that runs in ngspice, and one that runs in Xyce: their libs (and temp_c) are used. */
+	ngspice_experiment: string;
+	xyce_experiment: string;
+	conditions: string[];
+	devices: { name: string; cell: string; params?: Record<string, number>; pins: string[]; bias_v: [number, number]; ngspice_params?: Record<string, number>; xyce_params?: Record<string, number> }[];
+	freqs_hz: number[];
+	tolerance?: { dc_rel?: number; y_rel?: number };
+	environment?: string;
+}
+
 export interface StabilityGate {
 	/** The active RF stages of the block. A mu requirement names its stage in "stage". */
 	stages: string[];
@@ -187,7 +204,7 @@ export interface RequirementsFile {
 	experiments: Record<string, ExperimentTemplate>;
 	requirements: Requirement[];
 	assumptions?: Record<string, Assumption>;
-	gates?: { stability?: StabilityGate; connections?: ConnectionsGate; limits?: LimitsGate; netlist?: NetlistRules };
+	gates?: { stability?: StabilityGate; connections?: ConnectionsGate; limits?: LimitsGate; netlist?: NetlistRules; device_check?: DeviceCheckGate };
 }
 
 /**
@@ -295,11 +312,35 @@ export function validateRequirements(file: RequirementsFile): string[] {
 		for (const e of Object.keys(c?.experiment_inputs ?? {})) if (!experiments[e]) errors.push(`condition "${name}": experiment_inputs.${e}: experiment "${e}" is not defined`);
 	}
 	const gate = file.gates?.stability;
-	for (const k of Object.keys(file.gates ?? {})) if (!["stability", "connections", "limits", "netlist"].includes(k)) errors.push(`gates.${k}: unknown gate; the gates are stability, connections, limits and netlist`);
+	for (const k of Object.keys(file.gates ?? {})) if (!["stability", "connections", "limits", "netlist", "device_check"].includes(k)) errors.push(`gates.${k}: unknown gate; the gates are stability, connections, limits, netlist and device_check`);
+	const dg = file.gates?.device_check;
+	if (file.gates && "device_check" in file.gates) {
+		if (!dg || typeof dg !== "object") errors.push("gates.device_check: must be an object");
+		else {
+			for (const k of ["ngspice_experiment", "xyce_experiment"] as const) if (!experiments[dg[k]]) errors.push(`gates.device_check.${k}: experiment "${dg[k]}" is not defined`);
+			if (!Array.isArray(dg.conditions) || !dg.conditions.length) errors.push("gates.device_check: conditions must list the conditions of the gate");
+			else for (const c of dg.conditions) if (!conditions[c]) errors.push(`gates.device_check: condition "${c}" is not defined`);
+			if (!Array.isArray(dg.freqs_hz) || !dg.freqs_hz.length || !dg.freqs_hz.every((x) => isNumber(x) && x > 0)) errors.push("gates.device_check: freqs_hz must list the frequencies in Hz");
+			if (!Array.isArray(dg.devices) || !dg.devices.length) errors.push("gates.device_check: devices must list at least one device");
+			else
+				for (const d of dg.devices) {
+					if (!d || typeof d.name !== "string" || typeof d.cell !== "string" || !Array.isArray(d.pins) || !Array.isArray(d.bias_v) || d.bias_v.length !== 2 || !d.bias_v.every(isNumber))
+						errors.push(`gates.device_check.devices "${d?.name}": name, cell, pins and bias_v [V of port 1, V of port 2] are required`);
+				}
+		}
+	}
 	const ng = file.gates?.netlist;
 	if (ng !== undefined) {
 		if (!ng || typeof ng.file !== "string" || typeof ng.subckt !== "string" || !Array.isArray(ng.pins) || !Array.isArray(ng.devices))
 			errors.push("gates.netlist: file, subckt, pins and devices are required");
+		if (ng && ng.fit_checks !== undefined) {
+			if (!Array.isArray(ng.fit_checks)) errors.push("gates.netlist.fit_checks: must be a list");
+			else
+				for (const [i, fc] of ng.fit_checks.entries()) {
+					if (!fc || !["q", "re_z"].includes(fc.kind) || !Array.isArray(fc.band_hz) || fc.band_hz.length !== 2 || !fc.band_hz.every((x) => isNumber(x) && x > 0) || fc.band_hz[0] > fc.band_hz[1] || !isNumber(fc.tol_rel_max) || fc.tol_rel_max <= 0)
+						errors.push(`gates.netlist.fit_checks[${i}]: kind ("q" or "re_z"), band_hz [low, high] and tol_rel_max (> 0) are required`);
+				}
+		}
 		else if (ng.devices.length && typeof ng.technology !== "string") errors.push("gates.netlist: technology (the pack name) is required with devices: the pack gives the instance parameters of each device class");
 	}
 	const lg = file.gates?.limits;
@@ -716,6 +757,22 @@ export function limitsGateRows(runs: { experiment: string; condition: string | n
 	return out;
 }
 
+/** The rows of the device-check gate: one per device and condition; the value is the number of findings. */
+export function deviceCheckGateRows(runs: { device: string; condition: string; id: string | null; result: ResultRecord | null; why?: string }[]): VerdictRow[] {
+	return runs.map((run) => {
+		const base = { requirement: `gate device_check ${run.device}`, condition: run.condition, measurement: "findings of device_crosscheck (ngspice against Xyce)", op: "<=" as const, limit: 0, unit: null, margin: null, margin_rel: null, experiment: run.id, at: null, gate: { name: "device_check", stage: run.device, covered_by: [] as string[] } };
+		const m = run.result?.status === "completed" ? run.result.measurements : null;
+		const n = m?.findings?.value;
+		if (!run.result || !m || !isNumber(n)) {
+			return { ...base, value: null, status: "not_run", reason: run.why ?? (run.result ? `experiment ${run.id} ended with status ${run.result.status}` : "the check was cancelled before this experiment") } as VerdictRow;
+		}
+		const found = run.result.diagnostics.filter((d) => d.severity === "warning" && d.message.startsWith("finding: ")).map((d) => d.message.slice(9));
+		const worst = `largest difference: DC ${(100 * (m.dc_rel_max?.value ?? 0)).toFixed(2)} %, y ${(100 * (m.y_rel_max?.value ?? 0)).toFixed(2)} %`;
+		const reason = n > 0 ? `${found.slice(0, 2).join("; ")}${found.length > 2 ? `; and ${found.length - 2} more` : ""}; the simulators do not agree for this device (see the workaround registry of the PDK)` : worst;
+		return { ...base, value: n, margin: -n, status: n > 0 ? "fail" : "pass", reason } as VerdictRow;
+	});
+}
+
 /** The rows of the connection gate: one per item of the block against the connection table (connections.ts). */
 /** The instance-parameter classes of a technology pack (instance_params.<pdk>.classes), or {} when it has none. */
 export function instanceParamClasses(root: string, technology: string): Record<string, InstanceParamClass> {
@@ -739,7 +796,17 @@ export function netlistGateRows(file: RequirementsFile, root: string): VerdictRo
 	} catch (e) {
 		return [{ ...base, value: null, margin: null, margin_rel: null, status: "not_run", reason: (e as Error).message }];
 	}
-	const res = checkNetlist(readFileSync(path, "utf8"), rules, { classes, fits: rules.fitted ? fittedModels(root).found : [] });
+	const fitsFound = rules.fitted ? fittedModels(root).found : [];
+	const res = checkNetlist(readFileSync(path, "utf8"), rules, { classes, fits: fitsFound });
+	for (const fc of rules.fit_checks ?? []) {
+		const used = res.fitted_used.map((u) => fitsFound.find((m) => m.fit === u.fit && m.name === u.subckt)).filter((m) => m !== undefined);
+		const ok = used.filter((m) => (m.checks ?? []).some((c) => c.kind === fc.kind && Array.isArray(c.band_hz) && c.band_hz[0] <= fc.band_hz[1] && c.band_hz[1] >= fc.band_hz[0] && c.tol_rel <= fc.tol_rel_max));
+		const min = fc.min ?? 1;
+		if (ok.length < min) {
+			const what = fc.kind === "q" ? "Q" : "Re Z";
+			res.errors.push({ line: null, message: `${ok.length} of the fitted models of ${rules.subckt} has a ${what} check from ${fc.band_hz[0] / 1e9} GHz to ${fc.band_hz[1] / 1e9} GHz with a tolerance of at most ${fc.tol_rel_max} (needed: ${min}). Give fit_to_spice the input "checks" ({name, kind "${fc.kind}", ports, band_hz, tol_rel}): the limit on max |dS| does not bound this quantity` });
+		}
+	}
 	const n = res.errors.length;
 	const shown = res.errors.slice(0, 12).map((e) => `${rules.file}${e.line ? `:${e.line}` : ""}: ${e.message}`);
 	const fits = res.fitted_used.length ? `; fitted models used: ${res.fitted_used.map((x) => `${x.subckt} (fit ${x.fit}${x.em ? `, EM ${x.em}` : ""})`).join(", ")}` : "";
@@ -983,6 +1050,40 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 			done.push({ id: outcome.id, experiment: `gate limits ${experiment}`, condition, status: outcome.result.status, diagnostics });
 		});
 	}
+	// The device-check gate: one device_crosscheck run per device and selected condition. A selection of requirements
+	// leaves the gate out (its rows are then not run).
+	const dgate = file.gates?.device_check;
+	const deviceRuns: { device: string; condition: string; id: string | null; result: ResultRecord | null; why?: string }[] = [];
+	for (const condition of dgate?.conditions ?? []) {
+		for (const d of dgate?.devices ?? []) {
+			const run: (typeof deviceRuns)[number] = { device: d.name, condition, id: null, result: null };
+			deviceRuns.push(run);
+			if (opts.requirements !== undefined || (opts.conditions && !opts.conditions.includes(condition))) {
+				run.why = NOT_SELECTED;
+				continue;
+			}
+			jobs.push(async () => {
+				const ng = experimentInputs(file, dgate!.ngspice_experiment, condition);
+				const xy = experimentInputs(file, dgate!.xyce_experiment, condition);
+				const required = file.gates?.netlist?.require_params?.[d.cell.toLowerCase()] ?? {};
+				const inputs: Record<string, unknown> = {
+					device: { cell: d.cell, params: d.params ?? {}, pins: d.pins },
+					bias_v: d.bias_v,
+					freqs_hz: dgate!.freqs_hz,
+					ngspice_libs: ng.libs,
+					xyce_libs: xy.libs,
+					ngspice_params: { ...required, ...(d.ngspice_params ?? {}) },
+					...(d.xyce_params ? { xyce_params: d.xyce_params } : {}),
+					...(ng.temp_c !== undefined ? { temp_c: ng.temp_c } : {}),
+					...(dgate!.tolerance ? { tolerance: dgate!.tolerance } : {}),
+				};
+				const outcome = await runExperiment({ root, adapter: "xyce", operation: "device_crosscheck", inputs, environment: dgate!.environment ?? file.experiments[dgate!.xyce_experiment].environment, purpose: `check ${id}: gate device_check ${d.name} at ${condition}`, signal: opts.signal });
+				run.id = outcome.id;
+				run.result = outcome.result;
+				done.push({ id: outcome.id, experiment: `gate device_check ${d.name}`, condition, status: outcome.result.status, diagnostics: outcome.result.diagnostics.filter((x) => x.severity === "error") });
+			});
+		}
+	}
 	// A few workers take the jobs in order. After an abort, no worker starts a new run.
 	let next = 0;
 	const worker = async () => {
@@ -1007,6 +1108,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 	rows.push(...connectionGateRows(file, root));
 	rows.push(...limitsGateRows(limitRuns, root));
 	rows.push(...netlistGateRows(file, root));
+	rows.push(...deviceCheckGateRows(deviceRuns));
 	rows.push(...fitBandGateRows(file, root, [...new Set([...pairs.values()].map((p) => p.experiment))]));
 	const counts: Record<RowStatus, number> = { pass: 0, fail: 0, not_measured: 0, not_run: 0 };
 	for (const row of rows) counts[row.status]++;

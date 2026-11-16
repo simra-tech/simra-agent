@@ -879,8 +879,11 @@ def main(argv):
     def run_hb_limits(req):
         import hb_limits  # here: it imports the ngspice adapter (manifest uses_adapters), which only this operation needs
         return hb_limits.hb_limits(req)
+    def run_crosscheck(req):
+        import device_crosscheck  # here: it imports the helpers of this module
+        return device_crosscheck.device_crosscheck(req)
     operation = {"parse": parse, "simulate": simulate, "hb": hb, "probe_devices": device_probe.probe_devices,
-                 "hb_limits": run_hb_limits}.get(request.get("operation"))
+                 "hb_limits": run_hb_limits, "device_crosscheck": run_crosscheck}.get(request.get("operation"))
     response = operation(request) if operation else failure(None, "unknown operation: {}".format(request.get("operation")))
     tmp = request["response_path"] + ".tmp"
     with open(tmp, "w") as f:

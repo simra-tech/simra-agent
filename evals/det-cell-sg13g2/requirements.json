@@ -44,6 +44,10 @@
     "settling_25ns": {
       "description": "The bench reads each power level 25 ns to 30 ns after the step; the output must settle within 25 ns",
       "source": "task"
+    },
+    "hbt_excess_phase": {
+      "description": "sw_nqs=1 on every npn13G2 instance: the excess phase of the HBT model is on, as in the design rule of the reference design and as in the Xyce model card. The ngspice default of the PDK is sw_nqs=0.",
+      "source": "task"
     }
   },
   "conditions": {
@@ -369,7 +373,19 @@
         "c_f": 5e-14
       },
       "couplings": true,
-      "technology": "ihp-sg13"
+      "technology": "ihp-sg13",
+      "allow_params": {
+        "npn13g2": {
+          "sw_nqs": [
+            1
+          ]
+        }
+      },
+      "require_params": {
+        "npn13g2": {
+          "sw_nqs": 1
+        }
+      }
     }
   }
 }
