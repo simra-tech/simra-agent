@@ -510,6 +510,16 @@ test("end guard: the answer must belong to the final design and its check, else 
 	assert.deepEqual(answerConsistency(root, "answer.json", "vco.spice").items, []);
 	assert.equal(answerConsistency(root, "answer.json", "vco.spice").check, "20261116-120000-aaaaaa");
 
+	// A reported row (not scored): its value must agree, and its failure does not change meets_spec.
+	mkdirSync(join(root, "simra", "checks", "20261116-120500-rrrrrr"), { recursive: true });
+	writeFileSync(join(root, "simra", "checks", "20261116-120500-rrrrrr", "verdict.json"), JSON.stringify({ id: "20261116-120500-rrrrrr", design_file: { path: "vco.spice", sha256: hash() }, experiments: [], rows: rows.filter((r) => r.condition !== "slow_hot"), reported: [{ requirement: "pn_dev", condition: "slow_hot", value: -78.32, status: "fail", reported_reason: "x" }] }));
+	answer({ ...good, rows: [...good.rows.filter((r) => r.corner !== "slow_hot"), { corner: "slow_hot", requirement: "pn_dev", value: -78.3 }] });
+	assert.deepEqual(answerConsistency(root, "answer.json", "vco.spice").items, [], "meets_spec true with a failing reported row is consistent");
+	answer({ ...good, rows: [...good.rows.filter((r) => r.corner !== "slow_hot"), { corner: "slow_hot", requirement: "pn_dev", value: -84 }] });
+	assert.match(answerConsistency(root, "answer.json", "vco.spice").items[0], /slow_hot pn_dev: -84 in answer\.json, -78\.32 in the check/);
+	rmSync(join(root, "simra", "checks", "20261116-120500-rrrrrr"), { recursive: true });
+	answer(good);
+
 	// The pilot of step 9: the agent wrote the answer, changed the design, ran no complete check of it.
 	const later = new Date(Date.now() + 5_000);
 	writeFileSync(join(root, "vco.spice"), "* v2\n");

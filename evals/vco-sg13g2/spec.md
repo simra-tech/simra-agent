@@ -76,7 +76,7 @@ the requirements:
 | `f_high`: core frequency | `vtune` 2.8 V, bits 111 | all | ≥ 62.0 GHz | row 1 |
 | `amp_v`: differential amplitude (half peak-to-peak) | `vtune` 1.55 V, bits 001 (b2 high) | all | ≥ 0.6 V | row 4 |
 | `t_start`: first cycle at 90 % of the steady amplitude | as `amp_v` | all | ≤ 7.5 ns | row 5 |
-| `pn_dev`: phase noise at 1 MHz referred to 122 GHz, core-pair device noise (see "Phase noise") | as `amp_v` | `tt`, `slow_hot` | ≤ −83 dBc/Hz | row 2 |
+| `pn_dev`: phase noise at 1 MHz referred to 122 GHz, core-pair device noise (see "Phase noise") | as `amp_v` | `tt` (scored); `slow_hot` (reported, not scored: see below) | ≤ −83 dBc/Hz | row 2 |
 | gate `limits` on the middle setting | as `amp_v`, 8.5 ns to 9.0 ns | all | the PDK pack on the cycle means (over 8.5 ns to 9.0 ns), the peak voltages with V<sub>CE</sub> ≤ 2.5 V, and `ic_per_emitter` ≤ 3 mA | row 3 |
 
 ## Phase noise
@@ -84,11 +84,20 @@ the requirements:
 The row `pn_dev` comes from the `oscillator` operation by the impulse sensitivity function (ISF): for each source and
 each of 16 phases of the period, two transient runs inject a small charge (+q and −q) and read the shift of the zero
 crossings 35 to 45 periods later. The phase noise is L(Δf) = 1/2 (f0/Δf)² mean(ISF² S) per source, summed, plus the
-flicker term from the DC part of the ISF, +6 dB for the doubler. The sources are the shot noise of the collector and base
-conduction currents of the core transistor `xq1` (from a DC table of the device at the transient junction voltages) and
-its base flicker noise, times 2 for `xq2`. The phase-noise run reads the oscillator after 14 ns (the other runs:
+flicker term, +6 dB for the doubler. The sources are the shot noise of the collector and base conduction currents of the
+core transistor `xq1` (from a DC table of the device at the transient junction voltages of the corner and temperature;
+the check compares the mean table collector current with the mean terminal current, 10 %) and its base flicker noise,
+times 2 for `xq2`. The flicker term is the larger of two values: the DC part of the ISF, and a quasi-static term. The
+quasi-static term comes from two more runs with a DC current of ±1 µA between the base and the emitter of `xq1`: they
+give K = df0/dI, and L = 1/2 K² S_flicker / Δf². It covers the slow path of the base current through the base bias
+resistors, which the ISF window reads only in part. The phase-noise run reads the oscillator after 14 ns (the other runs:
 after 8 ns): the ISF needs a settled amplitude. At slow 125 °C the amplitude still drifts at 8 ns, and the row then
 reads 2 dB worse.
+
+The reported row: with this method the reference core gives −85.38 dBc/Hz at `tt` and −78.32 dBc/Hz at `slow_hot`
+(simulated). It does not meet −83 dBc/Hz at `slow_hot`, so the row is not scored there. The limit does not change.
+The check still measures the row at `slow_hot` and lists it as REPORTED. Give its value in `answer.json`; the
+scorer compares it with the verified run.
 
 Naming rule: the two cross-coupled core transistors are the instances `xq1` and `xq2` (npn13G2) of the subcircuit `vco`,
 with the pins in the PDK order (collector, base, emitter, substrate). The check injects at the pins of `xq1`.

@@ -70,6 +70,33 @@ test("a check compares every row with its limit and names the experiment", async
 	assert.match(text.split("\n")[2], /^ {2}FAIL {9}gain @ ss: 55 dB, limit >= 58 margin -5\.2% \[\S+\]$/, "failures come first");
 });
 
+test("a reported row is measured at its conditions and does not change the status of the check", async (t) => {
+	const file = structuredClone(amplifier) as RequirementsFile;
+	// gain is scored at tt only and reported at ss, where the value (55 dB) is below the limit.
+	file.requirements[0] = { ...file.requirements[0], conditions: ["tt"], reported: { conditions: ["ss"], reason: "the reference does not meet it at ss" } };
+	file.requirements[1] = { ...file.requirements[1], conditions: ["tt"] };
+	const root = designRoot(t, file);
+	const { verdict } = await runCheck({ root });
+	assert.equal(verdict.status, "pass", "the reported row does not fail the check");
+	assert.deepEqual(verdict.counts, { pass: 2, fail: 0, not_measured: 0, not_run: 0 });
+	assert.equal(verdict.experiments.length, 2, "the experiment of the reported condition runs");
+	assert.equal(verdict.rows.length, 2);
+	assert.equal(verdict.reported?.length, 1);
+	const r = verdict.reported![0];
+	assert.deepEqual([r.requirement, r.condition, r.value, r.status, r.reported_reason], ["gain", "ss", 55, "fail", "the reference does not meet it at ss"]);
+	assert.match(formatVerdict(root, verdict), /\n {2}REPORTED {5}gain @ ss: 55 dB \(outside >= 58; not scored: the reference does not meet it at ss\) \[\S+\]/);
+	// A check without reported rows has no reported field.
+	assert.equal((await runCheck({ root: designRoot(t, amplifier) })).verdict.reported, undefined);
+	// Validation: a condition that is both scored and reported, an unknown condition, no reason.
+	const bad = structuredClone(file) as RequirementsFile;
+	bad.requirements[0] = { ...bad.requirements[0], reported: { conditions: ["tt", "ff"], reason: "" } };
+	const errors = validateRequirements(bad);
+	assert.ok(errors.some((e) => /reported needs conditions \(at least one\) and a reason/.test(e)), errors.join("; "));
+	bad.requirements[0] = { ...bad.requirements[0], reported: { conditions: ["tt", "ff"], reason: "x" } };
+	const e2 = validateRequirements(bad);
+	assert.ok(e2.some((e) => /condition "tt" is both scored and reported/.test(e)) && e2.some((e) => /reported condition "ff" is not defined/.test(e)), e2.join("; "));
+});
+
 test("missing values and failed experiments are reported, never passed", async (t) => {
 	const root = designRoot(t, {
 		...amplifier,

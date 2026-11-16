@@ -127,6 +127,13 @@ export function formatVerdict(root: string, verdict: VerdictRecord): string {
 	}
 	const unselected = verdict.rows.length - rows.length;
 	if (unselected) lines.push(`  NOT_RUN      ${unselected} more row${unselected === 1 ? "" : "s"}: ${NOT_SELECTED} (listed in verdict.json)`);
+	// Reported rows: measured and given to the reader, not scored (they do not change the status of the check).
+	for (const r of (verdict.reported ?? []).filter((x) => x.reason !== NOT_SELECTED)) {
+		const unit = r.unit ? ` ${r.unit}` : "";
+		const value = r.value === null ? "-" : `${num(r.value)}${unit}`;
+		const state = r.status === "pass" || r.status === "fail" ? `${r.status === "pass" ? "within" : "outside"} ${limitText(r.op, r.limit)}` : r.status;
+		lines.push(`  REPORTED     ${r.requirement}${r.condition === null ? "" : ` @ ${r.condition}`}: ${value} (${state}; not scored: ${r.reported_reason})${r.experiment ? ` [${r.experiment}]` : ""}${r.reason ? ` (${r.reason})` : ""}`);
+	}
 	return lines.join("\n");
 }
 

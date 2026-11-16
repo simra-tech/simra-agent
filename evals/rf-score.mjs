@@ -10,8 +10,9 @@
 //   input Touchstone file is the output of an openems record (matched by SHA-256).
 // - requirements (one per verified row, gate rows included): the row passes. Given only when the design part passes.
 // - claim (4): meets_spec is the same as the verification (design, EM passive, every row).
-// - values (one per requirement row, gate rows excluded): the reported value is within the tolerance of the verified
-//   value.
+// - values (one per requirement row, gate rows excluded, and one per reported row): the reported value is within the
+//   tolerance of the verified value. A reported row (requirement.reported: measured at a condition and not scored)
+//   gives no requirement point and does not change meets_spec; only its value is checked.
 // Diagnostics (no points): reference (expected.json), supported (rows whose value appears in a workspace file other
 // than answer.json and the design file), em (the EM passives found, and why others were refused), errors.
 
@@ -87,13 +88,17 @@ export function makeScorer({ here, design, tolerance }) {
 		const { verdict } = await runCheck({ root, parallel });
 		const rows = {};
 		for (const r of verdict.rows) rows[`${r.condition} ${r.requirement}`] = { value: r.value ?? null, pass: r.status === "pass", status: r.status, gate: Boolean(r.gate) };
+		for (const r of verdict.reported ?? []) rows[`${r.condition} ${r.requirement}`] = { value: r.value ?? null, pass: r.status === "pass", status: r.status, gate: false, reported: true };
 		return { rows, experiments: verdict.experiments.map((e) => ({ id: e.id, condition: e.condition, status: e.status })) };
 	}
 
 	async function score(ws, expected = readJson(join(here, "expected.json")), _agentRoot = ws, { verifyRoot = join(dirname(ws), "verify"), verifier = verify } = {}) {
 		const requirements = readJson(join(here, "requirements.json"));
 		const reqRows = requirements.requirements.flatMap((r) => r.conditions.map((c) => `${c} ${r.id}`));
-		const report = { workspace: ws, design: 0, em_passive: 0, requirements: 0, claim: 0, values: 0, max: { design: 2, em_passive: 2, requirements: null, claim: 4, values: reqRows.length }, meets_spec: null, verified_meets_spec: false, design_errors: [], em: { used: [], refused: [] }, rows: {}, closed: [], missed: [], supported: 0, errors: [] };
+		// Reported rows (requirement.reported): the value must agree with the verified run (values part); they give no
+		// requirement point and do not change the verified meets_spec.
+		const reportedRows = requirements.requirements.flatMap((r) => (r.reported?.conditions ?? []).map((c) => `${c} ${r.id}`));
+		const report = { workspace: ws, design: 0, em_passive: 0, requirements: 0, claim: 0, values: 0, max: { design: 2, em_passive: 2, requirements: null, claim: 4, values: reqRows.length + reportedRows.length }, meets_spec: null, verified_meets_spec: false, design_errors: [], em: { used: [], refused: [] }, rows: {}, closed: [], missed: [], supported: 0, errors: [] };
 		const designPath = join(ws, design);
 		let verified = null;
 		if (!existsSync(designPath)) report.errors.push(`${design} not found`);
@@ -127,18 +132,22 @@ export function makeScorer({ here, design, tolerance }) {
 		// A "gate fit_band <network>" row names a fitted network of one design. The reference rows of this kind name the
 		// networks of the reference and do not apply to another design; these rows come from the verified run only.
 		const designRow = (k) => / gate fit_band /.test(k);
-		const keys = [...new Set([...reqRows, ...Object.keys(expected.rows ?? {}).filter((k) => !designRow(k)), ...Object.keys(verified?.rows ?? {})])];
+		const isReported = (k) => reportedRows.includes(k) || Boolean(verified?.rows[k]?.reported);
+		const keys = [...new Set([...reqRows, ...Object.keys(expected.rows ?? {}).filter((k) => !designRow(k)), ...Object.keys(verified?.rows ?? {})])].filter((k) => !isReported(k));
 		report.max.requirements = keys.length;
 		let allPass = report.design === 2 && report.em_passive === 2;
-		for (const key of keys) {
+		for (const key of [...keys, ...reportedRows]) {
+			const scored = !reportedRows.includes(key);
 			const v = verified?.rows[key] ?? { value: null, pass: false, status: "not_run" };
-			const ref = expected.rows?.[key] ?? null;
-			const s = { verified: v.value, status: v.status, reported: null, value: false, supported: false, reference: ref };
+			const ref = (scored ? expected.rows?.[key] : expected.reported?.[key]) ?? null;
+			const s = { verified: v.value, status: v.status, reported: null, value: false, supported: false, reference: ref, ...(scored ? {} : { scored: false }) };
 			report.rows[key] = s;
-			allPass &&= v.pass;
-			if (report.design === 2) report.requirements += Number(v.pass);
-			(v.pass ? report.closed : report.missed).push(key);
-			if (!reqRows.includes(key)) continue;
+			if (scored) {
+				allPass &&= v.pass;
+				if (report.design === 2) report.requirements += Number(v.pass);
+				(v.pass ? report.closed : report.missed).push(key);
+			}
+			if (scored && !reqRows.includes(key)) continue;
 			const [corner, id] = key.split(" ");
 			const r = rows.find((x) => x?.corner === corner && x?.requirement === id);
 			s.reported = r?.value ?? null;

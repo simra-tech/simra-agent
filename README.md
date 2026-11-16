@@ -1139,6 +1139,16 @@ A requirement or an extra limit can carry `limit_source`: `{ "kind": "specificat
 "task", "ref": "..." }`. The kind `reference_design` marks a limit that was set after a reference run: the reference
 passes it by construction.
 
+### Reported rows
+
+A requirement can carry `reported: { "conditions": [...], "reason": "..." }`. At these conditions the check runs the
+experiment and writes the row to `verdict.reported`, not to `rows`. Its status (within or outside the limit) is
+information only. It does not change the status of the check or `meets_spec`. The check output lists it as
+`REPORTED`, with the reason. A condition cannot be both scored and reported. Use it when the reference design does
+not meet a limit at a condition and the limit must not change: the value is still measured and reported. The end
+guard and the RF scorer compare the reported value of the answer with the verified run (a value point, no
+requirement point). Example: `evals/vco-sg13g2`, row `pn_dev` at `slow_hot`.
+
 ### Stability diagnosis
 
 When a `mu` row fails, the ngspice operation `stability_diagnosis` (inputs: the S-parameter bench, the Touchstone file

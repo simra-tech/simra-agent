@@ -168,6 +168,12 @@ export interface Requirement {
 	conditions?: string[];
 	/** Where the limit comes from (see LimitSource). */
 	limit_source?: LimitSource;
+	/**
+	 * Conditions at which the value is measured and reported, not scored: the check runs the experiment there and
+	 * writes the row (status from the limit, as information) to verdict.reported, not to rows. A reported row does
+	 * not change the status of the check or meets_spec. reason says why the row is not scored there.
+	 */
+	reported?: { conditions: string[]; reason: string };
 }
 
 /**
@@ -257,6 +263,8 @@ export interface VerdictRecord {
 	/** Each experiment of the check, with its error and warning diagnostics (for example a design error with its file and line). */
 	experiments: { id: string; experiment: string; condition: string | null; status: ExecutionStatus; diagnostics: Diagnostic[] }[];
 	rows: VerdictRow[];
+	/** Rows that are reported and not scored (Requirement.reported); absent when the file has none. */
+	reported?: (VerdictRow & { reported_reason: string })[];
 }
 
 export interface CheckOptions {
@@ -448,6 +456,18 @@ export function validateRequirements(file: RequirementsFile): string[] {
 			if (!conditions[c]) errors.push(`${where}: condition "${c}" is not defined`);
 			const limit = limitFor(r, c);
 			if (!validLimit(r.op, limit)) errors.push(`${where}: no valid limit for op ${r.op} at condition "${c}"`);
+		}
+		if (r.reported !== undefined) {
+			const rp = r.reported;
+			if (!rp || !Array.isArray(rp.conditions) || !rp.conditions.length || typeof rp.reason !== "string" || !rp.reason) {
+				errors.push(`${where}: reported needs conditions (at least one) and a reason`);
+			} else {
+				for (const c of rp.conditions) {
+					if (!conditions[c]) errors.push(`${where}: reported condition "${c}" is not defined`);
+					else if (r.conditions.includes(c)) errors.push(`${where}: condition "${c}" is both scored and reported`);
+					else if (!validLimit(r.op, limitFor(r, c))) errors.push(`${where}: no valid limit for op ${r.op} at reported condition "${c}"`);
+				}
+			}
 		}
 	}
 	return errors;
@@ -997,6 +1017,13 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 	for (const r of file.requirements) {
 		for (const c of conditionsOf(r)) if (selected(r, c)) pairs.set(key(r.experiment, c), { experiment: r.experiment, condition: c });
 	}
+	// Reported rows run their experiment too; they are added after the scored pairs, so the gates (which follow the
+	// conditions of the scored rows) do not change.
+	const reportedOf = (r: Requirement) => r.reported?.conditions ?? [];
+	const reportedPairs = new Map<string, { experiment: string; condition: string | null }>();
+	for (const r of file.requirements) {
+		for (const c of reportedOf(r)) if (selected(r, c) && !pairs.has(key(r.experiment, c))) reportedPairs.set(key(r.experiment, c), { experiment: r.experiment, condition: c });
+	}
 
 	// The operating-limit gate: one device_limits run per (experiment, condition) pair of the gate.
 	const lg = file.gates?.limits;
@@ -1015,7 +1042,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 	const id = newExperimentId();
 	const runs = new Map<string, { id: string; result: ResultRecord }>();
 	const limitRuns: { experiment: string; condition: string | null; id: string; result: ResultRecord }[] = [];
-	const list = [...pairs];
+	const list = [...pairs, ...reportedPairs];
 	const done: (VerdictRecord["experiments"][number] | null)[] = list.map(() => null);
 	const jobs = list.map(([pair, { experiment, condition }], i) => async () => {
 		const t = file.experiments[experiment];
@@ -1115,6 +1142,15 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 			rows.push(cited.length ? { ...row, assumptions: cited } : row);
 		}
 	}
+	const reported: NonNullable<VerdictRecord["reported"]> = [];
+	for (const r of file.requirements) {
+		for (const c of reportedOf(r)) {
+			const run = selected(r, c) ? (runs.get(key(r.experiment, c)) ?? null) : null;
+			const row = evaluateRow(r, c, run, selected(r, c) ? "the check was cancelled before this experiment" : NOT_SELECTED, root);
+			const cited = rowAssumptions(file, r, c);
+			reported.push({ ...(cited.length ? { ...row, assumptions: cited } : row), reported_reason: r.reported!.reason });
+		}
+	}
 	rows.push(...stabilityGateRows(file, rows));
 	rows.push(...connectionGateRows(file, root));
 	rows.push(...limitsGateRows(limitRuns, root));
@@ -1139,6 +1175,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 		simra: { kernel_version: KERNEL_VERSION },
 		experiments,
 		rows,
+		...(reported.length ? { reported } : {}),
 	};
 	const dir = join(checksDir(root), id);
 	mkdirSync(dir, { recursive: true });

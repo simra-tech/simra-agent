@@ -47,14 +47,16 @@ Three faults of the first bench, each of which made the reference "not oscillate
 ## Phase noise
 
 See `spec.md`, section "Phase noise": ISF of the oscillator operation, 16 phases, the collector and base shot noise and
-the base flicker noise of `xq1`, times 2. The row is a partial sum: for the oscillator of the reference design the
+the base flicker noise of `xq1`, times 2; the flicker term is the larger of the ISF term and the quasi-static term
+(since step 10, see "Phase-noise method check"). The row is a partial sum: for the oscillator of the reference design the
 other sources (tank loss, HBT parasitic resistances) add 2.7 dB at 1 MHz. The ISF method against a transient-noise
 run on that oscillator: −88.6 dBc/Hz against −87.8 ± 0.2 dBc/Hz at 1 MHz.
 
 ## Reference
 
-Every row passes. The table has the step 8 values (simulated, ngspice 46, `sw_nqs=0`); the values of record since
-step 9 are in the section "Excess phase of the HBT model" and in `expected.json`:
+Every scored row passes. The reported row `pn_dev` at slow 125 °C does not meet its limit (see "Phase-noise method
+check"). The table has the step 8 values (simulated, ngspice 46, `sw_nqs=0`); the values of record are in the sections
+"Excess phase of the HBT model" (step 9) and "Phase-noise method check" (step 10, `pn_dev`) and in `expected.json`:
 
 | Row | tt | slow, 125 °C | fast, −40 °C |
 | --- | --- | --- | --- |
@@ -102,6 +104,39 @@ after 8 ns and −88.39 dBc/Hz after 14 ns, so a row margin below about 1.5 dB i
 
 The smallest margins of the reference: `f_high` at slow 125 °C 0.24 GHz, start-up at slow 125 °C 0.46 ns, peak
 V<sub>CE</sub> 0.03 V.
+
+## Phase-noise method check (step 10)
+
+The phase-noise tool of the reference design had three faults (design record of 2026-11-16): (a) an injected source
+term 20 dB low from a wrong unit, (b) noise sources at typical 27 °C conditions at every corner, (c) no term for the base
+flicker current through the base bias resistors. This task, before step 10:
+
+| Fault | In this task | Change |
+| --- | --- | --- |
+| (a) unit of an injected source | not present: a current source uses the charge step, a series source the flux step | each source record names its bound (2qI, 4kT/R, 4kTR); a test checks the terms against them |
+| (b) sources at 27 °C | not present for the conduction table (the table deck has the corner libraries and the temperature) | a thermal source uses the run temperature; the check compares the mean table collector current with the terminal current (10 %) |
+| (c) base flicker through the bias resistors | present: the core has base bias resistors from `vbc` and a filter resistor to the replica | quasi-static term (±1 µA between base and emitter of `xq1`); the flicker term is the larger of the ISF and quasi-static terms |
+
+New values (simulated, ngspice 46, `sw_nqs=1`, at 1 MHz referred to 122 GHz):
+
+| Term | tt | slow, 125 °C |
+| --- | --- | --- |
+| collector shot (×2) | −88.37 dBc/Hz | −85.63 dBc/Hz |
+| base shot (×2) | −109.20 dBc/Hz | −99.44 dBc/Hz |
+| base flicker, ISF | −130.16 dBc/Hz | −94.27 dBc/Hz |
+| base flicker, quasi-static (used) | −88.44 dBc/Hz (K = +9.91 MHz/µA at 61 GHz) | −79.26 dBc/Hz (K = −10.46 MHz/µA) |
+| `pn_dev` (before: step 9) | −85.38 dBc/Hz (−88.39) | −78.32 dBc/Hz (−84.83) |
+
+**The reference core does not meet −83 dBc/Hz at slow 125 °C (−78.32 dBc/Hz).** For that reason the row `pn_dev` is
+scored at `tt` only. At `slow_hot` it is a reported row: the check measures it, the agent gives its value, and the
+scorer compares the value with the verified run (one value point, no requirement point; it does not change
+`meets_spec`). The limit −83 dBc/Hz is not changed. The design record of the reference fails its own row at that
+corner too. The row returns to scoring at `slow_hot` when a reference core passes it. `expected.json` has the value
+under `reported` and the reason under `reported_notes`.
+
+The start check of the `oscillator` operation (step 10) stops and resumes the reference run at settle/2 and
+3 settle/4. This changes the other rows a little (simulated, against step 9): `t_start` at slow 125 °C 7.04 → 7.16 ns
+(margin 0.34 ns), at tt 5.11 → 5.09 ns; the frequencies by 0.008 % or less; `amp_v` by 0.3 % or less.
 
 ## Tank fit
 

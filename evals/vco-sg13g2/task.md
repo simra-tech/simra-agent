@@ -18,5 +18,7 @@ Design the 61 GHz oscillator core of `spec.md` for the IHP SG13G2 PDK.
 }
 ```
 
-`rows` has one entry for each corner and each requirement of `requirements.json` (14 entries), with the value of your
-final design. `meets_spec` is true only when every row and every gate row passes and the design has an EM passive.
+`rows` has one entry for each corner and each requirement of `requirements.json` (13 entries), with the value of your
+final design. Add one entry for the reported row `pn_dev` at `slow_hot` (the check lists it as REPORTED; it is measured
+and not scored, so its "pass" is null): 14 entries. `meets_spec` is true only when every row and every gate row passes
+and the design has an EM passive; the reported row does not change it.

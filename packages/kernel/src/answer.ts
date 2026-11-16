@@ -8,8 +8,9 @@
 // 3. A check of the final design file exists: the newest check whose recorded design file hash equals the hash of
 //    the file now (for a check record without a hash: a check that started after the last change of the file).
 // 4. That check completed every run (no row is not run because a run failed).
-// 5. Each value of the answer equals the value of the row of that check (relative tolerance tol_rel, default 0.2 %:
-//    a value written with 4 significant digits passes); a row with a value in the check needs a value in the answer.
+// 5. Each value of the answer equals the value of the row of that check, also of a reported row, which is not scored
+//    (relative tolerance tol_rel, default 0.2 %: a value written with 4 significant digits passes); a row with a value
+//    in the check needs a value in the answer.
 // 6. meets_spec of the answer equals "every row of that check passes".
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -85,7 +86,7 @@ export function answerConsistency(root: string, answerFile: string, designFile: 
 	const key = (c: unknown, r: unknown) => `${c ?? "null"} ${r}`;
 	const given = new Map(rows.map((r) => [key(r.corner ?? r.condition ?? null, r.requirement), r.value]));
 	const differ: string[] = [];
-	for (const row of check.rows) {
+	for (const row of [...check.rows, ...(check.reported ?? [])]) {
 		if (typeof row.value !== "number" || row.gate) continue;
 		const k = key(row.condition, row.requirement);
 		if (!given.has(k)) continue;
