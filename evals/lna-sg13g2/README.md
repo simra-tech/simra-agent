@@ -178,3 +178,26 @@ Pass count (every row, claim right): default model 2 of 3, stronger model 3 of 3
 5. Token use of the default model (46 M to 78 M prompt tokens, step 6 59 M): the context grows from 17 k to 369 k
    to 486 k tokens over 222 to 283 calls and each call sends all of it. In the final context, the reasoning of
    earlier turns is 55 % to 57 % of the characters, tool results 27 % to 30 %, tool-call arguments 12 % to 17 %.
+
+## Pilot runs, step 8 (lean context, three runs of the default model, 2026-11-16)
+
+Image of commit `3c6872a` (lean context with a state note, `read_output`, `device_budget`), 4 CPUs shared with one or
+two other pilots, 180 min limit. Three samples: a count, not a rate.
+
+| Run | Score (design, EM, requirements, claim, values) | Missed rows | Wall time | Model calls | Prompt tokens |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 2, 2, 55/55, 4, 13/13 | none | 4030 s | 270 | 40.5 M |
+| 2 | 2, 2, 55/55, 4, 13/13 | none | 7887 s | 425 | 79.2 M |
+| 3 | 2, 2, 55/55, 4, 8/13 | none | 4215 s | 372 | 77.3 M |
+
+Pass count (every row, claim right): 3 of 3 (step 7, full context: 2 of 3).
+
+1. Lean context did not reduce the prompt tokens (step 7: 46.2 M, 78.3 M, 56.4 M) or the model calls (step 7: 222,
+   283, 244) in these runs. The wall times are not comparable (more load on the same CPUs). The full mode stays
+   available: `--context full` of `evals/run-arm.mjs`.
+2. Bash calls that read `ngspice.log`: 0, 2, 15 (the same count on the step 7 runs: 32, 57, 54). `read_output` calls:
+   10, 2, 29. Bash stays 53 % to 87 % of the tool calls (the agent's own scripts and table work).
+3. Task error in the scorer, found by these runs: the scorer took the `gate fit_band <network>` rows of
+   `expected.json` (the networks of the reference design) as rows of every design, so each run had four rows
+   "not run" and claim 0. Such rows now come from the verified run only. The table gives the scores without those
+   four rows, computed from the stored verified rows; the simulations were not run again.

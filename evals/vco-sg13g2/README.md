@@ -106,3 +106,21 @@ errors.
 
 As `lna-sg13g2` (`evals/rf-score.mjs`): design (2), em_passive (2), requirements (each verified row and gate row),
 claim (4), values (frequency ±0.2 %, amplitude ±3 %, start-up ±10 %, phase noise ±0.5 dB).
+
+## Pilot runs, step 8 (one run per model, 2026-11-16)
+
+Image of commit `098eb5b`, 4 CPUs shared with other pilots, 180 min limit. **One run per model is not a rate.**
+
+| Model | Score (design, EM, requirements, claim, values) | Missed rows | Wall time | Model calls | Prompt tokens |
+| --- | --- | --- | --- | --- | --- |
+| default (`deepseek/deepseek-flash`) | 2, 2, 1/51, 0, 0/14 | all but the netlist gate: not run | 7635 s | 248 | 30.2 M |
+| stronger (`openai/gpt-6.1-sol`) | 2, 2, 48/48, 4, 14/14 | none | 3239 s | 88 | 5.4 M |
+
+1. Default model, cause class early end: the agent drew, simulated and fitted a tank, then tuned the core with its
+   own transient script. At 127 min of 180 it wrote a summary of its work as a reply with no tool call, and the
+   session ended. It wrote no `answer.json`, it ran `check_requirements` once, and the last `vco.spice` was not the
+   tuned design: the transient of the scorer aborts on it (time step too small at 14 ps), so 17 rows are "not run".
+   The last values of its own script were inside the frequency and amplitude rows at the three corners; no check
+   confirms them.
+2. Stronger model: every row passes, with 24 `check_requirements` calls. `pn_dev` −86.72 dBc/Hz at tt and
+   −84.08 dBc/Hz at slow 125 °C; start-up 3.16 ns, 3.46 ns, 2.69 ns; peak V<sub>CE</sub> at most 2.10 V.

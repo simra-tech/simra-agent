@@ -88,3 +88,17 @@ fail the stability gate.
 
 As `lna-sg13g2` (`evals/rf-score.mjs`): design (2), em_passive (2), requirements (each verified row and gate row),
 claim (4), values (each reported value within tolerance: power ±0.2 dB, current and μ ±2 %).
+
+## Pilot runs, step 8 (one run per model, 2026-11-16)
+
+Image of commit `098eb5b`, 4 CPUs shared with other pilots, 180 min limit. **One run per model is not a rate.**
+
+| Model | Score (design, EM, requirements, claim, values) | Missed rows | Wall time | Model calls | Prompt tokens |
+| --- | --- | --- | --- | --- | --- |
+| default (`deepseek/deepseek-flash`) | 2, 2, 78/78, 4, 15/15 | none | 3231 s | 183 | 22.9 M |
+| stronger (`openai/gpt-6.1-sol`) | 2, 2, 77/77, 4, 15/15 | none | 156 s | 27 | 1.0 M |
+
+1. The scores are without the two `gate fit_band` rows of the reference networks, which the scorer counted by error
+   (see `lna-sg13g2`, step 8, item 3); they are computed from the stored verified rows, with no new simulation.
+2. The stronger model used one EM line, one fit and three full checks; it raised a base resistor from 5 Ω to 20 Ω
+   for stability. Its smallest μ is 1.0018 (the reference: 1.0045). The default model: 1.0877.
