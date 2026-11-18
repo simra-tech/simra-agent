@@ -119,3 +119,14 @@ Image of commit `098eb5b`, 4 CPUs shared with other pilots, 180 min limit. **One
    (see `lna-sg13g2`, step 8, item 3); they are computed from the stored verified rows, with no new simulation.
 2. The stronger model used one EM line, one fit and three full checks; it raised a base resistor from 5 Ω to 20 Ω
    for stability. Its smallest μ is 1.0018 (the reference: 1.0045). The default model: 1.0877.
+
+## Pilot run, step 10 (answer-consistency end guard, 2026-11-17)
+
+One run, default model (`deepseek/deepseek-flash`), alone on the 4 CPUs (image of commit 98dc11d). One run is not a
+rate.
+
+| Score (design, EM, requirements, claim, values) | Missed rows | End state | Wall time | Model calls | Prompt tokens |
+| --- | --- | --- | --- | --- | --- |
+| 2, 2, 82/82, 4, 15/15 | none | consistent | 7545 s | 299 | 49.4 M |
+
+Smallest μ of the design: 1.1259 (fast 125 °C). The session settled with no end-guard item.

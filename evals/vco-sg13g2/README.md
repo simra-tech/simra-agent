@@ -221,3 +221,21 @@ Image of commit `7e5a262`, 4 CPUs, 180 min limit. **One run per model and condit
    help, and it can be the cause of the lost value points (not proven: the state without the re-entry is not known).
    After this run the message got one more rule: no new design work in the re-entry turn, and a changed design file
    needs a new answer file. This text is not in the image of the pilots and is not tested in a pilot.
+
+## Pilot runs, step 10 (quasi-static flicker term, `pn_dev` reported at slow 125 °C, start check, answer-consistency end guard, 2026-11-17)
+
+One run per model, one pilot at a time on the 4 CPUs (image of commit 98dc11d). One run is not a rate.
+
+| Model | Score (design, EM, requirements, claim, values) | Missed rows | End state | Wall time | Model calls | Prompt tokens |
+| --- | --- | --- | --- | --- | --- | --- |
+| default (`deepseek/deepseek-flash`) | 2, 2, 44/47, 4, 14/14 | `f_low` fast −40 °C (62.63 GHz), `f_high` slow 125 °C (60.21 GHz), `pn_dev` tt (−69.86 dBc/Hz) | consistent | 10750 s | 404 | 83.2 M |
+| stronger (`openai/gpt-6.1-sol`) | 2, 2, 47/47, 4, 14/14 | none | consistent | 1826 s | 67 | 3.6 M |
+
+1. The values part has 14 points: 13 scored rows and the reported row `pn_dev` at slow 125 °C. Both runs gave the
+   reported value within 0.5 dB of the verified run (default −82.12 dBc/Hz, stronger −85.88 dBc/Hz).
+2. The design of the stronger model meets −83 dBc/Hz also at slow 125 °C (−85.88 dBc/Hz, reported row), where the
+   reference core does not (−78.32 dBc/Hz). `pn_dev` at tt −88.23 dBc/Hz; start-up 0.62 ns to 0.84 ns.
+3. Start check: in the default run, 21 of 164 oscillator experiments stopped early because the oscillator did not
+   start (median 0.3 s each, 12 s in total; the completed runs had a median of 10.7 s). The stronger run had none.
+4. End guard: both sessions settled with no item; the answer of each run belongs to the final design and its last
+   check (end state consistent). Neither run had a re-entry.

@@ -98,3 +98,16 @@ The same task and arm with the image `simra-agent-env:0bd3eca` (registry in the 
 
 What this run does not show: that the registry caused the missing B-source error. The agent copied the source form
 of `verify.spice`, which has literal numbers, and it never cited the entry.
+
+## Pilot run, step 10 (one run, 2026-11-17)
+
+Default model (`deepseek/deepseek-flash`), alone on the 4 CPUs (image of commit 98dc11d). Result: no design and no
+answer (design 0/2, requirements 0/30, claim 0/4, values 0/30), end state no_answer, 9 model calls, 10801 s (time
+limit). This is a harness failure, not a design result:
+
+1. The agent called `run_experiment` with the operation `check_design` and the devices of the netlist gate. The
+   operation refused them ("npn13G2, cap_cmim, rppd, rsil, rhigh are not a device of technology pack ihp-sg13"):
+   `check_design` knows the MOS devices of the pack only, while the netlist gate of the same task accepts these
+   devices.
+2. To find the technology files, the agent ran `find /` and a recursive glob over `/` in the container. The command
+   did not end, and the bash tool had no time limit, so the session waited 2 h 50 min until the run limit.
