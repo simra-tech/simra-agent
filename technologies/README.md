@@ -30,6 +30,9 @@ contain PDK facts. Each directory has one `technology.json` (schema `simra.techn
 | `...params.<p>.source` | the PDK file (relative to `$PDK_ROOT`) and the fact in it that gives the value |
 | `ngspice.devices.<name>.width_total` | `true` when the width parameter is the total width of all fingers; when `false`, the gate area is multiplied by the number of fingers |
 | `ngspice.devices.<name>.source` | the PDK file that defines the device subcircuit |
+| `device_probe.<pdk>` | the device-class probe (operation `probe_devices` of the ngspice and xyce adapters): one small DC deck per device class |
+| `device_probe.<pdk>.libs.<key>.<simulator>` | the model library (`path` with `{pdk_root}`, `section`) of a group of classes for one simulator (`ngspice`, `xyce`) |
+| `device_probe.<pdk>.classes.<class>` | `description`, `lib` (a key of `libs`), `netlist` (the lines of the deck, with a voltage source `vprobe` whose DC current is the probe value) and `source` (the subcircuit in the kit) |
 | `klayout.<pdk>` | the KLayout facts of one value of `$PDK`: the decks (operations `drc` and `lvs` of the klayout adapter) and the layer names and colours (operations `query`, `diff` and `render`) |
 | `klayout.<pdk>.drc.rule_sets.<set>` | one DRC rule set: the deck command and its report |
 | `...<set>.command` | the deck command, one word per item; placeholders are listed below |
@@ -55,7 +58,8 @@ contain PDK facts. Each directory has one `technology.json` (schema `simra.techn
 | `sky130` | `sky130A`, `sky130B` | BSIM4 |
 
 The `sky130` pack has `ngspice.passives` only for `sky130A`. The image has no `sky130B` files to cite.
-The `ihp-sg13` pack has `klayout` only for `ihp-sg13g2`, and the `sky130` pack only for `sky130A`.
+The `ihp-sg13` pack has `klayout` only for `ihp-sg13g2`, and the `sky130` pack only for `sky130A`. The `ihp-sg13`
+pack has `device_probe` for `ihp-sg13g2` (18 classes: MOS, varactor, HBT, PNP, resistors, MIM capacitors, diodes).
 
 The commands of `klayout` can have these placeholders:
 

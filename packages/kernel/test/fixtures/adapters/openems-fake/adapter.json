@@ -1,0 +1,10 @@
+{
+  "contract": "simra.adapter/0",
+  "name": "openems-fake",
+  "version": "0.1.0",
+  "command": ["python3", "{adapter_dir}/openems_fake.py"],
+  "operations": {
+    "simulate": { "description": "Test adapter: write a synthetic S-parameter column for the excited port (inputs.fail_port: that port fails; inputs.unconverged_port: that port does not reach the end criterion)." },
+    "merge": { "description": "Test adapter: the merge of the real openEMS adapter." }
+  }
+}

@@ -4,22 +4,29 @@
 import "../../node_modules/@earendil-works/pi-coding-agent/dist/bun/sandbox-env-setup.js";
 import "./env.ts";
 import { telemetry } from "@simra-tech/kernel/telemetry";
-import { setPdfiumWasmPath } from "@simra-tech/kernel";
+import { KERNEL_COMMANDS, setPdfiumWasmPath } from "@simra-tech/kernel";
 import { join } from "node:path";
 // Bun embeds a file import in the binary and gives its path.
 import pdfiumWasm from "@hyzyla/pdfium/pdfium.wasm" with { type: "file" };
 import piPackage from "../../node_modules/@earendil-works/pi-coding-agent/package.json" with { type: "json" };
 import simraPackage from "../../package.json" with { type: "json" };
 
-const KERNEL_COMMANDS = ["run", "check", "list", "show", "wait", "record", "pdf", "pack", "analytics"];
 /** simra --help prints this block, then pi's help. */
 const COMMANDS = `Simra commands:
   simra run [--detach] <spec.json>  Run one experiment and record it
   simra wait <id>...                Wait for detached experiments
+  simra jobs <jobs.json>            Run a list of experiments on a CPU pool and wait
   simra show <id> [--json]          Show the summary of an experiment
   simra list                        List the experiments of the design
   simra record [<path>...]          Show the checks of each file of record
   simra check                       Check the design against requirements.json
+  simra assumptions [<id>]          List the assumptions of requirements.json and the rows that depend on them
+  simra query                       Search the measurements of the experiments or the rows of the checks
+  simra probe --pdk <name>          Probe each device class of a technology pack in ngspice and Xyce
+  simra em <inputs.json>            EM S-parameters with openEMS, one job per port
+  simra snp-diff <a.sNp> <b.sNp>    Compare two Touchstone files
+  simra connections --table <file>  Check a connection table, and a block interface against it
+  simra workarounds                 List the known gaps of the simulators and their workarounds
   simra pdf <file>                  Print the text of a PDF (--render <N>: a page image)
   simra pack init --pdk <name>      Propose a technology pack for a PDK (needs an adapter with pack_propose)
   simra pack check --pdk <name>     Check a technology pack against its PDK
@@ -31,7 +38,7 @@ const COMMANDS = `Simra commands:
 setPdfiumWasmPath(pdfiumWasm);
 telemetry.configure({ version: simraPackage.version });
 const args = process.argv.slice(2);
-if (KERNEL_COMMANDS.includes(args[0])) {
+if ((KERNEL_COMMANDS as readonly string[]).includes(args[0])) {
 	await import("@simra-tech/kernel/cli");
 } else if (args[0] === "update" && !(args.length === 2 && ["--extensions", "--models"].includes(args[1]))) {
 	const { selfUpdate } = await import("./update.ts");

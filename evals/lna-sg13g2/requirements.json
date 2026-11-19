@@ -1,0 +1,425 @@
+{
+  "schema": "simra.requirements/0",
+  "assumptions": {
+    "corner_set": {
+      "description": "The corner set: the HBT, MIM and rppd corners together (typ, wcs, bcs), -40 / 27 / 125 degC, VCC18 1.8 V +-5 %",
+      "source": "task"
+    },
+    "iref_ptat": {
+      "description": "The bias references: 0.863, 0.912 and 1.330 mA PTAT at 27 degC from the bias block, scaled by T / 300.15 K",
+      "source": "interface specification, bias currents for the LNA"
+    },
+    "ports_50ohm": {
+      "description": "Both ports are 50 ohm in this task (the chip has the antenna at the input and the mixer at the output)",
+      "value": 50,
+      "unit": "ohm",
+      "source": "task"
+    },
+    "ic_per_emitter_3ma": {
+      "description": "Collector current at most 3 mA per emitter finger (interface specification, HBT limits; the PDK process specification gives 3.5 mA)",
+      "value": 0.003,
+      "unit": "A",
+      "source": "interface specification, HBT limits"
+    },
+    "hbt_excess_phase": {
+      "description": "sw_nqs=1 on every npn13G2 instance: the excess phase of the HBT model is on, as in the design rule of the reference design and as in the Xyce model card. The ngspice default of the PDK is sw_nqs=0.",
+      "source": "task"
+    }
+  },
+  "conditions": {
+    "tt": {
+      "description": "hbt, cap, res typ; VCC18 1.80 V; 27 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerHBT.lib",
+            "section": "hbt_typ"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerCAP.lib",
+            "section": "cap_typ"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerRES.lib",
+            "section": "res_typ"
+          }
+        ],
+        "params": {
+          "vcc": 1.8,
+          "ptat": 1.0
+        },
+        "temp_c": 27
+      },
+      "assumptions": [
+        "corner_set",
+        "iref_ptat"
+      ]
+    },
+    "slow_hot": {
+      "description": "hbt, cap, res wcs; VCC18 1.71 V; 125 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerHBT.lib",
+            "section": "hbt_wcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerCAP.lib",
+            "section": "cap_wcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerRES.lib",
+            "section": "res_wcs"
+          }
+        ],
+        "params": {
+          "vcc": 1.71,
+          "ptat": 1.3265
+        },
+        "temp_c": 125
+      },
+      "assumptions": [
+        "corner_set",
+        "iref_ptat"
+      ]
+    },
+    "slow_cold": {
+      "description": "hbt, cap, res wcs; VCC18 1.71 V; -40 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerHBT.lib",
+            "section": "hbt_wcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerCAP.lib",
+            "section": "cap_wcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerRES.lib",
+            "section": "res_wcs"
+          }
+        ],
+        "params": {
+          "vcc": 1.71,
+          "ptat": 0.7768
+        },
+        "temp_c": -40
+      },
+      "assumptions": [
+        "corner_set",
+        "iref_ptat"
+      ]
+    },
+    "fast_hot": {
+      "description": "hbt, cap, res bcs; VCC18 1.89 V; 125 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerHBT.lib",
+            "section": "hbt_bcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerCAP.lib",
+            "section": "cap_bcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerRES.lib",
+            "section": "res_bcs"
+          }
+        ],
+        "params": {
+          "vcc": 1.89,
+          "ptat": 1.3265
+        },
+        "temp_c": 125
+      },
+      "assumptions": [
+        "corner_set",
+        "iref_ptat"
+      ]
+    },
+    "fast_cold": {
+      "description": "hbt, cap, res bcs; VCC18 1.89 V; -40 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerHBT.lib",
+            "section": "hbt_bcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerCAP.lib",
+            "section": "cap_bcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerRES.lib",
+            "section": "res_bcs"
+          }
+        ],
+        "params": {
+          "vcc": 1.89,
+          "ptat": 0.7768
+        },
+        "temp_c": -40
+      },
+      "assumptions": [
+        "corner_set",
+        "iref_ptat"
+      ]
+    }
+  },
+  "experiments": {
+    "sp": {
+      "adapter": "ngspice",
+      "operation": "simulate",
+      "environment": "eda",
+      "inputs": {
+        "deck": "sp.spice",
+        "measurements": {
+          "idd_a": "A"
+        }
+      }
+    },
+    "noise": {
+      "adapter": "ngspice",
+      "operation": "simulate",
+      "environment": "eda",
+      "inputs": {
+        "deck": "noise.spice",
+        "measurements": {
+          "nf_db": "dB",
+          "gain_db": "dB"
+        }
+      }
+    }
+  },
+  "requirements": [
+    {
+      "id": "gain",
+      "description": "S21 from 122 GHz to 123 GHz",
+      "experiment": "sp",
+      "kind": "s_db",
+      "entry": [
+        2,
+        1
+      ],
+      "band_hz": [
+        122000000000.0,
+        123000000000.0
+      ],
+      "op": "between",
+      "limit": [
+        13,
+        15
+      ],
+      "unit": "dB",
+      "conditions": [
+        "tt"
+      ],
+      "assumptions": [
+        "ports_50ohm"
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 1: 13 dB to 15 dB, revision 0.1 of the interface rows"
+      }
+    },
+    {
+      "id": "nf_db",
+      "description": "Noise figure, the worst of 122, 122.5 and 123 GHz, 50 ohm source",
+      "experiment": "noise",
+      "measurement": "nf_db",
+      "op": "<=",
+      "limit": 6,
+      "unit": "dB",
+      "conditions": [
+        "tt"
+      ],
+      "assumptions": [
+        "ports_50ohm"
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 2: 6 dB at tt, revision 0.1"
+      }
+    },
+    {
+      "id": "s22",
+      "description": "S22 from 122 GHz to 123 GHz",
+      "experiment": "sp",
+      "kind": "s_db",
+      "entry": [
+        2,
+        2
+      ],
+      "band_hz": [
+        122000000000.0,
+        123000000000.0
+      ],
+      "op": "<=",
+      "limit": -10,
+      "unit": "dB",
+      "conditions": [
+        "tt"
+      ],
+      "assumptions": [
+        "ports_50ohm"
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 3"
+      }
+    },
+    {
+      "id": "mu",
+      "description": "Stability factor mu from 1 GHz to 300 GHz",
+      "experiment": "sp",
+      "kind": "mu",
+      "stage": "lna",
+      "band_hz": [
+        1000000000.0,
+        300000000000.0
+      ],
+      "op": ">=",
+      "limit": 1,
+      "conditions": [
+        "tt",
+        "slow_hot",
+        "slow_cold",
+        "fast_hot",
+        "fast_cold"
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 4"
+      }
+    },
+    {
+      "id": "idd_a",
+      "description": "Current from VCC18, the reference currents included",
+      "experiment": "sp",
+      "measurement": "idd_a",
+      "op": "<=",
+      "limit": 0.025,
+      "unit": "A",
+      "conditions": [
+        "tt",
+        "slow_hot",
+        "slow_cold",
+        "fast_hot",
+        "fast_cold"
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 5"
+      }
+    }
+  ],
+  "gates": {
+    "stability": {
+      "stages": [
+        "lna"
+      ],
+      "conditions": [
+        "tt",
+        "slow_hot",
+        "slow_cold",
+        "fast_hot",
+        "fast_cold"
+      ],
+      "band_hz": [
+        1000000000.0,
+        300000000000.0
+      ]
+    },
+    "limits": {
+      "experiments": [
+        "sp"
+      ],
+      "technology": "ihp-sg13",
+      "extra_limits": [
+        {
+          "id": "hbt_ic_per_emitter_3ma",
+          "class": "hbt",
+          "quantity": "ic_per_emitter",
+          "op": "<=",
+          "limit": 0.003,
+          "assumption": "ic_per_emitter_3ma",
+          "limit_source": {
+            "kind": "specification",
+            "ref": "row 7: 3 mA per emitter (the PDK process specification gives 3.5 mA)"
+          }
+        }
+      ]
+    },
+    "netlist": {
+      "file": "lna.spice",
+      "subckt": "lna",
+      "pins": [
+        "rfin",
+        "rfout",
+        "vcc18",
+        "iref1",
+        "iref2",
+        "iref3"
+      ],
+      "devices": [
+        "npn13G2",
+        "cap_cmim",
+        "rppd",
+        "rsil",
+        "rhigh"
+      ],
+      "given": {
+        "tm2_w6": {
+          "params": {
+            "len": {
+              "min": 1e-09,
+              "max": 0.001,
+              "required": true
+            }
+          }
+        },
+        "tm2_w13": {
+          "params": {
+            "len": {
+              "min": 1e-09,
+              "max": 0.001,
+              "required": true
+            }
+          }
+        },
+        "tm2_w23": {
+          "params": {
+            "len": {
+              "min": 1e-09,
+              "max": 0.001,
+              "required": true
+            }
+          }
+        }
+      },
+      "wiring": {
+        "r_ohm": 50,
+        "l_h": 5e-11,
+        "c_f": 5e-14
+      },
+      "couplings": true,
+      "fitted": true,
+      "em_passives_min": 1,
+      "technology": "ihp-sg13",
+      "allow_params": {
+        "npn13g2": {
+          "sw_nqs": [
+            1
+          ]
+        }
+      },
+      "require_params": {
+        "npn13g2": {
+          "sw_nqs": 1
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,104 @@
+# Power detector cell and line tap at 122.5 GHz, IHP SG13G2 (hard variant)
+
+## Function
+
+The cell reads the RF power on a 50 Ω on-chip line (the transmitter output of a 122 GHz radar) and gives a
+differential DC voltage. A replica path (the same circuit without the RF) gives the reference output, so that the
+difference `outd - outr` is near zero without RF and rises with the RF power. An external meter reads the difference
+through an analog mux and two pads.
+
+## Rows of the interface specification of the chip (the source of this task)
+
+1. Transmitter output detector: 0.3 dB of loss is reserved in the output line for the detector.
+2. Current budget of the detector block: 0.3 mA from VCC18 for two detector cells.
+3. Bias for the detector: 25 µA PTAT reference current from the bias block, for each cell.
+4. Detector pads: differential DC; the external meter has ≥ 1 MΩ input and about 50 µV resolution.
+5. HBT limits: V<sub>CE</sub> ≤ 1.6 V for each device at every corner (DC value); the limits of the PDK.
+6. The detector must work from 122 GHz to 123 GHz.
+
+## Interface
+
+The cell is the subcircuit `det_cell` in `det_cell.spice`, with the pins `lin vcc18 outd outr iref`, in this order.
+
+| Pin | Function |
+| --- | --- |
+| `lin` | the RF line (the cell taps it; the line continues to a 50 Ω load) |
+| `vcc18` | supply, 1.8 V ± 5 % |
+| `outd` | detector output |
+| `outr` | replica output |
+| `iref` | bias reference: the bias block drives a current into this pin from VCC18 (25 µA PTAT) |
+
+Ground is node `0`.
+
+## Devices
+
+1. HBT: `npn13G2` (subcircuit of the PDK HBT library; parameter `Nx` for the number of emitters).
+   Write `sw_nqs=1` on every `npn13G2` instance: it turns on the excess phase of the HBT model, which the ngspice
+   model has off by default. The netlist gate requires it; another value is a rule error.
+2. MIM capacitor: `cap_cmim` (parameters `w`, `l`).
+3. Resistors: `rppd`, `rsil`, `rhigh` (parameters `w`, `l`).
+4. Ideal R, L and C only as a model of wiring (each ideal C ≤ 50 fF, each ideal L ≤ 50 pH, each ideal R ≤ 50 Ω),
+   and K couplings between the ideal L.
+5. No ideal sources in the cell.
+6. On the PDK devices, only the instance parameters above (and `Ny`, `m`; `b` on the resistors). A parameter that
+   changes the device physics (for example `selft`, `dtemp`, `mm_ok`) is a rule error. The netlist gate of
+   `check_requirements` gives the rule errors.
+
+## Verification
+
+`verify.spice` is the bench. `requirements.json` gives the corners, the bench and the requirements. Each requirement
+of the cell applies at each corner:
+
+| Corner | HBT, MIM and rppd corner | VCC18 | Temperature | iref |
+| --- | --- | --- | --- | --- |
+| `tt` | typ | 1.80 V | 27 °C | 25.0 µA |
+| `slow_hot` | wcs | 1.71 V | 125 °C | 33.2 µA |
+| `slow_cold` | wcs | 1.71 V | −40 °C | 19.4 µA |
+| `fast_hot` | bcs | 1.89 V | 125 °C | 33.2 µA |
+| `fast_cold` | bcs | 1.89 V | −40 °C | 19.4 µA |
+
+| Requirement | Limit | Source |
+| --- | --- | --- |
+| `idd_a`: current from VCC18, one cell, the iref current included | ≤ 150 µA | row 2 (assumption `two_cells`) |
+| `loss_db`: loss that the cell adds to the line at 122.5 GHz | ≤ 0.3 dB | row 1 |
+| `vout_m10_v`: output at −10 dBm line power, minus the output without RF | ≥ 0.5 mV | row 4 (assumption `meter_resolution`) |
+| `ratio_0_m10`: output at 0 dBm over the output at −10 dBm | ≥ 3 | assumption `rising_response` |
+| `noise_rms_v`: output noise, rms in 1 Hz to 10 kHz | ≤ 10 µV | assumption `noise_vs_meter` |
+| `offset_v`: output without RF, magnitude | ≤ 20 mV | assumption `zero_range` |
+| `offset_3s`: output without RF, \|mean\| + 3 σ over the PDK mismatch (100 seeds, `offset.spice`) | ≤ 20 mV | assumptions `zero_range`, `mismatch_3sigma` |
+
+The bench reads each power level 25 ns to 30 ns after the power step (assumption `settling_25ns`). It does not check
+row 6 (the band edges); keep it in the design and report it.
+
+### Mismatch
+
+The Monte Carlo experiment `mc` runs `offset.spice` with the mismatch models of the PDK, 100 seeds per corner. A seed
+without a DC point leaves the row not measured.
+
+### Operating limits
+
+The operating-limit gate (`gates.limits`) checks every HBT at the DC point of `offset.spice` at every corner: the
+limits of the PDK (V<sub>CE</sub> ≤ 1.6 V, the junction voltages, the current per emitter, no reverse base current)
+and V<sub>CE</sub> ≥ 0.4 V (assumption `vce_min_04`).
+
+### Line tap (EM)
+
+Draw the tap of the cell on the line as the cell `tap` in `tap.gds` (IHP SG13G2 GDS layers). The structure is 200 µm
+of the 50 Ω TopMetal2 line (13 µm wide, GDS 134/0, from x = 0 to x = 200 µm, centred on y = 0) over a Metal1
+ground (GDS 8/0, at least 120 µm wide), with your tap at its centre. The tap ends on Metal5 (GDS 67/0) at the
+detector input. The experiment `tap` simulates `tap.gds` with openEMS on the PDK stackup, 1 GHz to 130 GHz, with
+these ports (50 Ω each):
+
+| Port | Position | From | To |
+| --- | --- | --- | --- |
+| 1 | x = 0, y = 0 | Metal1 | TopMetal2 |
+| 2 | x = 200 µm, y = 0 | Metal1 | TopMetal2 |
+| 3 | x = 100 µm, y = −40 µm | Metal1 | Metal5 |
+
+| Requirement | Limit | Source |
+| --- | --- | --- |
+| `tap_s21`: S21 of the structure, 122 GHz to 123 GHz | ≥ −0.5 dB | row 1 and the line loss (assumption `tap_line_200um`) |
+| `tap_s31`: coupling to the detector input, 122 GHz to 123 GHz | −33 dB to −27 dB | assumption `tap_coupling` |
+
+The tap rows have no corner: the EM simulation runs once. The cell netlist and the tap layout are checked apart; the
+cell bench keeps its own model of the tap.

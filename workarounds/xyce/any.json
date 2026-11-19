@@ -1,0 +1,70 @@
+{
+  "schema": "simra.workarounds/0",
+  "simulator": "xyce",
+  "pdk": "*",
+  "versions": "Xyce 7.10",
+  "entries": [
+    {
+      "id": "xyce-hb-autonomous",
+      "applies_to": {
+        "operations": [
+          "hb"
+        ],
+        "analyses": [
+          "hb"
+        ]
+      },
+      "gap": "Xyce harmonic balance has no autonomous (oscillator) mode, no HB noise analysis and no .pss.",
+      "symptom": "An oscillator in HB converges to the DC state with no error.",
+      "workaround": "Find the oscillator steady state with a probe loop (an ideal source at the oscillation node; its frequency and amplitude are adjusted until the probe current is zero). Phase noise: impulse sensitivity function from transient runs.",
+      "status": "worked_around",
+      "evidence": "xyce adapter guard (warning: no port has signal); reference design tool-chain stage 0"
+    },
+    {
+      "id": "xyce-hb-step",
+      "applies_to": {
+        "operations": [
+          "hb"
+        ],
+        "analyses": [
+          "hb"
+        ]
+      },
+      "gap": "With .step and HB, one failed step aborts the run and shifts the blocks of the CSV output.",
+      "symptom": "Values of a sweep point belong to another point, with no error at the point.",
+      "workaround": "Run one sweep point per Xyce process (the hb operation of the xyce adapter does this).",
+      "status": "worked_around",
+      "evidence": "xyce adapter, operation hb"
+    },
+    {
+      "id": "xyce-ylin-open",
+      "applies_to": {
+        "analyses": [
+          "ac",
+          "tran",
+          "lin",
+          "dc",
+          "op"
+        ]
+      },
+      "gap": "A YLIN (S-parameter) device is an open circuit outside harmonic balance, with no warning.",
+      "symptom": "Wrong results with exit code 0.",
+      "workaround": "Fit the Touchstone data to a passive SPICE subcircuit (touchstone adapter, fit_to_spice). The xyce adapter refuses YLIN with these analyses.",
+      "status": "worked_around",
+      "evidence": "xyce adapter guard"
+    },
+    {
+      "id": "xyce-temp-ignored",
+      "applies_to": {
+        "analyses": [
+          "temperature"
+        ]
+      },
+      "gap": "Xyce ignores .temp (only a warning) and keeps the first .param definition.",
+      "symptom": "The run is at 27 C, or a later parameter value is not used.",
+      "workaround": "Use temp_c and params of the xyce adapter: it writes them before the deck and runs with -redefined_params usefirst. The adapter refuses .temp.",
+      "status": "worked_around",
+      "evidence": "xyce adapter guard"
+    }
+  ]
+}

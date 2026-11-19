@@ -1,0 +1,18 @@
+* Offset bench of the detector cell (no RF). The design is the subcircuit det_cell in det_cell.spice, pins
+* lin vcc18 outd outr iref. The line is a 25 ohm DC load (the two 50 ohm ends of the line in parallel).
+* Outputs: offset_v = v(outd) - v(outr) and the supply current idd_a at the DC point. The Monte Carlo experiment runs
+* this deck with the PDK mismatch models; the operating-limit gate reads its DC point.
+.param vcc=1.8 iref=25u
+.include "det_cell.spice"
+Vvcc vcc18 0 {vcc}
+Iref vcc18 iref {iref}
+Rl lin 0 25
+Xdut lin vcc18 outd outr iref det_cell
+.control
+op
+let offset_v = v(outd)-v(outr)
+let idd_a = -i(vvcc)
+print offset_v
+print idd_a
+.endc
+.end

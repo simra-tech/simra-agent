@@ -78,8 +78,8 @@ function recordDead(root: string, id: string, experiment: ExperimentRecord, stat
 	return result;
 }
 
-/** The result of the run, or null while it runs. */
-function poll(root: string, id: string, experiment: ExperimentRecord): ResultRecord | null {
+/** The result of the run, or null while it runs. A run whose process is gone without result.json gets an error result. */
+export function pollExperiment(root: string, id: string, experiment: ExperimentRecord): ResultRecord | null {
 	const resultPath = join(experimentDir(root, id), "result.json");
 	if (existsSync(resultPath)) return readJson<ResultRecord>(resultPath);
 	const status = readStatus(root, id);
@@ -118,7 +118,7 @@ export async function waitExperiments(root: string, ids: string[], opts: WaitOpt
 	for (;;) {
 		for (const [id, experiment] of experiments) {
 			if (results.has(id)) continue;
-			const result = poll(root, id, experiment);
+			const result = pollExperiment(root, id, experiment);
 			if (result) results.set(id, result);
 		}
 		const left = deadline - Date.now();

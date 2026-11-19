@@ -1,0 +1,61 @@
+{
+  "f0_hz": 10000000000,
+  "gain_db": 14.922815951041898,
+  "tolerance": {
+    "gain_db": {
+      "abs": 0.1
+    }
+  },
+  "cross_check": {
+    "closed_form_gain_db": 14.928389068199222,
+    "difference_db": -0.0055731171573238925,
+    "touchstone_gain_db": 14.922815951041898
+  },
+  "mu_min": {
+    "value": 1.0032385779104507,
+    "at_hz": 30000000000,
+    "status": "pass"
+  },
+  "traps": {
+    "without_network": 13.353726170091509,
+    "lossless_network": 15.13114474255342
+  },
+  "fit": {
+    "experiment": "20261114-040247-2613ca",
+    "order": 4,
+    "fit_max_abs_ds": 0.000590776667698571,
+    "passivity_margin": 0.00010000008539556848,
+    "verify_ngspice_max_abs_ds": 0.0005907765652668494,
+    "verify_xyce_max_abs_ds": 0.0005907765652668494
+  },
+  "provenance": {
+    "numbers": "simulated: Xyce .LIN of amp.cir with the fitted subcircuit; the cross-check is a closed-form nodal analysis",
+    "check": "20261114-040256-f628a5",
+    "check_status": "pass",
+    "fit_tool": {
+      "name": "simra-touchstone",
+      "version": "0.1.0",
+      "numpy": "2.5.1",
+      "ngspice": "46",
+      "xyce": "7.10-opensource"
+    },
+    "amp_tool": {
+      "name": "Xyce",
+      "version": "7.10-opensource"
+    },
+    "environment": {
+      "name": "eda",
+      "kind": "container",
+      "engine": "podman",
+      "image_id": "sha256:ddeb69576f2808676d1c5d474ecf04f6d1d6f8abdcff6b72b39790ded924bab2",
+      "env": {
+        "PDK_ROOT": "/foss/pdks",
+        "PDK": "ihp-sg13g2",
+        "SPICE_USERINIT_DIR": "/foss/pdks/ihp-sg13g2/libs.tech/ngspice",
+        "SIMRA_KLAYOUT": "/foss/tools/klayout/klayout",
+        "HOME": "/tmp"
+      }
+    },
+    "date": "2026-11-14"
+  }
+}

@@ -2,7 +2,9 @@
 // "local" runs the adapter on this host. "container" runs it in a container image with podman or docker.
 // In a container, the design root and the adapter directory are mounted at their host paths, so paths stay the same.
 // The technology directories (technology packs, PDK data for adapters) are mounted in the same way, read-only. The
-// adapter gets their paths in SIMRA_TECHNOLOGY_DIR, separated by ":", in search order.
+// adapter gets their paths in SIMRA_TECHNOLOGY_DIR, separated by ":", in search order. The directories of the adapters
+// that an adapter uses (manifest uses_adapters) are mounted read-only too; the adapter gets them in SIMRA_ADAPTER_DIRS
+// as "name=path" entries separated by ":".
 
 import { execFileSync } from "node:child_process";
 import type { ContainerEngine, EnvironmentConfig } from "./config.ts";
@@ -25,6 +27,8 @@ export interface InvocationRequest {
 	experimentId: string;
 	/** The directories of the technology packs, in search order. */
 	technologyDirs?: string[];
+	/** The directories of the adapters that this adapter uses (manifest uses_adapters), by name. */
+	usedAdapterDirs?: Record<string, string>;
 }
 
 export function containerImageId(engine: ContainerEngine, image: string): string {
@@ -49,7 +53,11 @@ export function buildInvocation(req: InvocationRequest): Invocation {
 	const pin = config.cpus ? ["taskset", "-c", config.cpus] : [];
 	const env = config.env ?? {};
 	const technologyDirs = req.technologyDirs ?? [];
-	const technology = technologyDirs.length ? { SIMRA_TECHNOLOGY_DIR: technologyDirs.join(":") } : {};
+	const used = Object.entries(req.usedAdapterDirs ?? {});
+	const technology = {
+		...(technologyDirs.length ? { SIMRA_TECHNOLOGY_DIR: technologyDirs.join(":") } : {}),
+		...(used.length ? { SIMRA_ADAPTER_DIRS: used.map(([n, d]) => `${n}=${d}`).join(":") } : {}),
+	};
 	// A project environment must not override the user's opt-out, including in detached supervisors.
 	const analyticsPolicy = analyticsDisabled() ? { SIMRA_NO_ANALYTICS: "1" } : {};
 
@@ -88,6 +96,7 @@ export function buildInvocation(req: InvocationRequest): Invocation {
 			"-v",
 			`${req.adapterDir}:${req.adapterDir}:ro`,
 			...technologyDirs.flatMap((d) => ["-v", `${d}:${d}:ro`]),
+			...used.flatMap(([, d]) => ["-v", `${d}:${d}:ro`]),
 			"-w",
 			req.root,
 			imageId,

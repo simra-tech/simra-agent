@@ -1,0 +1,18 @@
+* Two blocks for assemble_dc: a latch (two stable states and a metastable point) and a divider.
+.subckt latch out
+Ba 0 a I=1e-3*(0.5+0.5*tanh(20*(0.5-v(b))))
+Ra a 0 1k
+Bb 0 b I=1e-3*(0.5+0.5*tanh(20*(0.5-v(a))))
+Rb b 0 1k
+Rout a out 1meg
+.ends
+.subckt div top mid
+Rt top mid 10k
+Rb mid 0 10k
+.ends
+Vdd vdd 0 1.2
+Xl q latch
+Xr vdd m div
+Rq q 0 1meg
+.op
+.end

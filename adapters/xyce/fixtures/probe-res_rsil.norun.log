@@ -1,0 +1,32 @@
+
+*****
+***** Welcome to the Xyce(TM) Parallel Electronic Simulator
+*****
+***** This is version Xyce Release 7.10-opensource
+
+
+***** Executing netlist res_rsil.cir
+
+***** Reading and parsing netlist...
+Netlist error in file
+ /pdk/ihp-sg13g2/libs.tech/xyce/models/resistors_mod.lib at or near line 66
+ Unrecognized parameter 1 for device YR3_CMC!R1
+Netlist error in file
+ /pdk/ihp-sg13g2/libs.tech/xyce/models/resistors_mod.lib at or near line 66
+ Unrecognized fields for device YR3_CMC!R1
+Simulation aborted due to error.  There are 0 MSG_FATAL errors and 2 MSG_ERROR
+ errors
+*** Xyce Abort ***
+Simulation aborted due to error.  There are 0 MSG_FATAL errors and 2 MSG_ERROR
+ errors
+
+
+*** Xyce Abort ***
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 0 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------

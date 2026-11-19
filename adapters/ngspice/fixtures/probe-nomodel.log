@@ -1,0 +1,16 @@
+warning, can't find model 'nomodel' from line
+    d1 a 0 nomodel
+
+Note: No compatibility mode selected!
+
+
+Circuit: * unknown model
+
+Error on line 2 or its substitute:
+  d1 a 0 nomodel
+could not find a valid modelname
+    Simulation interrupted due to error!
+
+Error: incomplete or empty netlist
+       or no ".plot", ".print", or ".fourier" lines in batch mode;
+no simulations run!

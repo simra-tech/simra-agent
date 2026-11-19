@@ -1,0 +1,512 @@
+{
+  "schema": "simra.requirements/0",
+  "assumptions": {
+    "corner_set": {
+      "description": "The corner set: HBT, MIM and resistor corners together (typ, wcs, bcs) with the MOS corner of the varactor that moves the frequency the same way (tt, ss, ff), at 27 / 125 / -40 degC; VCC18 1.8 V",
+      "source": "task"
+    },
+    "bench_load": {
+      "description": "The load of each output: the divider tap (MIM 2 x 2 um into 7.2 fF || 910 ohm) and a model of the doubler input (14.6 fF in series with 18 ohm: the small-signal input impedance at 61 GHz of the doubler of the reference, 18.2 - j179 ohm, ngspice 46 tt; the large-signal input is not modelled)",
+      "source": "task (interface specification: divider load; doubler input simplified)"
+    },
+    "bias": {
+      "description": "Bias from the bias block: tail reference 0.6 mA, replica reference 0.5 mA, varactor gate biases 0.8 V and 1.8 V, band bits 0 V or 3.3 V",
+      "source": "interface specification, bias of the VCO"
+    },
+    "ic_per_emitter_3ma": {
+      "description": "Collector current at most 3 mA per emitter finger (interface specification, HBT limits)",
+      "value": 0.003,
+      "unit": "A",
+      "source": "interface specification, HBT limits"
+    },
+    "pn_sources": {
+      "description": "Phase-noise sources of the row pn_dev: the shot noise of the collector (c-e) and base (b-e) conduction currents of the core transistor xq1 (from a DC table of the device at the transient junction voltages), the base flicker noise (kf 1.2e-8, af 1.8, bf 1, the ngspice model card values of the reference method), and mult 2 for the symmetric xq2. Not included: the loss noise of the tank, the thermal noise of the HBT parasitic resistances and of the bias circuits",
+      "source": "task (ISF method of the oscillator operation)"
+    },
+    "peak_vce_oscillator": {
+      "description": "The interface specification keeps V_CE <= 1.6 V as the cycle mean for every HBT and accepts a peak above 1.6 V in the oscillator core, the doubler and the LO buffers (a cross-coupled oscillator at 1.8 V cannot hold 1.6 V at the peak; the reference design reports up to 2.22 V there). This task bounds the peak at 2.5 V: a task value with no PDK source (the PDK card gives vce_max 1.6 V and vbc_max 5.1 V); the reference core reaches 2.44 V at tt with the loads of this bench",
+      "value": 2.5,
+      "unit": "V",
+      "source": "interface specification (open decision on peak V_CE) and task"
+    },
+    "hbt_excess_phase": {
+      "description": "sw_nqs=1 on every npn13G2 instance: the excess phase of the HBT model is on, as in the design rule of the reference design and as in the Xyce model card. The ngspice default of the PDK is sw_nqs=0.",
+      "source": "task"
+    }
+  },
+  "conditions": {
+    "tt": {
+      "description": "hbt, cap, res typ; MOS tt; 27 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerHBT.lib",
+            "section": "hbt_typ"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerCAP.lib",
+            "section": "cap_typ"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerRES.lib",
+            "section": "res_typ"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerMOShv.lib",
+            "section": "mos_tt"
+          }
+        ],
+        "temp_c": 27
+      },
+      "assumptions": [
+        "corner_set"
+      ]
+    },
+    "slow_hot": {
+      "description": "hbt, cap, res wcs; MOS ss; 125 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerHBT.lib",
+            "section": "hbt_wcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerCAP.lib",
+            "section": "cap_wcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerRES.lib",
+            "section": "res_wcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerMOShv.lib",
+            "section": "mos_ss"
+          }
+        ],
+        "temp_c": 125
+      },
+      "assumptions": [
+        "corner_set"
+      ]
+    },
+    "fast_cold": {
+      "description": "hbt, cap, res bcs; MOS ff; -40 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerHBT.lib",
+            "section": "hbt_bcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerCAP.lib",
+            "section": "cap_bcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerRES.lib",
+            "section": "res_bcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerMOShv.lib",
+            "section": "mos_ff"
+          }
+        ],
+        "temp_c": -40
+      },
+      "assumptions": [
+        "corner_set"
+      ]
+    }
+  },
+  "experiments": {
+    "osc_low": {
+      "adapter": "ngspice",
+      "operation": "oscillator",
+      "environment": "eda",
+      "timeout_s": 5400,
+      "assumptions": [
+        "bench_load",
+        "bias"
+      ],
+      "inputs": {
+        "deck": "osc.spice",
+        "params": {
+          "vt": 0.3,
+          "b0v": 0,
+          "b1v": 0,
+          "b2v": 0
+        },
+        "output": {
+          "p": "outp",
+          "n": "outn"
+        },
+        "tstep_s": 1e-13,
+        "settle_s": 8e-09,
+        "ref_stop_s": 9e-09,
+        "output_multiplier": 2
+      }
+    },
+    "osc_high": {
+      "adapter": "ngspice",
+      "operation": "oscillator",
+      "environment": "eda",
+      "timeout_s": 5400,
+      "assumptions": [
+        "bench_load",
+        "bias"
+      ],
+      "inputs": {
+        "deck": "osc.spice",
+        "params": {
+          "vt": 2.8,
+          "b0v": 3.3,
+          "b1v": 3.3,
+          "b2v": 3.3
+        },
+        "output": {
+          "p": "outp",
+          "n": "outn"
+        },
+        "tstep_s": 1e-13,
+        "settle_s": 8e-09,
+        "ref_stop_s": 9e-09,
+        "output_multiplier": 2
+      }
+    },
+    "osc_mid": {
+      "adapter": "ngspice",
+      "operation": "oscillator",
+      "environment": "eda",
+      "timeout_s": 5400,
+      "assumptions": [
+        "bench_load",
+        "bias"
+      ],
+      "inputs": {
+        "deck": "osc.spice",
+        "params": {
+          "vt": 1.55,
+          "b0v": 0,
+          "b1v": 0,
+          "b2v": 3.3
+        },
+        "output": {
+          "p": "outp",
+          "n": "outn"
+        },
+        "tstep_s": 1e-13,
+        "settle_s": 8e-09,
+        "ref_stop_s": 9e-09,
+        "output_multiplier": 2
+      }
+    },
+    "osc_pn": {
+      "adapter": "ngspice",
+      "operation": "oscillator",
+      "environment": "eda",
+      "timeout_s": 7200,
+      "assumptions": [
+        "bench_load",
+        "bias",
+        "pn_sources"
+      ],
+      "inputs": {
+        "deck": "osc.spice",
+        "params": {
+          "vt": 1.55,
+          "b0v": 0,
+          "b1v": 0,
+          "b2v": 3.3
+        },
+        "output": {
+          "p": "outp",
+          "n": "outn"
+        },
+        "tstep_s": 1e-13,
+        "settle_s": 1.4e-08,
+        "ref_stop_s": 1.5e-08,
+        "output_multiplier": 2,
+        "isf": {
+          "phases": 16,
+          "window_periods": [
+            35,
+            45
+          ],
+          "dq_c": 2e-17,
+          "dl_vs": 2e-16,
+          "pulse_s": 1e-13,
+          "offsets_hz": [
+            100000.0,
+            1000000.0
+          ],
+          "parallel": 4,
+          "sources": [
+            {
+              "name": "ce",
+              "instance": {
+                "subckt": "vco",
+                "name": "xq1",
+                "pins": [
+                  0,
+                  2
+                ]
+              },
+              "mult": 2,
+              "shot": {
+                "device": "q1",
+                "current": "ic"
+              }
+            },
+            {
+              "name": "be",
+              "instance": {
+                "subckt": "vco",
+                "name": "xq1",
+                "pins": [
+                  1,
+                  2
+                ]
+              },
+              "mult": 2,
+              "shot": {
+                "device": "q1",
+                "current": "ib"
+              },
+              "flicker": {
+                "device": "q1",
+                "current": "ib",
+                "kf": 1.2e-08,
+                "af": 1.8,
+                "bf": 1.0
+              }
+            }
+          ],
+          "devices": [
+            {
+              "name": "q1",
+              "instance": {
+                "subckt": "vco",
+                "name": "xq1"
+              },
+              "sweep": [
+                [
+                  "c",
+                  -1.0,
+                  2.6,
+                  0.01
+                ],
+                [
+                  "b",
+                  -0.6,
+                  1.1,
+                  0.005
+                ]
+              ],
+              "axes": [
+                "@q.xq1.qnpn13g2[vbe]",
+                "@q.xq1.qnpn13g2[vbc]"
+              ],
+              "at": [
+                "@q.xdut.xq1.qnpn13g2[vbe]",
+                "@q.xdut.xq1.qnpn13g2[vbc]"
+              ],
+              "currents": {
+                "ic": "@q.xq1.qnpn13g2[ic]",
+                "ib": "@q.xq1.qnpn13g2[ib]"
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "requirements": [
+    {
+      "id": "f_low",
+      "description": "Core frequency at VTUNE 0.3 V with the band bits at 0 V (the lowest band)",
+      "experiment": "osc_low",
+      "measurement": "f0_hz",
+      "op": "<=",
+      "limit": 60500000000.0,
+      "unit": "Hz",
+      "conditions": [
+        "tt",
+        "slow_hot",
+        "fast_cold"
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "band coverage 122.0 GHz to 123.0 GHz at the doubler output with at least 1 GHz margin: core 61.0 GHz minus 0.5 GHz"
+      }
+    },
+    {
+      "id": "f_high",
+      "description": "Core frequency at VTUNE 2.8 V with the band bits at 3.3 V (the highest band)",
+      "experiment": "osc_high",
+      "measurement": "f0_hz",
+      "op": ">=",
+      "limit": 62000000000.0,
+      "unit": "Hz",
+      "conditions": [
+        "tt",
+        "slow_hot",
+        "fast_cold"
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "band coverage: core 61.5 GHz plus 0.5 GHz"
+      }
+    },
+    {
+      "id": "amp_v",
+      "description": "Differential tank amplitude (half peak-to-peak of v(outp) - v(outn)), band bits 001, VTUNE 1.55 V",
+      "experiment": "osc_mid",
+      "measurement": "amplitude_v",
+      "op": ">=",
+      "limit": 0.6,
+      "unit": "V",
+      "conditions": [
+        "tt",
+        "slow_hot",
+        "fast_cold"
+      ],
+      "limit_source": {
+        "kind": "task",
+        "ref": "0.3 V per side, below the 0.355 V per side of the reference design at slow 125 degC"
+      }
+    },
+    {
+      "id": "t_start",
+      "description": "Start-up: the first cycle at 90 % of the steady amplitude, from the start of the supply ramp (bias settling included)",
+      "experiment": "osc_mid",
+      "measurement": "startup_t90_s",
+      "op": "<=",
+      "limit": 7.5e-09,
+      "unit": "s",
+      "conditions": [
+        "tt",
+        "slow_hot",
+        "fast_cold"
+      ],
+      "limit_source": {
+        "kind": "task",
+        "ref": "the oscillator reaches its amplitude before the settle time of the bench (8 ns) with margin; the reference design starts in about 5 ns (bias settling through its base-bias filter)"
+      }
+    },
+    {
+      "id": "pn_dev",
+      "description": "Phase noise at 1 MHz offset referred to 122 GHz (output_multiplier 2) from the core-pair device noise (assumption pn_sources), ISF method, setting of amp_v",
+      "experiment": "osc_pn",
+      "measurement": "l_1e+06_hz_dbc",
+      "op": "<=",
+      "limit": -83.0,
+      "unit": "dBc/Hz",
+      "conditions": [
+        "tt",
+        "slow_hot"
+      ],
+      "limit_source": {
+        "kind": "task",
+        "ref": "row 2 (-80 dBc/Hz at 122 GHz, 1 MHz) minus 3 dB for the sources that the row does not include (in the reference they add 2.7 dB)"
+      }
+    }
+  ],
+  "gates": {
+    "limits": {
+      "experiments": [
+        "osc_mid"
+      ],
+      "technology": "ihp-sg13",
+      "extra_limits": [
+        {
+          "id": "hbt_ic_per_emitter_3ma",
+          "class": "hbt",
+          "quantity": "ic_per_emitter",
+          "op": "<=",
+          "limit": 0.003,
+          "assumption": "ic_per_emitter_3ma",
+          "limit_source": {
+            "kind": "specification",
+            "ref": "I_C at most 3 mA per finger"
+          }
+        }
+      ],
+      "tran": {
+        "osc_mid": {
+          "step_s": 1e-13,
+          "stop_s": 9e-09,
+          "start_s": 8.5e-09,
+          "dc": "mean"
+        }
+      },
+      "peak_overrides": [
+        {
+          "id": "hbt_vce_max",
+          "limit": 2.5,
+          "assumption": "peak_vce_oscillator",
+          "description": "peak V_CE of an oscillator core: an assumption of the task, not a PDK limit"
+        }
+      ]
+    },
+    "netlist": {
+      "file": "vco.spice",
+      "subckt": "vco",
+      "pins": [
+        "outp",
+        "outn",
+        "vtune",
+        "vcc18",
+        "iref",
+        "irep",
+        "vbvar",
+        "vbvar2",
+        "b0",
+        "b1",
+        "b2"
+      ],
+      "devices": [
+        "npn13G2",
+        "cap_cmim",
+        "sg13_hv_svaricap",
+        "rppd",
+        "rsil",
+        "rhigh"
+      ],
+      "allow_params": {
+        "npn13g2": {
+          "selft": [
+            0,
+            1
+          ],
+          "sw_nqs": [
+            1
+          ]
+        }
+      },
+      "wiring": {
+        "r_ohm": 50,
+        "l_h": 5e-11,
+        "c_f": 5e-14
+      },
+      "couplings": true,
+      "fitted": true,
+      "em_passives_min": 1,
+      "technology": "ihp-sg13",
+      "require_params": {
+        "npn13g2": {
+          "sw_nqs": 1
+        }
+      },
+      "fit_checks": [
+        {
+          "kind": "q",
+          "band_hz": [
+            58000000000.0,
+            64000000000.0
+          ],
+          "tol_rel_max": 0.05,
+          "min": 1
+        }
+      ]
+    }
+  }
+}

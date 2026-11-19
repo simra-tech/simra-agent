@@ -42,6 +42,9 @@ Operation "lint". Inputs:
   files         list of netlist paths, relative to the design root. The adapter reads each file and the files
                 that it includes from the design root, and gives the same option warnings. It runs no simulation.
 
+Operation "probe_devices" (device_probe.py). One small DC deck per device class of the technology pack (section
+device_probe); a row per class: simulates, parses, fails or not run, with the reason.
+
 Operation "check_design" (design_check.py). It checks a design netlist against a design contract, with the ngspice.*
 facts of the technology pack, and runs no simulation.
 """
@@ -306,8 +309,9 @@ def sweep_measurements(table, sources, wanted):
             diagnostics.append({"severity": "warning", "source": sources[empty[0]] if empty else "work/ngspice.log",
                                 "message": "{}: {} of {} sweep points have no value".format(c, len(empty), len(rows))})
             for side in ("min", "max"):
-                measurements["{}.{}".format(c, side)] = {"value": None, "unit": unit, "status": "failed",
-                                                         "source": sources[empty[0]] if empty else None, "at": None}
+                measurements["{}.{}".format(c, side)] = {
+                    "value": None, "unit": unit, "status": "failed", "source": sources[empty[0]] if empty else None, "at": None,
+                    "reason": "{} of {} sweep points have no value".format(len(empty), len(rows)) if rows else "no sweep points"}
             continue
         for side, pick in (("min", min), ("max", max)):
             i = pick(range(len(rows)), key=lambda k: rows[k][c])
@@ -504,7 +508,10 @@ def run(request, tool, top_name, deck_path, libs, wanted, extra_inputs=()):
     for name in sorted(os.listdir(work_dir)):
         path = os.path.join(work_dir, name)
         if os.path.isfile(path):
-            outputs.append({"path": display_path(path, root), "sha256": sha256(path), "bytes": os.path.getsize(path)})
+            entry = {"path": display_path(path, root), "sha256": sha256(path), "bytes": os.path.getsize(path)}
+            if name == "sweep.json" and table:
+                entry["role"] = "sweep"
+            outputs.append(entry)
 
     return {
         "contract": CONTRACT,
@@ -720,8 +727,20 @@ def main(argv):
         sys.stderr.write("unsupported contract: {}\n".format(request.get("contract")))
         return 2
     import design_check  # here, not at the top: design_check imports the helpers of this module
+    import device_probe
+    import assemble_dc
+    import oscillator
+    import monte_carlo
+    import device_limits
+    import stability_diagnosis
+    import device_budget
     operation = {"simulate": simulate, "operating_point": operating_point, "lint": lint,
-                 "check_design": design_check.check_design}.get(request.get("operation"))
+                 "check_design": design_check.check_design, "probe_devices": device_probe.probe_devices,
+                 "assemble_dc": assemble_dc.assemble_dc,
+                 "oscillator": oscillator.oscillator, "monte_carlo": monte_carlo.monte_carlo,
+                 "device_limits": device_limits.device_limits,
+                 "stability_diagnosis": stability_diagnosis.stability_diagnosis,
+                 "device_budget": device_budget.device_budget}.get(request.get("operation"))
     if operation is None:
         response = failure(None, "unknown operation: {}".format(request.get("operation")))
     else:

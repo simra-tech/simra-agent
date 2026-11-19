@@ -1,0 +1,21 @@
+Note: Compatibility modes selected: hs a
+Circuit: * raw test
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+No. of Data Rows : 1
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+No. of Data Rows : 3
+ASCII raw file "ac_ascii.raw"
+binary raw file "ac_bin.raw"
+                                   * raw test
+                                   AC Analysis  Mon Nov 16 00:19:12  2026
+--------------------------------------------------------------------------------
+Index   frequency       vdb(a)          
+--------------------------------------------------------------------------------
+0	1.000000e+09	4.392776e+01	
+1	2.000000e+09	3.798839e+01	
+2	3.000000e+09	3.448177e+01	
+gmax                =  4.392776e+01 at=  1.000000e+09
+Note: Simulation executed from .control section 
+Warning: test warning one
+Error: singular matrix
+Error: singular matrix

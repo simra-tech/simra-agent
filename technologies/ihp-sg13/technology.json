@@ -10,6 +10,291 @@
     },
     "size_unit_m": 1,
     "size_unit_source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_mod.lib (the subcircuit defaults are w=0.35u l=0.34u; the model files set no .option scale)",
+    "instance_params": {
+      "ihp-sg13g2": {
+        "description": "Instance parameters of the PDK subcircuits per device class. 'allowed': the geometry and multiplicity parameters a design sets. 'physics': parameters that switch or change the model physics; a netlist that sets one is rejected unless the task allows it by name. A parameter in neither list is also rejected (an unknown parameter).",
+        "classes": {
+          "hbt": {
+            "devices": [
+              "npn13g2",
+              "npn13g2l",
+              "npn13g2v"
+            ],
+            "allowed": [
+              "nx",
+              "ny",
+              "m"
+            ],
+            "allowed_per_device": {
+              "npn13g2l": [
+                "le"
+              ],
+              "npn13g2v": [
+                "le"
+              ]
+            },
+            "physics": {
+              "selft": "self-heating switch (1 on, 0 off)",
+              "dtemp": "device temperature offset",
+              "sw_nqs": "non-quasi-static switch",
+              "we": "emitter width (fixed by the device)",
+              "le": "emitter length (fixed for npn13G2)",
+              "el": "derived from le",
+              "mm_ok": "mismatch switch of the mismatch library"
+            },
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_hbt_mod.lib (.subckt npn13G2, npn13G2l, npn13G2v: .param Nx Ny le we El selft sw_nqs dtemp)"
+          },
+          "mim": {
+            "devices": [
+              "cap_cmim",
+              "cap_rfcmim"
+            ],
+            "allowed": [
+              "w",
+              "l",
+              "m"
+            ],
+            "allowed_per_device": {
+              "cap_rfcmim": [
+                "wfeed"
+              ]
+            },
+            "physics": {
+              "mm_ok": "mismatch switch",
+              "sf": "scale factor of the model",
+              "ic": "initial condition switch",
+              "cic0": "model constant"
+            },
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/capacitors_mod.lib (.subckt cap_cmim, cap_rfcmim: .param l w mm_ok sf ic wfeed cic0)"
+          },
+          "res": {
+            "devices": [
+              "rppd",
+              "rsil",
+              "rhigh"
+            ],
+            "allowed": [
+              "w",
+              "l",
+              "b",
+              "m"
+            ],
+            "physics": {
+              "mm_ok": "mismatch switch",
+              "trise": "temperature rise",
+              "sw_et": "self-heating switch",
+              "postsim": "post-layout switch",
+              "ps": "model constant",
+              "kappa": "model constant",
+              "lhead": "model constant",
+              "rzspec": "model constant",
+              "cax": "model constant",
+              "cpx": "model constant"
+            },
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/resistors_mod.lib (.subckt rppd, rsil, rhigh: .param w l mm_ok b ps trise m sw_et postsim kappa ...)"
+          },
+          "mos": {
+            "devices": [
+              "sg13_lv_nmos",
+              "sg13_lv_pmos",
+              "sg13_hv_nmos",
+              "sg13_hv_pmos"
+            ],
+            "allowed": [
+              "w",
+              "l",
+              "ng",
+              "m",
+              "as",
+              "ad",
+              "pd",
+              "ps"
+            ],
+            "physics": {
+              "mm_ok": "mismatch switch",
+              "trise": "temperature rise",
+              "rfmode": "RF model switch",
+              "pre_layout": "layout parasitics switch",
+              "z1": "layout constant",
+              "z2": "layout constant",
+              "wmin": "model constant"
+            },
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_mod.lib, sg13g2_moshv_mod.lib (.subckt sg13_lv_nmos ...: w l ng m mm_ok as ad pd ps trise z1 z2 wmin rfmode pre_layout)"
+          }
+        }
+      }
+    },
+    "mismatch": {
+      "ihp-sg13g2": {
+        "lib_suffix": "_mismatch",
+        "instance_param": "mm_ok=1",
+        "devices": [
+          "npn13G2",
+          "npn13G2_5t",
+          "npn13G2l",
+          "npn13G2l_5t",
+          "npn13G2v",
+          "npn13G2v_5t",
+          "pnpMPA",
+          "rsil",
+          "rhigh",
+          "rppd",
+          "cap_cmim",
+          "cap_rfcmim",
+          "sg13_lv_nmos",
+          "sg13_lv_pmos",
+          "sg13_hv_nmos",
+          "sg13_hv_pmos",
+          "sg13_hv_svaricap"
+        ],
+        "source": "ihp-sg13g2/libs.tech/ngspice/models/cornerHBT.lib, cornerMOSlv.lib, cornerMOShv.lib, cornerRES.lib, cornerCAP.lib (sections <corner>_mismatch); *_mod_mismatch.lib (each device subcircuit has the parameter mm_ok=0, and agauss(..., (mm_ok != 1 ? 0 : 1)): no mismatch unless the instance sets mm_ok=1)"
+      }
+    },
+    "limits": {
+      "ihp-sg13g2": {
+        "hbt_cells": [
+          "npn13G2",
+          "npn13G2_5t",
+          "npn13G2l",
+          "npn13G2l_5t",
+          "npn13G2v",
+          "npn13G2v_5t"
+        ],
+        "classes": {
+          "hbt": {
+            "kind": "hbt",
+            "letter": "q",
+            "models": "^npn13g2[lv]?_nx_vbic$",
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_hbt_mod.lib (.model npn13G2_NX_vbic, npn13G2l_NX_vbic, npn13G2v_NX_vbic)"
+          },
+          "mos_lv": {
+            "kind": "mos",
+            "letter": "n",
+            "models": "^sg13g2_lv_[np]mos_psp",
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_parm.lib"
+          },
+          "mos_hv": {
+            "kind": "mos",
+            "letter": "n",
+            "models": "^sg13g2_hv_[np]mos_psp",
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moshv_parm.lib"
+          }
+        },
+        "limits": [
+          {
+            "id": "hbt_vce_max",
+            "class": "hbt",
+            "quantity": "vce",
+            "op": "<=",
+            "limit": 1.6,
+            "models": "^npn13g2l?_nx_vbic$",
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_hbt_mod.lib (npn13G2_NX_vbic and npn13G2l_NX_vbic: vce_max = 1.6); ihp-sg13g2/libs.doc/doc/SG13G2_os_process_spec.pdf 3.1, 3.2 (BVCEO target 1.6 V, min 1.4 V)"
+          },
+          {
+            "id": "hbt_v_vce_max",
+            "class": "hbt",
+            "quantity": "vce",
+            "op": "<=",
+            "limit": 2.2,
+            "models": "^npn13g2v_nx_vbic$",
+            "source": "ihp-sg13g2/libs.doc/doc/SG13G2_os_process_spec.pdf 3.3 (NPN13G2V_BVCEO min 2.2 V)"
+          },
+          {
+            "id": "hbt_vcb_max",
+            "class": "hbt",
+            "quantity": "vcb",
+            "op": "<=",
+            "limit": 3.8,
+            "models": "^npn13g2l?_nx_vbic$",
+            "source": "ihp-sg13g2/libs.doc/doc/SG13G2_os_process_spec.pdf 3.1, 3.2 (BVCBO min 3.8 V)"
+          },
+          {
+            "id": "hbt_veb_max",
+            "class": "hbt",
+            "quantity": "veb",
+            "op": "<=",
+            "limit": 1.0,
+            "source": "ihp-sg13g2/libs.doc/doc/SG13G2_os_process_spec.pdf 3.1 to 3.3 (BVEBO min 1.0 V)"
+          },
+          {
+            "id": "hbt_vbe_max",
+            "class": "hbt",
+            "quantity": "vbe",
+            "op": "<=",
+            "limit": 1.6,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_hbt_mod.lib (vbe_max = 1.6)"
+          },
+          {
+            "id": "hbt_ic_per_emitter_max",
+            "class": "hbt",
+            "quantity": "ic_per_emitter",
+            "op": "<=",
+            "limit": 0.0035,
+            "models": "^npn13g2_nx_vbic$",
+            "source": "ihp-sg13g2/libs.doc/doc/SG13G2_os_process_spec.pdf 3.1 (NPN13G2_ICMAX 3.5 mA, AE = 0.07 x 0.9 um2, one emitter)"
+          },
+          {
+            "id": "hbt_l_ic_per_emitter_max",
+            "class": "hbt",
+            "quantity": "ic_per_emitter",
+            "op": "<=",
+            "limit": 0.003,
+            "models": "^npn13g2l_nx_vbic$",
+            "source": "ihp-sg13g2/libs.doc/doc/SG13G2_os_process_spec.pdf 3.2 (NPN13G2L_ICMAX 3.0 mA)"
+          },
+          {
+            "id": "hbt_v_ic_per_emitter_max",
+            "class": "hbt",
+            "quantity": "ic_per_emitter",
+            "op": "<=",
+            "limit": 0.0005,
+            "models": "^npn13g2v_nx_vbic$",
+            "source": "ihp-sg13g2/libs.doc/doc/SG13G2_os_process_spec.pdf 3.3 (NPN13G2V_ICMAX 0.5 mA)"
+          },
+          {
+            "id": "hbt_ib_reverse",
+            "class": "hbt",
+            "quantity": "ib",
+            "op": ">=",
+            "limit": 0,
+            "assumption": "limit_hbt_ib_reverse",
+            "description": "no reverse DC base current (the onset of avalanche multiplication); the PDK gives no limit, so this limit is assumed"
+          },
+          {
+            "id": "mos_lv_vds_max",
+            "class": "mos_lv",
+            "quantity": "vds",
+            "op": "<=",
+            "limit": 1.6,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_parm.lib (VDS_MAX = 1.6)"
+          },
+          {
+            "id": "mos_lv_vgs_max",
+            "class": "mos_lv",
+            "quantity": "vgs",
+            "op": "<=",
+            "limit": 1.6,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_parm.lib (VGS_MAX = 1.6)"
+          },
+          {
+            "id": "mos_hv_vds_max",
+            "class": "mos_hv",
+            "quantity": "vds",
+            "op": "<=",
+            "limit": 3.0,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moshv_parm.lib (VDS_MAX = 3.0)"
+          },
+          {
+            "id": "mos_hv_vgs_max",
+            "class": "mos_hv",
+            "quantity": "vgs",
+            "op": "<=",
+            "limit": 3.0,
+            "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moshv_parm.lib (VGS_MAX = 3.0)"
+          }
+        ]
+      }
+    },
     "passives": {
       "ihp-sg13g2": {
         "r": {
@@ -221,6 +506,250 @@
         "description": "the KLayout layer properties file of the PDK: the layer names and their layer/datatype (operations query and diff)",
         "source": "ihp-sg13g2/libs.tech/klayout/tech/sg13g2.lyp (one <properties> entry per layer: <name> in the form Metal1.drawing, <source> in the form 8/0)"
       }
+    }
+  },
+  "device_probe": {
+    "description": "One small DC deck per device class for the operation probe_devices of the ngspice and xyce adapters. Each deck has the voltage source vprobe; the probe value is its DC current. The library of a class is given per simulator; {pdk_root} is $PDK_ROOT. ngspice needs the .spiceinit of the kit (OSDI models), from SPICE_USERINIT_DIR.",
+    "ihp-sg13g2": {
+      "libs": {
+        "mos_lv": {
+          "ngspice": {
+            "path": "{pdk_root}/ihp-sg13g2/libs.tech/ngspice/models/cornerMOSlv.lib",
+            "section": "mos_tt"
+          },
+          "xyce": {
+            "path": "{pdk_root}/ihp-sg13g2/libs.tech/xyce/models/cornerMOSlv.lib",
+            "section": "mos_tt"
+          }
+        },
+        "mos_hv": {
+          "ngspice": {
+            "path": "{pdk_root}/ihp-sg13g2/libs.tech/ngspice/models/cornerMOShv.lib",
+            "section": "mos_tt"
+          },
+          "xyce": {
+            "path": "{pdk_root}/ihp-sg13g2/libs.tech/xyce/models/cornerMOShv.lib",
+            "section": "mos_tt"
+          }
+        },
+        "hbt": {
+          "ngspice": {
+            "path": "{pdk_root}/ihp-sg13g2/libs.tech/ngspice/models/cornerHBT.lib",
+            "section": "hbt_typ"
+          },
+          "xyce": {
+            "path": "{pdk_root}/ihp-sg13g2/libs.tech/xyce/models/cornerHBT.lib",
+            "section": "hbt_typ"
+          }
+        },
+        "res": {
+          "ngspice": {
+            "path": "{pdk_root}/ihp-sg13g2/libs.tech/ngspice/models/cornerRES.lib",
+            "section": "res_typ"
+          },
+          "xyce": {
+            "path": "{pdk_root}/ihp-sg13g2/libs.tech/xyce/models/cornerRES.lib",
+            "section": "res_typ"
+          }
+        },
+        "cap": {
+          "ngspice": {
+            "path": "{pdk_root}/ihp-sg13g2/libs.tech/ngspice/models/cornerCAP.lib",
+            "section": "cap_typ"
+          },
+          "xyce": {
+            "path": "{pdk_root}/ihp-sg13g2/libs.tech/xyce/models/cornerCAP.lib",
+            "section": "cap_typ"
+          }
+        },
+        "dio": {
+          "ngspice": {
+            "path": "{pdk_root}/ihp-sg13g2/libs.tech/ngspice/models/cornerDIO.lib",
+            "section": "dio_tt"
+          },
+          "xyce": {
+            "path": "{pdk_root}/ihp-sg13g2/libs.tech/xyce/models/cornerDIO.lib",
+            "section": "dio_tt"
+          }
+        }
+      },
+      "classes": {
+        "mos_lv_nmos": {
+          "description": "1.2 V NMOS (PSP 103)",
+          "lib": "mos_lv",
+          "netlist": [
+            "xdut d g 0 0 sg13_lv_nmos w=1u l=0.13u",
+            "vprobe d 0 0.6",
+            "vg g 0 0.8"
+          ],
+          "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_mod.lib: .subckt sg13_lv_nmos d g s b"
+        },
+        "mos_lv_pmos": {
+          "description": "1.2 V PMOS (PSP 103)",
+          "lib": "mos_lv",
+          "netlist": [
+            "xdut d g s s sg13_lv_pmos w=1u l=0.13u",
+            "vs s 0 1.2",
+            "vprobe d 0 0.6",
+            "vg g 0 0.4"
+          ],
+          "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moslv_mod.lib: .subckt sg13_lv_pmos d g s b"
+        },
+        "mos_hv_nmos": {
+          "description": "3.3 V NMOS (PSP 103)",
+          "lib": "mos_hv",
+          "netlist": [
+            "xdut d g 0 0 sg13_hv_nmos w=1u l=0.45u",
+            "vprobe d 0 1.65",
+            "vg g 0 2.0"
+          ],
+          "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moshv_mod.lib: .subckt sg13_hv_nmos d g s b"
+        },
+        "mos_hv_pmos": {
+          "description": "3.3 V PMOS (PSP 103)",
+          "lib": "mos_hv",
+          "netlist": [
+            "xdut d g s s sg13_hv_pmos w=1u l=0.45u",
+            "vs s 0 3.3",
+            "vprobe d 0 1.65",
+            "vg g 0 1.3"
+          ],
+          "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_moshv_mod.lib: .subckt sg13_hv_pmos d g s b"
+        },
+        "varactor_hv": {
+          "description": "HV MOS varactor",
+          "lib": "mos_hv",
+          "netlist": [
+            "xdut g w g 0 sg13_hv_svaricap l=0.6u w=3u",
+            "vprobe g 0 1",
+            "vw w 0 0"
+          ],
+          "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_svaricaphv_mod.lib: .subckt sg13_hv_svaricap G1 W G2 bn (included by cornerMOShv.lib mos_tt)"
+        },
+        "hbt_npn13G2": {
+          "description": "SiGe HBT npn13G2 (VBIC)",
+          "lib": "hbt",
+          "netlist": [
+            "xdut c b 0 0 npn13G2 Nx=1",
+            "vprobe c 0 1.2",
+            "vb b 0 0.85"
+          ],
+          "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_hbt_mod.lib: .subckt npn13G2 c b e bn"
+        },
+        "hbt_npn13G2l": {
+          "description": "SiGe HBT npn13G2l (VBIC)",
+          "lib": "hbt",
+          "netlist": [
+            "xdut c b 0 0 npn13G2l Nx=1",
+            "vprobe c 0 1.2",
+            "vb b 0 0.85"
+          ],
+          "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_hbt_mod.lib: .subckt npn13G2l c b e bn"
+        },
+        "hbt_npn13G2v": {
+          "description": "SiGe HBT npn13G2v (VBIC)",
+          "lib": "hbt",
+          "netlist": [
+            "xdut c b 0 0 npn13G2v Nx=1",
+            "vprobe c 0 1.2",
+            "vb b 0 0.85"
+          ],
+          "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_hbt_mod.lib: .subckt npn13G2v c b e bn"
+        },
+        "hbt_pnpMPA": {
+          "description": "lateral PNP pnpMPA",
+          "lib": "hbt",
+          "netlist": [
+            "xdut 0 b e pnpMPA",
+            "vprobe e 0 0.8",
+            "vb b 0 0"
+          ],
+          "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_hbt_mod.lib: .subckt pnpMPA c b e"
+        },
+        "res_rsil": {
+          "description": "silicided poly resistor rsil (r3_cmc)",
+          "lib": "res",
+          "netlist": [
+            "xdut a 0 0 rsil w=0.5u l=5u",
+            "vprobe a 0 0.1"
+          ],
+          "source": "ihp-sg13g2/libs.tech/ngspice/models/resistors_mod.lib: .subckt rsil 1 2 bn"
+        },
+        "res_rppd": {
+          "description": "p+ poly resistor rppd (r3_cmc)",
+          "lib": "res",
+          "netlist": [
+            "xdut a 0 0 rppd w=0.5u l=5u",
+            "vprobe a 0 0.1"
+          ],
+          "source": "ihp-sg13g2/libs.tech/ngspice/models/resistors_mod.lib: .subckt rppd 1 2 bn"
+        },
+        "res_rhigh": {
+          "description": "high-resistance poly resistor rhigh (r3_cmc)",
+          "lib": "res",
+          "netlist": [
+            "xdut a 0 0 rhigh w=0.5u l=5u",
+            "vprobe a 0 0.1"
+          ],
+          "source": "ihp-sg13g2/libs.tech/ngspice/models/resistors_mod.lib: .subckt rhigh 1 2 bn"
+        },
+        "cap_cmim": {
+          "description": "MIM capacitor cap_cmim",
+          "lib": "cap",
+          "netlist": [
+            "xdut a 0 cap_cmim w=7u l=7u",
+            "vprobe a 0 1"
+          ],
+          "source": "ihp-sg13g2/libs.tech/ngspice/models/capacitors_mod.lib: .subckt cap_cmim PLUS MINUS"
+        },
+        "cap_rfcmim": {
+          "description": "RF MIM capacitor cap_rfcmim",
+          "lib": "cap",
+          "netlist": [
+            "xdut a 0 0 cap_rfcmim w=7u l=7u",
+            "vprobe a 0 1"
+          ],
+          "source": "ihp-sg13g2/libs.tech/ngspice/models/capacitors_mod.lib: .subckt cap_rfcmim PLUS MINUS bn"
+        },
+        "dio_dantenna": {
+          "description": "antenna diode dantenna",
+          "lib": "dio",
+          "netlist": [
+            "xdut 0 a dantenna",
+            "vprobe a 0 0.7"
+          ],
+          "source": "ihp-sg13g2/libs.tech/ngspice/models/diodes.lib: .subckt dantenna 1 2"
+        },
+        "dio_dpantenna": {
+          "description": "antenna diode dpantenna",
+          "lib": "dio",
+          "netlist": [
+            "xdut a 0 dpantenna",
+            "vprobe a 0 0.7"
+          ],
+          "source": "ihp-sg13g2/libs.tech/ngspice/models/diodes.lib: .subckt dpantenna 1 2"
+        },
+        "dio_schottky": {
+          "description": "Schottky diode schottky_nbl1",
+          "lib": "dio",
+          "netlist": [
+            "xdut a 0 0 schottky_nbl1",
+            "vprobe a 0 0.3"
+          ],
+          "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_dschottky_nbl1_mod.lib: .subckt schottky_nbl1 A C S"
+        },
+        "dio_esd_vdd": {
+          "description": "ESD diode diodevdd_2kv",
+          "lib": "dio",
+          "netlist": [
+            "xdut vdd pad 0 diodevdd_2kv",
+            "vdd vdd 0 1.2",
+            "vprobe pad 0 1.9"
+          ],
+          "source": "ihp-sg13g2/libs.tech/ngspice/models/sg13g2_esd.lib: .subckt diodevdd_2kv VDD PAD VSS"
+        }
+      },
+      "source": "ihp-sg13g2/libs.tech/ngspice/models and ihp-sg13g2/libs.tech/xyce/models: the corner libraries and their typical sections (.LIB names); the subcircuit pins and parameters from the model files named per class"
     }
   }
 }

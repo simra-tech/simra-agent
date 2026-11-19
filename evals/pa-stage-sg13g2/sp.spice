@@ -1,0 +1,25 @@
+* PA stage S-parameter bench (ngspice). Two 50 ohm ports through ideal 1 uF DC blocks (bench only), the same supplies
+* and bias as hb.spice. Outputs: the current from VCCPA ipa_a (DC) and pa_stage.s2p (1 GHz to 300 GHz, 1 GHz step).
+.param vpa=0.9 vcc=1.8 irefa=2.2m
+.include "pa_stage.spice"
+vpa vccpa 0 {vpa}
+v18 vcc18 0 {vcc}
+ir vcc18 iref {irefa}
+xdut rfin rfout vccpa vcc18 iref pa_stage
+* 1 Gohm DC paths at the port nodes (bench only)
+rdc1 rfin 0 1e9 noisy=0
+rdc2 rfout 0 1e9 noisy=0
+cb1 p1 rfin 1u
+cb2 p2 rfout 1u
+v1 p1 0 dc 0 ac 1 portnum 1 z0 50
+v2 p2 0 dc 0 ac 0 portnum 2 z0 50
+.control
+set num_threads=1
+op
+let ipa_a = -i(vpa)
+print ipa_a
+sp lin 300 1g 300g
+let Rbase = 50
+wrs2p pa_stage.s2p
+.endc
+.end

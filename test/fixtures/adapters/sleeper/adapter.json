@@ -1,0 +1,7 @@
+{
+  "contract": "simra.adapter/0",
+  "name": "sleeper",
+  "version": "0.1.0",
+  "command": ["python3", "{adapter_dir}/sleeper.py"],
+  "operations": { "sleep": { "description": "Test adapter: sleep inputs.seconds, then respond completed." } }
+}

@@ -1,0 +1,149 @@
+{
+  "schema": "simra.workarounds/0",
+  "simulator": "ngspice",
+  "pdk": "*",
+  "versions": "ngspice 46",
+  "entries": [
+    {
+      "id": "ngspice-pulse-pw0",
+      "applies_to": {
+        "analyses": [
+          "tran"
+        ]
+      },
+      "gap": "pulse(... PW=0 ...) uses PW = TSTOP: a step, not an impulse. PW = 1e-18 gives 'timestep too small'.",
+      "symptom": "A step response where an impulse was meant, with no message.",
+      "workaround": "Use a PWL triangle for an impulse.",
+      "status": "worked_around",
+      "evidence": "oscillator phase-noise method of a reference design (stage 0)"
+    },
+    {
+      "id": "ngspice-trnoise-round-step",
+      "applies_to": {
+        "analyses": [
+          "tran",
+          "trnoise"
+        ]
+      },
+      "gap": "trnoise with a round sample time (for example 1 ps) aborts in about half of the seeds.",
+      "symptom": "The transient stops early.",
+      "workaround": "Use a non-round sample time (for example 0.9973 ps).",
+      "status": "worked_around",
+      "evidence": "stage 0 transient-noise runs of a reference design"
+    },
+    {
+      "id": "ngspice-trnoise-current-source",
+      "applies_to": {
+        "analyses": [
+          "tran",
+          "trnoise"
+        ]
+      },
+      "gap": "An independent trnoise current source into a tank with lead inductances stops every seed at the second breakpoint.",
+      "symptom": "The transient stops.",
+      "workaround": "Drive a VCCS from a trnoise voltage source.",
+      "status": "worked_around",
+      "evidence": "oscillator study of a reference design"
+    },
+    {
+      "id": "ngspice-threads",
+      "applies_to": {
+        "operations": [
+          "simulate",
+          "operating_point"
+        ]
+      },
+      "gap": "ngspice ignores OMP_NUM_THREADS in the container: N parallel runs on N CPUs oversubscribe.",
+      "symptom": "Runs take up to 50 times longer.",
+      "workaround": "Put 'set num_threads=1' in the deck (or .spiceinit) and run one job per CPU (run N jobs and wait).",
+      "status": "worked_around",
+      "evidence": "reference design runs"
+    },
+    {
+      "id": "ngspice-pss",
+      "applies_to": {
+        "analyses": [
+          "pss"
+        ]
+      },
+      "gap": "The experimental .pss analysis failed on an HBT oscillator ('timestep too small').",
+      "symptom": "The analysis stops.",
+      "workaround": "Use a long transient, or the Xyce HB probe method.",
+      "status": "open",
+      "evidence": "stage 0 of a reference design"
+    },
+    {
+      "id": "ngspice-bsource-pwl-bare-param",
+      "applies_to": {
+        "analyses": [
+          "tran"
+        ]
+      },
+      "gap": "A B source whose expression holds pwl(time, ...) and a bare .param name (for example * sin(2*pi*rf_f*time)) is not accepted.",
+      "symptom": "\"The internal check of parse tree ... failed\", then \"incomplete or empty netlist\"; the run stops before the analysis.",
+      "workaround": "Put the parameter expression in braces (sin({2*3.14159265*rf_f}*time)) or write the number.",
+      "status": "worked_around",
+      "evidence": "det-cell pilot run (two failed jobs), reproduced with a three-line deck: bare name fails, braces and a literal give the same 0.2 V result"
+    },
+    {
+      "id": "ngspice-wrs2p-rbase",
+      "applies_to": {
+        "analyses": [
+          "sp"
+        ]
+      },
+      "gap": "wrs2p after an sp analysis needs the reference resistance as a vector Rbase in the sp plot; the sp analysis does not make it (ngspice 41 and 46).",
+      "symptom": "'Error: No Rbase vector given' in the log and no Touchstone file; the run still ends with status completed, so an s_db or mu row has no data.",
+      "workaround": "Write 'let Rbase = 50' (the z0 of the ports) after sp and before wrs2p.",
+      "status": "worked_around",
+      "evidence": "LNA bench of the step-6 pilot task: no lna.s2p; a two-port probe deck writes the file after 'let Rbase = 50' (ngspice 41)"
+    },
+    {
+      "id": "fit-to-spice-noise",
+      "applies_to": {
+        "analyses": [
+          "noise"
+        ],
+        "operations": [
+          "fit_to_spice"
+        ]
+      },
+      "gap": "A vector-fit realisation of a passive (controlled sources and internal state nodes) does not have the thermal noise of the passive. Internal resistors of the realisation give noise with no relation to the passive; fit_to_spice now writes them as noiseless G sources, so the model has no noise at all.",
+      "symptom": "With internal resistors: a noise figure of hundreds of dB (an LNA with EM matching networks gave 275 dB). Without them: a noise figure that leaves out the loss noise of the passive, optimistic by up to the loss of a passive at the input.",
+      "workaround": "Give fit_to_spice uses.noise_band_hz (a band of at most 5 % of its centre f0): the subcircuit then has port noise currents with the correlation 4kT Re Y(f0) of the fitted passive (Twiss), and the adapter checks them in ngspice against 4kT Re Z at each port (noise_verify_max_rel_error). Outside the noise band the noise is that of f0. The fit-band gate of check_requirements fails a noise analysis that uses a fitted model without port noise, or outside its noise band.",
+      "status": "worked_around",
+      "evidence": "A 6 dB 50 ohm attenuator fitted with port noise gives NF 6.000 dB (noise check error 2.3e-7). The R2 LNA (three CE stages, four EM networks fitted again with port noise at 122 GHz to 123 GHz) gives NF 5.181 dB at tt; the reference record gives 5.13 dB to 5.22 dB with its own Twiss injection, and 4.99 dB with noiseless fits (simulated, ngspice 46)."
+    },
+    {
+      "id": "fit-acceptance-error-in-band",
+      "applies_to": {
+        "operations": [
+          "fit_to_spice"
+        ]
+      },
+      "gap": "A fitted model of a passive is accepted on the error against the source data. A fit of higher order is not a better model: it can fit the data worse after the passivity enforcement, and the error over the full data band hides the error in the band of use.",
+      "symptom": "An LNA interstage network of the R2 design: a lower-order fit had 0.010 dB of error against the EM data, a higher-order fit 0.07 dB, and the choice moved the LNA gain by 0.2 dB. A fit over 0 Hz to 300 GHz of a three-port network was refused because the passivity enforcement raised its error to 0.037 (|dS|); the same data fitted over 1 GHz to 300 GHz (the band of use) gave 0.0046.",
+      "workaround": "Give fit_to_spice uses.band_hz (the band of use) and read use_max_abs_ds and use_max_abs_db: the largest error against the source data in the band of use, after the passivity enforcement. Compare orders on these values, not on the order. Set fit_band_hz to the band of use when the full band does not fit.",
+      "status": "worked_around",
+      "evidence": "R2 radar LNA record (interstage fit, 0.010 dB against 0.07 dB, gain moved 0.2 dB); step-7 fits of the four R2 LNA networks (IS2 refused at the full band, completed at 1 GHz to 300 GHz with |dS| 0.0046)"
+    },
+    {
+      "id": "fit-band-of-use",
+      "applies_to": {
+        "operations": [
+          "fit_to_spice"
+        ],
+        "analyses": [
+          "ac",
+          "sp",
+          "noise"
+        ]
+      },
+      "gap": "A fitted model is a rational function: outside the band of its data and fit it is an extrapolation, and a stability or noise result there is not evidence.",
+      "symptom": "A pilot LNA used an inductor model fitted from 60 GHz to 180 GHz in a bench from 1 GHz to 300 GHz; mu failed at 57 GHz, below the fitted band, and the run could not separate a design error from a model error.",
+      "workaround": "The fit record carries its band of use (uses.band_hz, uses.dc, uses.noise_band_hz). The fit-band gate of check_requirements fails each ac, sp or noise analysis of a bench that uses the model outside that band, with the band in the reason. Fit again with a band that covers the sweep.",
+      "status": "worked_around",
+      "evidence": "Step-6 LNA pilot with the default model (fit 60 GHz to 180 GHz, bench 1 GHz to 300 GHz); kernel test netlist.test.ts"
+    }
+  ]
+}

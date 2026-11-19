@@ -35,6 +35,7 @@ import {
 	writeJsonAtomic,
 } from "./records.ts";
 import { runtimeEstimate, type RuntimeEstimate } from "./estimate.ts";
+import { describeTouchstone, isTouchstoneEntry } from "./touchstone.ts";
 
 export const CONTRACT = "simra.adapter/0";
 export const KERNEL_VERSION: string = kernelPackage.version;
@@ -53,6 +54,8 @@ export interface AdapterManifest {
 	/** Command line. "{adapter_dir}" is replaced with the adapter directory. The request path is appended. */
 	command: string[];
 	operations: Record<string, { description: string }>;
+	/** Other adapters whose code this adapter imports (their directories are mounted and named in SIMRA_ADAPTER_DIRS). */
+	uses_adapters?: string[];
 }
 
 export interface RunOptions {
@@ -63,6 +66,8 @@ export interface RunOptions {
 	environment?: string;
 	purpose?: string;
 	timeoutS?: number;
+	/** A CPU list ("4-7,9") that replaces the cpus of the environment for this run. */
+	cpus?: string;
 	/** Blocking run only: abort stops the adapter, and the run is recorded as cancelled. */
 	signal?: AbortSignal;
 	/** Run the experiment in a supervisor process and return at once (status "running"). */
@@ -136,6 +141,8 @@ interface Job {
 	command: string;
 	args: string[];
 	timeout_s: number;
+	/** The container engine, for a container environment: a stopped run also removes its container (by label). */
+	engine?: string | null;
 }
 
 const JOB_FILE = "job.json";
@@ -161,10 +168,12 @@ function prepareExperiment(opts: RunOptions): { job: Job; env: NodeJS.ProcessEnv
 	const root = resolve(opts.root);
 	const config = loadConfig(root);
 	const envName = opts.environment ?? "local";
-	const envConfig = config.environments[envName];
-	if (!envConfig) {
+	const configured = config.environments[envName];
+	if (!configured) {
 		throw new Error(`environment "${envName}" is not defined. Known: ${Object.keys(config.environments).join(", ")}`);
 	}
+	if (opts.cpus !== undefined) parseCpuList(opts.cpus);
+	const envConfig = opts.cpus === undefined ? configured : { ...configured, cpus: opts.cpus };
 	const { dir: adapterDir, manifest } = findAdapter(opts.adapter, [...(config.adapter_dirs ?? []), BUILTIN_ADAPTER_DIR]);
 	if (manifest.contract !== CONTRACT) {
 		throw new Error(`adapter "${opts.adapter}" uses contract ${manifest.contract}; this kernel supports ${CONTRACT}`);
@@ -182,7 +191,8 @@ function prepareExperiment(opts: RunOptions): { job: Job; env: NodeJS.ProcessEnv
 	const adapterCommand = [...manifest.command.map((part) => part.replaceAll("{adapter_dir}", adapterDir)), requestPath];
 	// Build the invocation first: a configuration error must not leave an empty experiment behind.
 	const technologyDirs = technologySearchPath(config.technology_dirs ?? []);
-	const invocation = buildInvocation({ name: envName, config: envConfig, root, adapterDir, adapterCommand, experimentId: id, technologyDirs });
+	const usedAdapterDirs = Object.fromEntries((manifest.uses_adapters ?? []).map((n) => [n, findAdapter(n, [...(config.adapter_dirs ?? []), BUILTIN_ADAPTER_DIR]).dir]));
+	const invocation = buildInvocation({ name: envName, config: envConfig, root, adapterDir, adapterCommand, experimentId: id, technologyDirs, usedAdapterDirs });
 	createExperimentDir(root, id);
 
 	const experiment: ExperimentRecord = {
@@ -190,7 +200,7 @@ function prepareExperiment(opts: RunOptions): { job: Job; env: NodeJS.ProcessEnv
 		id,
 		created_at: new Date().toISOString(),
 		purpose: opts.purpose ?? null,
-		adapter: { name: manifest.name, version: manifest.version, dir: adapterDir, files: hashTree(adapterDir) },
+		adapter: { name: manifest.name, version: manifest.version, dir: adapterDir, files: hashTree(adapterDir), ...(Object.keys(usedAdapterDirs).length ? { uses: Object.fromEntries(Object.entries(usedAdapterDirs).map(([n, d]) => [n, { dir: d, files: hashTree(d) }])) } : {}) },
 		operation: opts.operation,
 		inputs: opts.inputs,
 		environment: invocation.record,
@@ -208,7 +218,8 @@ function prepareExperiment(opts: RunOptions): { job: Job; env: NodeJS.ProcessEnv
 		work_dir: join(dir, "work"),
 		response_path: responsePath,
 	});
-	const job = { root, id, command: invocation.command, args: invocation.args, timeout_s: opts.timeoutS ?? 3600 };
+	const engine = invocation.record.kind === "container" ? (invocation.record as { engine: string }).engine : null;
+	const job = { root, id, command: invocation.command, args: invocation.args, timeout_s: opts.timeoutS ?? 3600, engine };
 	return { job, env: invocation.env, dir, experiment };
 }
 
@@ -228,6 +239,8 @@ async function executeJob(job: Job, env: NodeJS.ProcessEnv, signal?: AbortSignal
 		timeoutS: job.timeout_s,
 		signal,
 	});
+	// A stopped engine client can leave its container running: remove the container of this experiment by its label.
+	if ((exit.timedOut || exit.cancelled) && job.engine) removeContainers(job.engine, id);
 	const finished = new Date();
 
 	const result: ResultRecord = {
@@ -259,6 +272,7 @@ async function executeJob(job: Job, env: NodeJS.ProcessEnv, signal?: AbortSignal
 		result.errors.push(`the adapter wrote no response (exit code ${exit.code}); see ${result.logs.adapter_stderr}`);
 	} else {
 		applyResponse(result, responsePath, exit.code);
+		annotateTouchstone(root, result);
 	}
 
 	writeJsonAtomic(join(dir, "result.json"), result);
@@ -433,6 +447,50 @@ function applyResponse(result: ResponseFields, responsePath: string, exitCode: n
 	result.measurements = (response.measurements as ResultRecord["measurements"]) ?? {};
 	result.diagnostics = (response.diagnostics as ResultRecord["diagnostics"]) ?? [];
 	if (Array.isArray(response.report)) result.report = response.report.map((line) => String(line));
+}
+
+/**
+ * Add the summary of each Touchstone file (input or output) to its entry. The kernel reads the file itself, and only
+ * when its hash is still the hash that the adapter recorded.
+ */
+export function annotateTouchstone(root: string, result: Pick<ResultRecord, "input_files" | "outputs">): void {
+	for (const f of [...(result.input_files?.files ?? []), ...result.outputs]) {
+		if (!f || typeof f.path !== "string" || !isTouchstoneEntry(f)) continue;
+		const path = resolve(root, f.path);
+		try {
+			if (sha256File(path) !== f.sha256) {
+				f.touchstone = { error: "the file changed after the adapter hashed it" };
+				continue;
+			}
+		} catch {
+			f.touchstone = { error: "file not found" };
+			continue;
+		}
+		f.touchstone = describeTouchstone(path);
+	}
+}
+
+/** Remove the containers with the label simra.experiment=<id>. It never throws. */
+export function removeContainers(engine: string, id: string): void {
+	try {
+		const ids = execFileSync(engine, ["ps", "-q", "--filter", `label=simra.experiment=${id}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 30_000 })
+			.split("\n")
+			.filter(Boolean);
+		if (ids.length) execFileSync(engine, ["rm", "-f", ...ids], { stdio: "ignore", timeout: 60_000 });
+	} catch {}
+}
+
+/** The CPUs of a list such as "4-7,9", in order, without repeats. An invalid list is an error. */
+export function parseCpuList(list: string): number[] {
+	const out: number[] = [];
+	for (const part of list.split(",")) {
+		const m = part.trim().match(/^(\d+)(?:-(\d+))?$/);
+		if (!m) throw new Error(`invalid CPU list "${list}": use numbers and ranges, for example "4-7,9"`);
+		const [a, b] = [Number(m[1]), Number(m[2] ?? m[1])];
+		if (b < a) throw new Error(`invalid CPU list "${list}": the range ${part} goes down`);
+		for (let c = a; c <= b; c++) if (!out.includes(c)) out.push(c);
+	}
+	return out;
 }
 
 interface SpawnResult {

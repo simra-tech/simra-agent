@@ -161,7 +161,17 @@ Rules:
 - `outputs` lists the files that the tool wrote, with their hashes. An entry may have a `role`. The summary
   prints the role before the path. A PNG with the role `image` is a picture for the agent: the pi extension
   adds it to the tool result as an image (at most 4 pictures and 1 MB per result). The klayout operation
-  `render` writes such outputs.
+  `render` writes such outputs. An output with the role `touchstone` is a Touchstone file (`.sNp`). The kernel
+  reads it after the run and adds the field `touchstone` to its entry: ports, points, band, DC point, passivity and
+  reciprocity numbers, or `{"error": ...}` when the file does not parse or changed after the adapter hashed it. The
+  adapter does not write this field. The requirement kinds `s_db` and `mu` read these files. An output with the role
+  `sweep` is a sweep table, JSON `{"sweep": <name>, "columns": [...], "rows": [{<name>: x, <column>: value or null}]}`,
+  one row per sweep point in sweep order, with `null` at a point without a value. The requirement kind `sweep` reads it.
+  An output with the role `sparameter_columns` is the S-parameter column of each excited port of an EM run (schema
+  `simra.openems_columns/0`), with its convergence. The `merge` operation of the openems adapter reads these files.
+- A measurement with the status `failed` or `missing` can have the field `reason`. A value reduced over a sweep (an
+  extremum, a crossing, a compression point) must be `failed` when a point inside its bracket has no value; the
+  reason names the point (see "Sweep reducers" in README.md).
 - A measurement that the tool did not give has status `failed` or `missing` and the value `null`. It is never
   omitted.
 - A measurement can have the optional field `at`: the sweep point where a reduced value (for example a minimum

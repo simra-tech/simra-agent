@@ -42,6 +42,7 @@
 // @openai/codex@<version>-linux-<arch>), mounted read-only. No login file goes into the sandbox.
 //
 // Usage: node evals/run-arm.mjs <task dir> <simra|pi|opencode|codex> [--model <id>] [--runs <dir>] [--timeout-min <n>]
+//        [--context lean|full]   (simra arm: lean leaves the reasoning of earlier turns out of each model call)
 //        [--upstream <url>] [--codex-dir <dir>]
 
 import { spawn, spawnSync, execFileSync } from "node:child_process";
@@ -434,6 +435,17 @@ function waitExit(child, timeoutMs, onTimeout) {
 	});
 }
 
+/** The end-guard record of the session (simra/end_guard.json of the workspace), or null: no guard, or it did not act. */
+export function endGuardRecord(ws) {
+	const file = join(ws, "simra", "end_guard.json");
+	if (!existsSync(file)) return null;
+	try {
+		return JSON.parse(readFileSync(file, "utf8"));
+	} catch {
+		return null;
+	}
+}
+
 async function main() {
 	// This also covers scorer imports and verification on the host, outside the agent container.
 	process.env.SIMRA_NO_ANALYTICS = "1";
@@ -450,6 +462,9 @@ async function main() {
 	const runs = realpathSync(runsArg);
 	const timeoutMin = Number(opt("--timeout-min", "30"));
 	const modelId = opt("--model", DEFAULT_MODEL);
+	// Context mode of the simra extension: lean (default; earlier reasoning left out, state note) or full.
+	const contextMode = opt("--context", "lean");
+	if (!["lean", "full"].includes(contextMode)) throw new Error(`--context is lean or full, not "${contextMode}"`);
 	const model = MODELS[modelId];
 	if (!model) throw new Error(`unknown model "${modelId}" (use ${Object.keys(MODELS).join(" or ")})`);
 	const upstream = opt("--upstream", arm === "codex" ? CODEX_UPSTREAM : model.upstream);
@@ -497,8 +512,10 @@ async function main() {
 	const name = `simra-arm-${runName}`;
 	const toolEnv = sandboxToolEnv(env);
 	// The Simra extension tells the agent how much session time is left (other arms ignore the variable).
+	// task.json "deliverables" (file paths in the workspace) turns on the end guard of the Simra extension: one re-entry
+	// when the agent ends without them or without a complete check of the final design.
 	const deadline = new Date(Date.now() + timeoutMin * 60_000).toISOString();
-	const argv = sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar: model.keyVar, env: { ...toolEnv, ...cmd.env, SIMRA_SESSION_DEADLINE: deadline }, readOnly, command: cmd.command });
+	const argv = sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar: model.keyVar, env: { ...toolEnv, ...cmd.env, SIMRA_SESSION_DEADLINE: deadline, SIMRA_CONTEXT: contextMode, ...(Array.isArray(task.deliverables) ? { SIMRA_DELIVERABLES: JSON.stringify(task.deliverables) } : {}) }, readOnly, command: cmd.command });
 	const started = new Date();
 	const child = spawn(engine, argv, { env: engineEnv(), stdio: ["ignore", "pipe", "pipe"] });
 	child.stdout.pipe(createWriteStream(join(run, cmd.codex ? "stdout.log" : "transcript.jsonl")));
@@ -534,6 +551,7 @@ async function main() {
 		...(cmd.codex ? { codex_version: cmd.version } : {}),
 		request_models: [...new Set(calls.map((c) => c.request_model))],
 		response_models: [...new Set(calls.map((c) => c.response_model))],
+		context: arm === "simra" ? contextMode : null,
 		model_calls: calls.length,
 		tokens,
 		started_at: started.toISOString(),
@@ -541,6 +559,7 @@ async function main() {
 		exit,
 		sandbox: { engine, image: env.image, image_id: imageId, network: "none", read_only_root: true, mounts: { [WORK]: "ws", [STATE]: "state", [PROXY_DIR]: "proxy", ...(cmd.codex ? { [CODEX_DIR]: "codex package (read-only)" } : {}), ...(companion ? { [COMPANION_DIR]: "companion (read-only)" } : {}) } },
 		contamination,
+		end_guard: endGuardRecord(ws),
 		score: await score(ws, undefined, WORK),
 	};
 	writeFileSync(join(run, "score.json"), `${JSON.stringify(summary, null, 2)}\n`);

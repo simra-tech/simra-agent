@@ -1,0 +1,122 @@
+{
+  "schema": "simra.workarounds/0",
+  "simulator": "ngspice",
+  "pdk": "ihp-sg13g2",
+  "versions": "ngspice 46, IHP SG13G2 ngspice models",
+  "entries": [
+    {
+      "id": "ngspice-sg13g2-klu-large-deck",
+      "applies_to": {
+        "analyses": [
+          "op",
+          "dc"
+        ]
+      },
+      "gap": "KLU fails on a large mixed deck (17 block instances, HBT and PSP MOS): the singular pivots change from run to run (PSP noise nodes).",
+      "symptom": "The operating point falls back to a transient op and fails.",
+      "workaround": "Use the sparse solver (.options klu off) for whole-chip DC points. The same blocks pass with KLU alone.",
+      "status": "worked_around",
+      "evidence": "whole-chip DC point of a reference design (sparse passes at three corners, KLU fails)"
+    },
+    {
+      "id": "ngspice-sg13g2-mc-reltol",
+      "applies_to": {
+        "analyses": [
+          "op",
+          "montecarlo"
+        ]
+      },
+      "gap": "Monte Carlo DC points with reltol 1e-4: 21 of 300 seeds need the transient-op fallback, 4 have no DC point from Newton. The cause is the solver, not the circuit.",
+      "symptom": "Seeds without a DC point, or fallback snapshots with large offsets.",
+      "workaround": "Use reltol=1e-3 and itl1=1000 for the operating points of a Monte Carlo run (300 of 300 seeds converge); state the options. The ngspice operation monte_carlo uses these options by default and reports a seed without a DC point (seeds_no_dc, work/mc.json); a monte_carlo requirement row is then not measured.",
+      "status": "worked_around",
+      "evidence": "Monte Carlo of an IF amplifier block of a reference design"
+    },
+    {
+      "id": "ngspice-sg13g2-hbt-selfheating",
+      "applies_to": {
+        "device_classes": [
+          "hbt_npn13G2",
+          "hbt_npn13G2l",
+          "hbt_npn13G2v"
+        ],
+        "analyses": [
+          "tran"
+        ]
+      },
+      "gap": "The npn13G2 card has self-heating (selft=1) with a thermal time constant of about 5 ns.",
+      "symptom": "Transient values drift for tens of ns.",
+      "workaround": "Read transient results after more than 25 ns, or set selft=0 for method comparisons (state it).",
+      "status": "worked_around",
+      "evidence": "stage 0 of a reference design"
+    },
+    {
+      "id": "ngspice-sg13g2-dantenna-step",
+      "applies_to": {
+        "device_classes": [
+          "dio_dantenna",
+          "dio_dpantenna"
+        ],
+        "analyses": [
+          "tran"
+        ]
+      },
+      "gap": "The antenna diode model has a jump near 3 n Vt (a discontinuity) that can stall transients of pad circuits.",
+      "symptom": "'timestep too small' near zero diode voltage.",
+      "workaround": "Leave the pad antenna diodes out of the transient deck when the pad is not under test, and state it.",
+      "status": "proposed",
+      "evidence": "pad circuit transients of an earlier design"
+    },
+    {
+      "id": "ngspice-sg13g2-vbic-transient-currents",
+      "applies_to": {
+        "analyses": [
+          "tran"
+        ]
+      },
+      "gap": "In a transient, the VBIC instance vectors @q[ib] (and, to a smaller part, @q[ic]) of npn13G2 include the charge currents of the junction capacitances; they are not the conduction currents.",
+      "symptom": "A shot-noise PSD 2 q |i| from these vectors is too high: in a 61.8 GHz VCO the base shot noise was 24 dB and the collector shot noise 1.7 dB above the result with the conduction currents.",
+      "workaround": "Take the conduction currents from a DC table of the device at the junction voltages of the transient (@q[vbe], @q[vbc]): in the oscillator operation, isf.devices and shot {device, current}.",
+      "status": "worked_around",
+      "evidence": "simulated, ngspice 46: oscillator operation with shot vectors against the stored conduction-current result of the same deck; with isf.devices the result equals the stored result within 0.02 dB per source"
+    },
+    {
+      "id": "ngspice-sg13g2-mismatch-mm-ok",
+      "applies_to": {
+        "analyses": [
+          "op",
+          "dc",
+          "ac",
+          "tran",
+          "noise"
+        ]
+      },
+      "gap": "The mismatch sections of the IHP corner libraries (<corner>_mismatch) give mismatch only to instances with mm_ok=1: each device subcircuit has mm_ok=0 by default, and a global .param mm_ok=1 does not change it.",
+      "symptom": "A Monte Carlo run in which every seed gives the same value, with no message: the offset looks like zero.",
+      "workaround": "Set mm_ok=1 on each PDK device instance, or use the ngspice operation monte_carlo, which adds it and fails when no measurement varies over the seeds.",
+      "status": "worked_around",
+      "evidence": "PDK libraries *_mod_mismatch.lib (agauss(..., (mm_ok != 1 ? 0 : 1))); a 60-seed run of a detector cell gives offset sigma 3.9 mV with mm_ok=1"
+    },
+    {
+      "id": "ngspice-sg13g2-hbt-sw-nqs",
+      "applies_to": {
+        "device_classes": [
+          "hbt_npn13G2",
+          "hbt_npn13G2l",
+          "hbt_npn13G2v"
+        ],
+        "analyses": [
+          "ac",
+          "sp",
+          "noise",
+          "tran"
+        ]
+      },
+      "gap": "The ngspice HBT subcircuits of the PDK set sw_nqs=0 by default, so the excess-phase delay td = sw_nqs x 0.28 ps is off. The Xyce card has td on (no sw_nqs parameter).",
+      "symptom": "No message. At 122.5 GHz one Nx 4 device (VBE 0.88 V, VCE 1.2 V) has y21 60.9 mS at -37.3 deg with the default and 62.97 mS at -45.1 deg in Xyce (13.7 % apart); with sw_nqs=1 the two agree within 1.2 %. ngspice and Xyce differ for the same netlist, and RF gain, phase, match, stability and oscillation frequency move.",
+      "workaround": "Set sw_nqs=1 on every HBT instance of an RF path in ngspice (instance parameter; no model card change). In a netlist gate, declare it: allow_params {\"npn13g2\": {\"sw_nqs\": [1]}} and, to enforce it, require_params {\"npn13g2\": {\"sw_nqs\": 1}}. To find such a difference before a design uses both simulators: xyce adapter, operation device_crosscheck, or the device_check gate of a requirements file.",
+      "status": "worked_around",
+      "evidence": "PDK files sg13g2_hbt_mod.lib (ngspice: sw_nqs=0 and td = sw_nqs*2.80E-13; Xyce: td = 2.80E-13); one-device y-parameters at 122.5 GHz in a reference design (ngspice default, ngspice sw_nqs=1, Xyce); task references run with both settings (evals lna-sg13g2 and vco-sg13g2, expected_nqs0.json against expected.json): LNA s22 at 122.5 GHz -10.18 to -8.84 dB, VCO phase noise at 1 MHz -87.96 to -89.89 dBc/Hz (tt) and -83.97 to -82.70 dBc/Hz (slow, 125 C); device_crosscheck in the environment image (test device-crosscheck-container). Open: with sw_nqs=1, y22 at 1 GHz is 0.114 mS in ngspice and 0.068 mS in Xyce (cause not known; both cards have self-heating on)"
+    }
+  ]
+}

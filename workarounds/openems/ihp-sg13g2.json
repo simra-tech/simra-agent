@@ -1,0 +1,34 @@
+{
+ "schema": "simra.workarounds/0",
+ "simulator": "openems",
+ "pdk": "ihp-sg13g2",
+ "versions": "openEMS 0.37",
+ "entries": [
+  {
+   "id": "openems-sg13g2-slits",
+   "applies_to": {
+    "operations": [
+     "simulate"
+    ]
+   },
+   "gap": "IHP SG13G2 draws the slits of a wide metal on datatype 24 of the metal layer. The openems adapter reads datatype 0 only, so a slotted ground plane becomes a solid plane.",
+   "symptom": "No message. On a three-port junction over a slotted Metal1/Metal2 ground, the reflections differ by 1.1 dB to 1.2 dB from a model with the slits, at every frequency from 1 GHz; with the slits cut, the difference is 0.2 dB at 1 GHz.",
+   "workaround": "Give the input cut {\"Metal1\": [24], \"Metal2\": [24], ...} for each slotted layer. Check the metal area in plan.json against the drawing minus the slits.",
+   "status": "worked_around",
+   "evidence": "README.md, section EM S-parameters (validation against a stored multi-layer model)"
+  },
+  {
+   "id": "openems-sg13g2-long-line-decay",
+   "applies_to": {
+    "operations": [
+     "simulate"
+    ]
+   },
+   "gap": "A TopMetal2 line over a 120 um Metal1 ground (SG13G2_200um.xml stackup, PML_8 on the sides and the top, PEC at the bottom, margin_um 200) stops at an energy level when the line is long: 700 um stays at -26 dB, 800 um at -20 dB; 600 um reaches -41 dB. With margin_um 400 the 800 um line reaches -40 dB in 32430 time steps; with PML at the bottom (no PEC backside) -41 dB in 16920. Probable cause: a wave guided in the PEC-backed substrate that the PML absorbs badly at 200 um of margin.",
+   "symptom": "The port job fails with 'the end criterion -40 dB was not reached'; the energy stays at -20 dB to -26 dB.",
+   "workaround": "Raise margin_um to 400 (keeps the PEC backside). PML at the bottom also converges but removes the backside metal.",
+   "status": "worked_around",
+   "evidence": "simulated, openEMS 0.37: five one-port runs of 60000 time steps (600, 700, 800 um; 800 um with margin_um 400; 800 um with PML at the bottom)"
+  }
+ ]
+}

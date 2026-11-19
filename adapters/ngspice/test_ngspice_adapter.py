@@ -72,7 +72,8 @@ class SweepTest(unittest.TestCase):
                                             "source": "work/ngspice.log:7", "at": {"vcm": 0.55}})
         # A point without a value: never a value, and one warning.
         self.assertEqual(m["pm_deg.min"], {"value": None, "unit": "deg", "status": "failed",
-                                           "source": "work/ngspice.log:7", "at": None})
+                                           "source": "work/ngspice.log:7", "at": None,
+                                           "reason": "1 of 3 sweep points have no value"})
         self.assertEqual(m["pm_deg.max"]["status"], "failed")
         self.assertEqual([d["message"] for d in diags], ["pm_deg: 1 of 3 sweep points have no value"])
         # A wanted ROW column is not a missing scalar; columns that are not wanted are not reported.

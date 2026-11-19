@@ -1,0 +1,13 @@
+Error: unknown subckt: xdut a 0 nosuchdev
+    in line no. 2 from file nosub.cir
+    Simulation interrupted due to error!
+
+Error: incomplete or empty netlist
+       or no ".plot", ".print", or ".fourier" lines in batch mode;
+no simulations run!
+
+Note: No compatibility mode selected!
+
+
+Circuit: * unknown subckt
+

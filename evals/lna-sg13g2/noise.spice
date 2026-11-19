@@ -1,0 +1,34 @@
+* LNA noise bench. The design is the subcircuit lna in lna.spice (pins and bias as in sp.spice).
+* A 50 ohm source and a 50 ohm load, both noiseless, through ideal 1 uF DC blocks (bench only). The input-referred
+* noise inoise (V/rtHz at the source) gives F = 1 + inoise^2 / (4 k 290 K 50 ohm) at 122, 122.5 and 123 GHz;
+* nf_db is the largest of the three. gain_db is the voltage gain from the source EMF into the load, plus 6.02 dB
+* (the transducer gain with a 50 ohm source and load), at 122.5 GHz.
+.param vcc=1.8 ptat=1
+.include "lines.spice"
+.include "lna.spice"
+Vcc vcc18 0 {vcc}
+Ir1 vcc18 iref1 {0.863m*ptat}
+Ir2 vcc18 iref2 {0.912m*ptat}
+Ir3 vcc18 iref3 {1.330m*ptat}
+Xdut rfin rfout vcc18 iref1 iref2 iref3 lna
+* 1 Gohm DC paths at the port nodes (bench only): a design with a series capacitor at a port leaves no floating node.
+Rdc1 rfin 0 1e9 noisy=0
+Rdc2 rfout 0 1e9 noisy=0
+Vs vs 0 dc 0 ac 1
+Rs vs p1 50 noisy=0
+Cb1 p1 rfin 1u
+Cb2 rfout p2 1u
+Rl p2 0 50 noisy=0
+.control
+set num_threads=1
+noise v(p2) vs lin 3 122g 123g
+setplot noise1
+let fnoise = 1 + inoise_spectrum^2/(4*1.380649e-23*290*50)
+let nf_all = 10*log10(fnoise)
+let nf_db = maximum(nf_all)
+print nf_db
+ac lin 1 122.5g 122.5g
+let gain_db = 20*log10(mag(v(p2))) + 6.0206
+print gain_db
+.endc
+.end

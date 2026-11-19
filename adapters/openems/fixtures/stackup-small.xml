@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<!-- A small synthetic stackup in the openEMS XML format (schema 2.0) for the unit tests. Not a process stackup. -->
+<Stackup schemaVersion="2.0">
+  <Materials>
+    <Material Name="M1" Type="Conductor" Permittivity="1" Conductivity="20000000.0"/>
+    <Material Name="M2" Type="Conductor" Permittivity="1" Conductivity="30000000.0"/>
+    <Material Name="V1" Type="Conductor" Permittivity="1" Conductivity="2000000.0"/>
+    <Material Name="Ox" Type="Dielectric" Permittivity="4.0" Conductivity="0"/>
+    <Material Name="Si" Type="Semiconductor" Permittivity="11.9" Conductivity="2.0"/>
+    <Material Name="AIR" Type="Dielectric" Permittivity="1.0" Conductivity="0"/>
+    <Material Name="Kdie" Type="Dielectric" Permittivity="7.0" Conductivity="0"/>
+  </Materials>
+  <ELayers LengthUnit="um">
+    <Dielectrics>
+      <Dielectric Name="AIR" Material="AIR" Thickness="100.0" />
+      <Dielectric Name="Ox" Material="Ox" Thickness="10.0" />
+      <Dielectric Name="Si" Material="Si" Thickness="50.0" />
+    </Dielectrics>
+    <Layers>
+      <Substrate Offset="50.0"/>
+      <Layer Name="M1" Type="conductor" Zmin="1.0" Zmax="1.5" Material="M1" Layer="8" />
+      <Layer Name="M2" Type="conductor" Zmin="6.0" Zmax="8.0" Material="M2" Layer="134" />
+      <Layer Name="V1" Type="via" Zmin="1.5" Zmax="6.0" Material="V1" Layer="133" />
+      <Layer Name="CAPD" Type="conductor" Zmin="2.0" Zmax="2.1" Material="Kdie" Layer="36" />
+    </Layers>
+  </ELayers>
+</Stackup>

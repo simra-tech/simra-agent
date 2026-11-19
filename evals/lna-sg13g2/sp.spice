@@ -1,0 +1,30 @@
+* LNA S-parameter bench. The design is the subcircuit lna in lna.spice, pins rfin rfout vcc18 iref1 iref2 iref3.
+* Two 50 ohm ports through ideal 1 uF DC blocks (bench only). The three PTAT reference currents of the bias block
+* flow from VCC18 into iref1, iref2 and iref3 (0.863, 0.912 and 1.330 mA at 27 C, times ptat = T / 300.15 K).
+* Outputs: the supply current idd_a (DC, the reference currents included) and lna.s2p (1 GHz to 300 GHz, 1 GHz step).
+.param vcc=1.8 ptat=1
+.include "lines.spice"
+.include "lna.spice"
+Vcc vcc18 0 {vcc}
+Ir1 vcc18 iref1 {0.863m*ptat}
+Ir2 vcc18 iref2 {0.912m*ptat}
+Ir3 vcc18 iref3 {1.330m*ptat}
+Xdut rfin rfout vcc18 iref1 iref2 iref3 lna
+* 1 Gohm DC paths at the port nodes (bench only): a design with a series capacitor at a port leaves no floating node.
+Rdc1 rfin 0 1e9 noisy=0
+Rdc2 rfout 0 1e9 noisy=0
+Cb1 p1 rfin 1u
+Cb2 p2 rfout 1u
+V1 p1 0 dc 0 ac 1 portnum 1 z0 50
+V2 p2 0 dc 0 ac 0 portnum 2 z0 50
+.control
+set num_threads=1
+op
+let idd_a = -i(vcc)
+print idd_a
+sp lin 300 1g 300g
+* wrs2p needs the reference resistance as the vector Rbase in the sp plot
+let Rbase = 50
+wrs2p lna.s2p
+.endc
+.end

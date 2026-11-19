@@ -1,0 +1,10 @@
+* LC oscillator for the oscillator operation: 1 nH, 1 pF, 500 ohm tank loss, a limiting negative conductance
+* (2 mA x tanh(v / 0.1 V)). No PDK. f0 near 5.03 GHz, amplitude near (4/pi) x 2 mA x 500 ohm.
+L1 a 0 1n
+C1 a 0 1p
+R1 a 0 500
+Bneg a 0 I=-2m*tanh(v(a)/0.1)
+Ikick 0 a pulse(0 1m 10p 1p 1p 10p 1)
+.options reltol=1e-6 abstol=1e-15 vntol=1e-9
+.tran 1p 10n
+.end

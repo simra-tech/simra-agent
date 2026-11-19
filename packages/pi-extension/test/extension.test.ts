@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { validateRequirements } from "@simra-tech/kernel";
 import { makePdf } from "../../kernel/test/pdf-fixture.ts";
-import extension, { netlistsOf, readPath, REQUIREMENTS_EXAMPLE, sessionClock } from "../index.ts";
+import extension, { endGuardItems, endGuardMessage, END_GUARD_TYPE, checkHints, leanContext, netlistsOf, readsOutputs, readPath, readsRecords, REQUIREMENTS_EXAMPLE, sessionClock } from "../index.ts";
 
 const fakeAdapters = new URL("../../kernel/test/fixtures/adapters", import.meta.url).pathname;
 
@@ -306,4 +306,178 @@ test("design_record gives the checks of each file of record, and the guideline a
 	assert.match(text, /^layout block\.gds sha256:[0-9a-f]{12}\n {2}no check on the current file\n/);
 	assert.match(text, new RegExp(`^  ${id} klayout drc completed markers=3 \\(stale: ran on sha256:aaaaaaaaaaaa\\)$`, "m"));
 	assert.deepEqual(result.details.files, [{ path: "block.gds", sha256: result.details.files[0].sha256, current: [], stale: [id] }]);
+});
+
+test("run_jobs runs N jobs and gives one line per job; assumption_rows lists the rows of an assumption", async (t) => {
+	const tools = new Map<string, any>();
+	extension({ registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand: () => {}, on: () => {} } as any);
+	const jobs = tools.get("run_jobs");
+	assert.ok(jobs, "run_jobs is not registered");
+	assert.ok(jobs.promptGuidelines.some((g: string) => /pgrep/.test(g)));
+	const root = mkdtempSync(join(tmpdir(), "simra-ext-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	writeFileSync(join(root, "simra.config.json"), JSON.stringify({ adapter_dirs: [fakeAdapters] }));
+	const ctx = { cwd: root };
+	const out = await jobs.execute("call-j", { jobs: [{ adapter: "fake", operation: "run", inputs: { mode: "ok" } }, { adapter: "fake", operation: "run", inputs: { mode: "failed" } }], parallel: 2 }, undefined, undefined, ctx);
+	assert.deepEqual(out.details.jobs.map((j: any) => j.status), ["completed", "failed"]);
+	assert.match(out.content[0].text, /^jobs: 2 \(1 completed, 1 failed\)/m);
+
+	const rows = tools.get("assumption_rows");
+	assert.ok(rows, "assumption_rows is not registered");
+	writeFileSync(join(root, "requirements.json"), JSON.stringify({
+		schema: "simra.requirements/0",
+		assumptions: { leak: { description: "leakage level", value: -34, unit: "dBm" } },
+		conditions: {},
+		experiments: { e: { adapter: "fake", operation: "run", inputs: { mode: "ok" } } },
+		requirements: [{ id: "x", experiment: "e", measurement: "x", op: ">=", limit: 1, assumptions: ["leak"] }],
+	}));
+	const listed = await rows.execute("call-a", { id: "leak" }, undefined, undefined, ctx);
+	assert.match(listed.content[0].text, /^assumption leak: leakage level = -34 dBm\n {2}requirement x via requirement; conditions \(none\)$/);
+	assert.deepEqual(listed.details.assumptions, [{ id: "leak", requirements: ["x"] }]);
+});
+
+test("em_sparameters runs one job per port, merges, and lists S at the requested frequencies", async (t) => {
+	const tools = new Map<string, any>();
+	extension({ registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand: () => {}, on: () => {} } as any);
+	const em = tools.get("em_sparameters");
+	assert.ok(em, "em_sparameters is not registered");
+	assert.ok(em.promptGuidelines.some((g: string) => /em_sparameters/.test(g)));
+	const root = mkdtempSync(join(tmpdir(), "simra-ext-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	writeFileSync(join(root, "simra.config.json"), JSON.stringify({ adapter_dirs: [fakeAdapters] }));
+	const ports = [{ name: "in", x: 0, y: 0, from: "Metal1", to: "TopMetal2" }, { name: "out", x: 300, y: 0, from: "Metal1", to: "TopMetal2" }];
+	const out = await em.execute("call-e", { adapter: "openems-fake", inputs: { ports }, parallel: 2, report_at_hz: [1e9, 1.6e9] }, undefined, undefined, { cwd: root });
+	assert.match(out.details.touchstone, /line\.s2p$/);
+	assert.deepEqual(out.details.points.map((p: any) => p.f_hz), [1e9, 2e9]);
+	assert.match(out.content[0].text, /^1 GHz: S11 -20\.000 dB 0\.00 deg, S12 -0\.915 dB 0\.00 deg/m);
+	assert.match(out.content[0].text, /^2 GHz \(nearest point to 1\.6 GHz\): /m);
+	const bad = await em.execute("call-f", { adapter: "openems-fake", inputs: { ports, unconverged_port: 1 }, parallel: 2 }, undefined, undefined, { cwd: root });
+	assert.equal(bad.details.touchstone, null);
+	assert.match(bad.content[0].text, /no Touchstone file/);
+});
+
+test("workarounds lists the registry; run_experiment shows the gaps of its adapter and PDK once per session", async (t) => {
+	const tools = new Map<string, any>();
+	extension({ registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand: () => {}, on: () => {} } as any);
+	const wa = tools.get("workarounds");
+	assert.ok(wa, "workarounds is not registered");
+	const listed = await wa.execute("call-w", { simulator: "xyce", pdk: "ihp-sg13g2" });
+	assert.ok(listed.details.ids.includes("xyce-sg13g2-psp103"));
+	const root = mkdtempSync(join(tmpdir(), "simra-ext-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	// an adapter named xyce (the fake adapter under another name) so that the registry has entries for it
+	const dir = join(root, "adapters", "xyce");
+	mkdirSync(dir, { recursive: true });
+	const fake = JSON.parse(readFileSync(join(fakeAdapters, "fake", "adapter.json"), "utf8"));
+	writeFileSync(join(dir, "adapter.json"), JSON.stringify({ ...fake, name: "xyce", command: fake.command.map((c: string) => c.replace("{adapter_dir}", join(fakeAdapters, "fake"))) }));
+	writeFileSync(join(root, "simra.config.json"), JSON.stringify({ adapter_dirs: [join(root, "adapters")], environments: { local: { kind: "local", env: { PDK: "ihp-sg13g2" } } } }));
+	const run = tools.get("run_experiment");
+	const first = await run.execute("call-r1", { adapter: "xyce", operation: "run", inputs: { mode: "ok" }, purpose: "test" }, undefined, undefined, { cwd: root });
+	assert.match(first.content[0].text, /known gaps of xyce with ihp-sg13g2 \(workaround registry/);
+	assert.match(first.content[0].text, /xyce-sg13g2-psp103/);
+	const second = await run.execute("call-r2", { adapter: "xyce", operation: "run", inputs: { mode: "ok" }, purpose: "test" }, undefined, undefined, { cwd: root });
+	assert.doesNotMatch(second.content[0].text, /known gaps/);
+});
+
+test("readsRecords finds the calls that read record files", () => {
+	const bash = (command: string) => ({ toolName: "bash", input: { command } }) as any;
+	assert.equal(readsRecords(bash("cat simra/experiments/20261115-1/result.json | jq .measurements")), true);
+	assert.equal(readsRecords(bash("python3 -c 'import json; json.load(open(\"simra/checks/x/verdict.json\"))'")), true);
+	assert.equal(readsRecords({ toolName: "read", input: { path: "/w/simra/checks/abc/verdict.json" } } as any), true);
+	// a work file of an experiment (a log, a Touchstone file) is not a record
+	assert.equal(readsRecords(bash("tail -20 simra/experiments/20261115-1/work/ngspice.log")), false);
+	assert.equal(readsRecords(bash("ls lna.spice")), false);
+});
+
+test("checkHints names the query of the check and the stability diagnosis of a failed mu row", () => {
+	const rows = [
+		{ requirement: "mu", status: "fail", condition: "tt", experiment: "e1" },
+		{ requirement: "gain", status: "pass", condition: "tt", experiment: "e1" },
+	];
+	const text = checkHints("c1", rows);
+	assert.match(text, /query_results with source "checks", check "c1"/);
+	assert.match(text, /tt: experiment e1\): run_experiment with adapter ngspice, operation stability_diagnosis/);
+	assert.doesNotMatch(checkHints("c2", [rows[1]]), /stability_diagnosis/);
+});
+
+test("leanContext leaves out earlier reasoning and earlier state notes, and keeps the last ones", () => {
+	const a = (blocks: unknown[]) => ({ role: "assistant", content: blocks });
+	const msgs = [
+		{ role: "user", content: "task" },
+		a([{ type: "thinking", thinking: "old" }, { type: "toolCall", name: "state_note", arguments: { note: "n1" } }]),
+		{ role: "toolResult", content: [{ type: "text", text: "ok" }] },
+		a([{ type: "thinking", thinking: "mid" }, { type: "toolCall", name: "bash", arguments: { command: "ls" } }]),
+		{ role: "toolResult", content: [{ type: "text", text: "x" }] },
+		a([{ type: "thinking", thinking: "new" }, { type: "toolCall", name: "state_note", arguments: { note: "n2" } }]),
+	];
+	const out = leanContext(msgs as any) as any[];
+	assert.deepEqual(out[1].content.map((b: any) => b.type), ["toolCall"]);
+	assert.match(out[1].content[0].arguments.note, /earlier state note/);
+	assert.deepEqual(out[3].content.map((b: any) => b.type), ["toolCall"]);
+	assert.equal(out[5], msgs[5]);
+	assert.equal((msgs[1] as any).content.length, 2, "the input is not changed");
+});
+
+test("readsOutputs finds the calls that read simulator logs and tables", () => {
+	const bash = (command: string) => ({ toolName: "bash", input: { command } }) as any;
+	assert.equal(readsOutputs(bash("tail -50 simra/experiments/20261115-1/work/ngspice.log")), true);
+	assert.equal(readsOutputs(bash("python3 -c 'print(1)' run.raw")), true);
+	assert.equal(readsOutputs({ toolName: "read", input: { path: "simra/experiments/x/work/out.dat" } } as any), true);
+	assert.equal(readsOutputs(bash("cat lna.spice")), false);
+});
+
+test("end guard: one re-entry with the missing items, recorded; none when the deliverables are complete", async (t) => {
+	const root = mkdtempSync(join(tmpdir(), "simra-guard-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	writeFileSync(join(root, "simra.config.json"), "{}");
+	writeFileSync(join(root, "requirements.json"), JSON.stringify({ gates: { netlist: { file: "vco.spice" } } }));
+	writeFileSync(join(root, "vco.spice"), ".subckt vco a b\n.ends\n");
+	const deliverables = ["vco.spice", "answer.json"];
+	assert.deepEqual(endGuardItems(root, deliverables), ["answer.json does not exist.", "No check_requirements run is recorded for requirements.json."]);
+
+	// A last check with an aborted run, older than the design file.
+	const check = join(root, "simra", "checks", "c1");
+	mkdirSync(check, { recursive: true });
+	const verdict = (at: number, status: string) => JSON.stringify({ id: "c1", created_at: new Date(at).toISOString(), experiments: [{ experiment: "osc_low", condition: "tt", status }] });
+	writeFileSync(join(check, "verdict.json"), verdict(Date.now() - 60_000, "failed"));
+	const items = endGuardItems(root, deliverables);
+	assert.equal(items.length, 3);
+	assert.match(items[1], /The last check \(c1\) has 1 run that did not complete: osc_low at tt \(failed\)/);
+	assert.match(items[2], /vco\.spice changed after the last check \(c1\)/);
+	assert.match(endGuardMessage(items, 53), /1\. answer\.json does not exist\.[\s\S]*Session time left: 53 min\.[\s\S]*comes once/);
+
+	// A stub session: the handlers of the extension with SIMRA_DELIVERABLES set.
+	const handlers = new Map<string, any[]>();
+	const stub = { registerTool: () => {}, registerCommand: () => {}, on: (name: string, h: any) => handlers.set(name, [...(handlers.get(name) ?? []), h]) };
+	process.env.SIMRA_DELIVERABLES = JSON.stringify(deliverables);
+	t.after(() => delete process.env.SIMRA_DELIVERABLES);
+	extension(stub as any);
+	const [beforeSettle] = handlers.get("agent_before_settle") ?? [];
+	const [settled] = handlers.get("agent_settled") ?? [];
+	assert.ok(beforeSettle && settled, "the end guard handlers are registered");
+	const ctx = { cwd: root };
+	const first = await beforeSettle({ type: "agent_before_settle", entries: [], continue: false }, ctx);
+	assert.equal(first.continue, true);
+	assert.equal(first.entries.length, 1);
+	assert.equal(first.entries[0].customType, END_GUARD_TYPE);
+	assert.match(first.entries[0].content, /answer\.json does not exist/);
+	// The agent writes the file and a complete check; a second end gets no re-entry (bounded), and the trace has both.
+	writeFileSync(join(root, "answer.json"), "{}");
+	writeFileSync(join(check, "verdict.json"), verdict(Date.now() + 60_000, "completed"));
+	assert.equal(await beforeSettle({ type: "agent_before_settle", entries: [], continue: false }, ctx), undefined);
+	await settled({ type: "agent_settled", aborted: false }, ctx);
+	const trace = JSON.parse(readFileSync(join(root, "simra", "end_guard.json"), "utf8"));
+	assert.equal(trace.reentry.items.length, 3);
+	assert.deepEqual(trace.settled.items, []);
+	assert.equal(trace.settled.reentries, 1);
+
+	// Still incomplete at the second end: no second re-entry.
+	rmSync(join(root, "answer.json"));
+	assert.equal(await beforeSettle({ type: "agent_before_settle", entries: [], continue: false }, ctx), undefined);
+
+	// Without SIMRA_DELIVERABLES the guard is off.
+	delete process.env.SIMRA_DELIVERABLES;
+	const off = new Map<string, any>();
+	extension({ registerTool: () => {}, registerCommand: () => {}, on: (name: string, h: any) => off.set(name, h) } as any);
+	assert.equal(off.has("agent_before_settle"), false);
 });

@@ -1,0 +1,576 @@
+{
+  "schema": "simra.requirements/0",
+  "assumptions": {
+    "corner_set": {
+      "description": "The corner set: the HBT, MIM and rppd corners together (typ, wcs, bcs), -40 / 27 / 125 degC, VCC18 1.8 V +-5 %",
+      "source": "task"
+    },
+    "iref_ptat": {
+      "description": "The bias reference: 25 uA PTAT at 27 degC from the bias block, scaled by T / 300.15 K",
+      "value": 2.5e-05,
+      "unit": "A",
+      "source": "interface specification, bias for the detector"
+    },
+    "two_cells": {
+      "description": "The supply row is for two detector cells; one cell has half",
+      "value": 0.00015,
+      "unit": "A",
+      "source": "interface specification, current budget"
+    },
+    "meter_resolution": {
+      "description": "The external meter resolves about 50 uV; the output at -10 dBm line power must be 10 times that",
+      "value": 0.0005,
+      "unit": "V",
+      "source": "interface specification, detector pads"
+    },
+    "noise_vs_meter": {
+      "description": "Output noise in 1 Hz to 10 kHz well below the meter resolution (one fifth)",
+      "value": 1e-05,
+      "unit": "V",
+      "source": "task"
+    },
+    "rising_response": {
+      "description": "The output must rise with power: at least 3 times from -10 dBm to 0 dBm (a square-law detector gives 10, a peak detector about 3.2)",
+      "value": 3,
+      "unit": null,
+      "source": "task"
+    },
+    "zero_range": {
+      "description": "The RF-off zero removes the offset; the offset without RF stays below 20 mV",
+      "value": 0.02,
+      "unit": "V",
+      "source": "task"
+    },
+    "settling_25ns": {
+      "description": "The bench reads each power level 25 ns to 30 ns after the step; the output must settle within 25 ns",
+      "source": "task"
+    },
+    "mismatch_3sigma": {
+      "description": "The offset row holds for the mean plus 3 sigma of the PDK mismatch (|mean| + 3 sigma over at least 100 seeds; a seed without a DC point leaves the row not measured)",
+      "value": 3,
+      "source": "task"
+    },
+    "tap_line_200um": {
+      "description": "The tap structure is 200 um of the 50 ohm TopMetal2 line with the tap at its centre; the line alone loses about 0.2 dB, and 0.3 dB is reserved for the detector",
+      "value": -0.5,
+      "unit": "dB",
+      "source": "interface specification, detector loss row, and the line loss of the line table"
+    },
+    "tap_coupling": {
+      "description": "The stated coupling from the line to the detector input: -30 dB +- 3 dB into 50 ohm at port 3 (the coupling of a tap of about 2.5 fF, the tap capacitance of the reference cell)",
+      "value": -30,
+      "unit": "dB",
+      "source": "task"
+    },
+    "vce_min_04": {
+      "description": "Every HBT keeps V_CE >= 0.4 V at the DC point at every corner (headroom against saturation; the worst corners are slow hot and slow cold); the PDK gives no minimum",
+      "value": 0.4,
+      "unit": "V",
+      "source": "task"
+    },
+    "hbt_excess_phase": {
+      "description": "sw_nqs=1 on every npn13G2 instance: the excess phase of the HBT model is on, as in the design rule of the reference design and as in the Xyce model card. The ngspice default of the PDK is sw_nqs=0.",
+      "source": "task"
+    }
+  },
+  "conditions": {
+    "tt": {
+      "description": "hbt, cap, res typ; VCC18 1.80 V; 27 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerHBT.lib",
+            "section": "hbt_typ"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerCAP.lib",
+            "section": "cap_typ"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerRES.lib",
+            "section": "res_typ"
+          }
+        ],
+        "params": {
+          "vcc": 1.8,
+          "iref": 2.5e-05
+        },
+        "temp_c": 27
+      },
+      "assumptions": [
+        "corner_set",
+        "iref_ptat"
+      ]
+    },
+    "slow_hot": {
+      "description": "hbt, cap, res wcs; VCC18 1.71 V; 125 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerHBT.lib",
+            "section": "hbt_wcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerCAP.lib",
+            "section": "cap_wcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerRES.lib",
+            "section": "res_wcs"
+          }
+        ],
+        "params": {
+          "vcc": 1.71,
+          "iref": 3.3163e-05
+        },
+        "temp_c": 125
+      },
+      "assumptions": [
+        "corner_set",
+        "iref_ptat"
+      ]
+    },
+    "slow_cold": {
+      "description": "hbt, cap, res wcs; VCC18 1.71 V; -40 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerHBT.lib",
+            "section": "hbt_wcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerCAP.lib",
+            "section": "cap_wcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerRES.lib",
+            "section": "res_wcs"
+          }
+        ],
+        "params": {
+          "vcc": 1.71,
+          "iref": 1.9419e-05
+        },
+        "temp_c": -40
+      },
+      "assumptions": [
+        "corner_set",
+        "iref_ptat"
+      ]
+    },
+    "fast_hot": {
+      "description": "hbt, cap, res bcs; VCC18 1.89 V; 125 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerHBT.lib",
+            "section": "hbt_bcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerCAP.lib",
+            "section": "cap_bcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerRES.lib",
+            "section": "res_bcs"
+          }
+        ],
+        "params": {
+          "vcc": 1.89,
+          "iref": 3.3163e-05
+        },
+        "temp_c": 125
+      },
+      "assumptions": [
+        "corner_set",
+        "iref_ptat"
+      ]
+    },
+    "fast_cold": {
+      "description": "hbt, cap, res bcs; VCC18 1.89 V; -40 degC",
+      "inputs": {
+        "libs": [
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerHBT.lib",
+            "section": "hbt_bcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerCAP.lib",
+            "section": "cap_bcs"
+          },
+          {
+            "path": "$PDK_ROOT/ihp-sg13g2/libs.tech/ngspice/models/cornerRES.lib",
+            "section": "res_bcs"
+          }
+        ],
+        "params": {
+          "vcc": 1.89,
+          "iref": 1.9419e-05
+        },
+        "temp_c": -40
+      },
+      "assumptions": [
+        "corner_set",
+        "iref_ptat"
+      ]
+    }
+  },
+  "experiments": {
+    "bench": {
+      "adapter": "ngspice",
+      "operation": "simulate",
+      "environment": "eda",
+      "inputs": {
+        "deck": "verify.spice",
+        "measurements": {
+          "idd_a": "A",
+          "offset_v": "V",
+          "loss_db": "dB",
+          "noise_rms_v": "V",
+          "vout_m10_v": "V",
+          "vout_0_v": "V",
+          "ratio_0_m10": null
+        }
+      }
+    },
+    "op": {
+      "adapter": "ngspice",
+      "operation": "simulate",
+      "environment": "eda",
+      "inputs": {
+        "deck": "offset.spice",
+        "measurements": {
+          "offset_v": "V",
+          "idd_a": "A"
+        }
+      }
+    },
+    "mc": {
+      "adapter": "ngspice",
+      "operation": "monte_carlo",
+      "environment": "eda",
+      "timeout_s": 1800,
+      "inputs": {
+        "deck": "offset.spice",
+        "seeds": 100,
+        "measurements": {
+          "offset_v": "V"
+        }
+      }
+    },
+    "tap": {
+      "adapter": "openems",
+      "operation": "simulate",
+      "environment": "eda",
+      "timeout_s": 5400,
+      "inputs": {
+        "gds": "tap.gds",
+        "cell": "tap",
+        "stackup": "$PDK_ROOT/ihp-sg13g2/libs.tech/openems/openems_ihp_sg13g2/workflow/SG13G2_200um.xml",
+        "band_hz": [
+          1000000000.0,
+          130000000000.0
+        ],
+        "points": 130,
+        "ports": [
+          {
+            "name": "p1",
+            "x": 0,
+            "y": 0,
+            "from": "Metal1",
+            "to": "TopMetal2"
+          },
+          {
+            "name": "p2",
+            "x": 200,
+            "y": 0,
+            "from": "Metal1",
+            "to": "TopMetal2"
+          },
+          {
+            "name": "p3",
+            "x": 100,
+            "y": -40,
+            "from": "Metal1",
+            "to": "Metal5"
+          }
+        ]
+      }
+    }
+  },
+  "requirements": [
+    {
+      "id": "idd_a",
+      "description": "Current from VCC18, one cell, the bias reference included",
+      "experiment": "bench",
+      "measurement": "idd_a",
+      "unit": "A",
+      "op": "<=",
+      "limit": 0.00015,
+      "conditions": [
+        "tt",
+        "slow_hot",
+        "slow_cold",
+        "fast_hot",
+        "fast_cold"
+      ],
+      "assumptions": [
+        "two_cells"
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 2: 0.3 mA for two detector cells (assumption two_cells)"
+      }
+    },
+    {
+      "id": "loss_db",
+      "description": "Loss that the cell adds to the 50 ohm line at 122.5 GHz",
+      "experiment": "bench",
+      "measurement": "loss_db",
+      "unit": "dB",
+      "op": "<=",
+      "limit": 0.3,
+      "conditions": [
+        "tt",
+        "slow_hot",
+        "slow_cold",
+        "fast_hot",
+        "fast_cold"
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 1: 0.3 dB reserved in the output line for the detector"
+      }
+    },
+    {
+      "id": "vout_m10_v",
+      "description": "Output (outd - outr, minus the RF-off value) at -10 dBm line power",
+      "experiment": "bench",
+      "measurement": "vout_m10_v",
+      "unit": "V",
+      "op": ">=",
+      "limit": 0.0005,
+      "conditions": [
+        "tt",
+        "slow_hot",
+        "slow_cold",
+        "fast_hot",
+        "fast_cold"
+      ],
+      "assumptions": [
+        "meter_resolution",
+        "settling_25ns"
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 4: meter resolution about 50 uV, times 10 (assumption meter_resolution)"
+      }
+    },
+    {
+      "id": "ratio_0_m10",
+      "description": "Output at 0 dBm over the output at -10 dBm",
+      "experiment": "bench",
+      "measurement": "ratio_0_m10",
+      "op": ">=",
+      "limit": 3,
+      "conditions": [
+        "tt",
+        "slow_hot",
+        "slow_cold",
+        "fast_hot",
+        "fast_cold"
+      ],
+      "assumptions": [
+        "rising_response",
+        "settling_25ns"
+      ],
+      "limit_source": {
+        "kind": "task",
+        "ref": "assumption rising_response: the output rises with power (a square-law detector gives 10, a peak detector about 3.2)"
+      }
+    },
+    {
+      "id": "noise_rms_v",
+      "description": "Output noise, rms in 1 Hz to 10 kHz",
+      "experiment": "bench",
+      "measurement": "noise_rms_v",
+      "unit": "V",
+      "op": "<=",
+      "limit": 1e-05,
+      "conditions": [
+        "tt",
+        "slow_hot",
+        "slow_cold",
+        "fast_hot",
+        "fast_cold"
+      ],
+      "assumptions": [
+        "noise_vs_meter"
+      ],
+      "limit_source": {
+        "kind": "task",
+        "ref": "assumption noise_vs_meter: one fifth of the meter resolution"
+      }
+    },
+    {
+      "id": "offset_v",
+      "description": "Output without RF, magnitude (DC operating point)",
+      "experiment": "bench",
+      "measurement": "offset_v",
+      "unit": "V",
+      "op": "<=",
+      "limit": 0.02,
+      "conditions": [
+        "tt",
+        "slow_hot",
+        "slow_cold",
+        "fast_hot",
+        "fast_cold"
+      ],
+      "assumptions": [
+        "zero_range"
+      ],
+      "limit_source": {
+        "kind": "task",
+        "ref": "assumption zero_range: the RF-off zero removes the offset"
+      }
+    },
+    {
+      "id": "offset_3s",
+      "description": "Output without RF, |mean| + 3 sigma over the PDK mismatch",
+      "experiment": "mc",
+      "kind": "monte_carlo",
+      "measurement": "offset_v",
+      "statistic": "mean_abs_k_sigma",
+      "k": 3,
+      "min_seeds": 100,
+      "op": "<=",
+      "limit": 0.02,
+      "unit": "V",
+      "conditions": [
+        "tt",
+        "slow_hot",
+        "slow_cold",
+        "fast_hot",
+        "fast_cold"
+      ],
+      "assumptions": [
+        "zero_range",
+        "mismatch_3sigma"
+      ],
+      "limit_source": {
+        "kind": "task",
+        "ref": "assumptions zero_range and mismatch_3sigma"
+      }
+    },
+    {
+      "id": "tap_s21",
+      "description": "S21 of the tap structure (200 um line with the tap), 122 GHz to 123 GHz",
+      "experiment": "tap",
+      "kind": "s_db",
+      "entry": [
+        2,
+        1
+      ],
+      "band_hz": [
+        122000000000.0,
+        123000000000.0
+      ],
+      "op": ">=",
+      "limit": -0.5,
+      "unit": "dB",
+      "assumptions": [
+        "tap_line_200um"
+      ],
+      "limit_source": {
+        "kind": "specification",
+        "ref": "row 1 (0.3 dB for the detector) and the line loss of the line table (about 0.2 dB for 200 um)"
+      }
+    },
+    {
+      "id": "tap_s31",
+      "description": "Coupling S31 from the line to the detector input, 122 GHz to 123 GHz",
+      "experiment": "tap",
+      "kind": "s_db",
+      "entry": [
+        3,
+        1
+      ],
+      "band_hz": [
+        122000000000.0,
+        123000000000.0
+      ],
+      "op": "between",
+      "limit": [
+        -33,
+        -27
+      ],
+      "unit": "dB",
+      "assumptions": [
+        "tap_coupling"
+      ],
+      "limit_source": {
+        "kind": "reference_design",
+        "ref": "the coupling of a tap of about 2.5 fF, the tap capacitance of the reference cell; set after the reference cell was chosen"
+      }
+    }
+  ],
+  "gates": {
+    "limits": {
+      "experiments": [
+        "op"
+      ],
+      "extra_limits": [
+        {
+          "id": "hbt_vce_min_04",
+          "class": "hbt",
+          "quantity": "vce",
+          "op": ">=",
+          "limit": 0.4,
+          "assumption": "vce_min_04",
+          "limit_source": {
+            "kind": "reference_design",
+            "ref": "set after the reference run: 0.5 V fails the reference cell at slow_cold (0.409 V); the PDK gives no minimum"
+          }
+        }
+      ]
+    },
+    "netlist": {
+      "subckt": "det_cell",
+      "file": "det_cell.spice",
+      "pins": [
+        "lin",
+        "vcc18",
+        "outd",
+        "outr",
+        "iref"
+      ],
+      "devices": [
+        "npn13G2",
+        "cap_cmim",
+        "rppd",
+        "rsil",
+        "rhigh"
+      ],
+      "wiring": {
+        "r_ohm": 50,
+        "l_h": 5e-11,
+        "c_f": 5e-14
+      },
+      "couplings": true,
+      "technology": "ihp-sg13",
+      "allow_params": {
+        "npn13g2": {
+          "sw_nqs": [
+            1
+          ]
+        }
+      },
+      "require_params": {
+        "npn13g2": {
+          "sw_nqs": 1
+        }
+      }
+    }
+  }
+}

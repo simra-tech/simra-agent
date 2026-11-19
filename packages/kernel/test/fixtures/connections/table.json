@@ -1,0 +1,42 @@
+{
+  "schema": "simra.connections/0",
+  "supplies": { "vcc33": { "volts": 3.3, "tolerance_rel": 0.001 }, "vcc18": { "volts": 1.8, "tolerance_rel": 0.001 } },
+  "blocks": {
+    "bias": {
+      "subckt": "bias",
+      "pins": {
+        "vcc": { "net": "vcc33", "kind": "supply" },
+        "vss": { "net": "0", "kind": "ground" },
+        "div_ref": { "net": "div_iref", "kind": "bias_out", "current_a": 5e-4, "tc": "constant" },
+        "lna_ref": { "net": "lna_iref", "kind": "bias_out", "current_a": 9.31e-4, "tc": "ptat" },
+        "div_en": { "net": "div_en", "kind": "control", "control": "div_en" },
+        "spare_ref": { "net": "spare_ref", "kind": "bias_out", "voltage_v": 1.2 }
+      }
+    },
+    "div": {
+      "subckt": "div_core",
+      "pins": {
+        "vcc": { "net": "vcc33", "kind": "supply" },
+        "vcc18": { "net": "vcc18", "kind": "supply" },
+        "vss": { "net": "0", "kind": "ground" },
+        "vbx": { "net": "div_iref", "kind": "bias", "current_a": 5e-4, "tolerance_rel": 0.05, "tc": "constant", "provider": "bias.div_ref" },
+        "en": { "net": "div_en", "kind": "control", "control": "div_en" },
+        "gain": { "net": "div_gain", "kind": "control", "control": "div_gain" },
+        "in": { "net": "lo_div", "kind": "signal" },
+        "out": { "net": "DIV_OUT", "kind": "signal" }
+      }
+    },
+    "lna": {
+      "pins": {
+        "vcc": { "net": "vcc18", "kind": "supply" },
+        "ib1": { "net": "lna_iref", "kind": "bias", "current_a": 8.63e-4, "tolerance_rel": 0.05, "tc": "ptat", "provider": "bias.lna_ref" },
+        "ib2": { "net": "lna_iref2", "kind": "bias", "current_a": 1.295e-3, "tolerance_rel": 0.05, "tc": "ptat" },
+        "mux": { "net": "lna_mux", "kind": "control", "control": "lna_mux" }
+      }
+    }
+  },
+  "controls": {
+    "div_en": { "bits": 1, "encoding": "binary", "active": "high", "reset": 0, "level": "vcc33" },
+    "div_gain": { "bits": 3, "encoding": "binary", "reset": 4, "level": "vcc33" }
+  }
+}

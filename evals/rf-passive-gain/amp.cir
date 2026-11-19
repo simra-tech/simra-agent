@@ -1,0 +1,15 @@
+* PDK-free amplifier with an output matching network (Xyce: P ports and .LIN)
+* Ports: P1 is the input and P2 the output, both 50 ohm. The matching network is the subcircuit "match" with the
+* pins p1 p1_ref p2 p2_ref, in match.lib; it is not in this directory.
+.include "match.lib"
+p1 in 0 port=1 z0=50
+rin in 0 50
+cgs in 0 0.05p
+cgd in d 0.01p
+gm d 0 in 0 0.12
+rds d 0 200
+cds d 0 0.04p
+xmatch d 0 out 0 match
+p2 out 0 port=2 z0=50
+.ac lin 120 0.25e9 30e9
+.lin format=touchstone2 sparcalc=1
