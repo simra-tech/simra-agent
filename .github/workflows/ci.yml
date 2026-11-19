@@ -25,8 +25,8 @@ jobs:
           cache: npm
       # ngspice for the RC known-answer integration test (local environment).
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ngspice
-      # The KLayout Python module for the tests of the klayout operations query and diff (they are skipped without it).
-      - run: python3 -m pip install --user --break-system-packages klayout==0.30.12
+      # Python dependencies for the KLayout, ngspice and Touchstone adapter tests.
+      - run: python3 -m pip install --user --break-system-packages klayout==0.30.12 numpy==2.5.4
       - run: npm ci
       # The simra binary for test/binary.test.mjs, built with the pinned Bun.
       - run: shellcheck packages/launcher/get-bun.sh packages/launcher/install.sh
