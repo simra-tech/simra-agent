@@ -7,17 +7,20 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./cli": "./src/cli.ts"
+    "./cli": "./src/cli.ts",
+    "./telemetry": "./src/telemetry.ts"
   },
   "bin": {
     "simra": "./src/cli.ts"
   },
   "engines": {
-    "node": ">=22.19.0"
+    "node": ">=22.22.0"
   },
   "dependencies": {
     "@hyzyla/pdfium": "3.0.0",
+    "@opentelemetry/api": "^1.10.0",
     "pngjs": "7.0.0",
+    "posthog-node": "^5.56.4",
     "unpdf": "1.9.1"
   }
 }

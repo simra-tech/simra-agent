@@ -13,10 +13,12 @@ import {
 	formatStarted,
 	readStatus,
 	type ResultRecord,
+	runDetachedWorker,
 	runExperiment,
 	runtimeEstimate,
 	waitExperiments,
 } from "../src/index.ts";
+import { telemetry } from "../src/telemetry.ts";
 
 const fixtures = new URL("./fixtures/", import.meta.url).pathname;
 const cli = new URL("../src/cli.ts", import.meta.url).pathname;
@@ -39,6 +41,27 @@ const alive = (pid: number) => {
 		return false;
 	}
 };
+
+test("analytics metadata failures cannot stop a detached worker", async (t) => {
+	const enabled = t.mock.method(telemetry, "enabled", () => false);
+	for (const active of [false, true]) {
+		enabled.mock.mockImplementation(() => active);
+		for (const metadata of [undefined, "{invalid-json"]) {
+			const root = designRoot(t);
+			const id = "20990101-000000-abcdef";
+			const dir = join(root, "simra", "experiments", id);
+			mkdirSync(dir, { recursive: true });
+			if (metadata !== undefined) writeFileSync(join(dir, "experiment.json"), metadata);
+			const response = join(dir, "response.json");
+			const script = `require("node:fs").writeFileSync(process.argv[1], JSON.stringify({contract:"simra.adapter/0",status:"completed",tool:{name:"fake",version:"1"},input_files:{files:[],complete:true},outputs:[],measurements:{},diagnostics:[]}));`;
+			writeFileSync(join(dir, "job.json"), JSON.stringify({ root, id, command: process.execPath, args: ["-e", script, response], timeout_s: 5 }));
+			const result = await runDetachedWorker(dir);
+			assert.equal(result.status, "completed");
+			assert.ok(existsSync(response), "the adapter must execute even if optional analytics metadata is missing or invalid");
+			assert.equal(readStatus(root, id)?.status, "completed");
+		}
+	}
+});
 
 test("a detached run returns before the adapter ends, and the wait returns its result", async (t) => {
 	const root = designRoot(t);

@@ -81,7 +81,7 @@ function record(
 }
 
 const git = (root: string, ...args: string[]) =>
-	execFileSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@localhost", ...args], { encoding: "utf8" }).trim();
+	execFileSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@localhost", "-c", "commit.gpgsign=false", ...args], { encoding: "utf8" }).trim();
 
 /** A design with a v1 layout (2 runs), then a commit of v2 (1 DRC run on v2), and a netlist that did not change. */
 function fixture(root: string) {

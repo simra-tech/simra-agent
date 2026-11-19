@@ -3,11 +3,13 @@
 
 import "../../node_modules/@earendil-works/pi-coding-agent/dist/bun/sandbox-env-setup.js";
 import "./env.ts";
+import { telemetry } from "@simra-tech/kernel/telemetry";
 import { KERNEL_COMMANDS, setPdfiumWasmPath } from "@simra-tech/kernel";
 import { join } from "node:path";
 // Bun embeds a file import in the binary and gives its path.
 import pdfiumWasm from "@hyzyla/pdfium/pdfium.wasm" with { type: "file" };
 import piPackage from "../../node_modules/@earendil-works/pi-coding-agent/package.json" with { type: "json" };
+import simraPackage from "../../package.json" with { type: "json" };
 
 /** simra --help prints this block, then pi's help. */
 const COMMANDS = `Simra commands:
@@ -30,9 +32,11 @@ const COMMANDS = `Simra commands:
   simra pack check --pdk <name>     Check a technology pack against its PDK
   simra update                      Update simra (--extensions, --models: pi packages, model catalogs)
   simra uninstall                   Remove simra; settings and logins stay
+  simra analytics <on|off|status>    Choose whether to share usage metadata
 `;
 
 setPdfiumWasmPath(pdfiumWasm);
+telemetry.configure({ version: simraPackage.version });
 const args = process.argv.slice(2);
 if ((KERNEL_COMMANDS as readonly string[]).includes(args[0])) {
 	await import("@simra-tech/kernel/cli");
@@ -52,9 +56,14 @@ if ((KERNEL_COMMANDS as readonly string[]).includes(args[0])) {
 	// pi's VERSION is the version of the release: pi reads the package.json next to the binary.
 	setVersions(VERSION, piPackage.version);
 	if (args[0] === "--help" || args[0] === "-h") console.log(COMMANDS);
-	if (args.length === 0 && process.stdin.isTTY && process.stdout.isTTY) {
-		const { firstRun, isFirstRun } = await import("./first-run.ts");
-		if (isFirstRun(getAgentDir())) await firstRun(getAgentDir());
+	try {
+		if (args.length === 0 && process.stdin.isTTY && process.stdout.isTTY) {
+			const { firstRun, isFirstRun, askAnalyticsConsent } = await import("./first-run.ts");
+			await askAnalyticsConsent(getAgentDir());
+			if (isFirstRun(getAgentDir())) await firstRun(getAgentDir());
+		}
+		await main(args, { extensionFactories: [simra, updateNotice(VERSION, join(getAgentDir(), "update-check"))] });
+	} finally {
+		await telemetry.shutdown();
 	}
-	await main(args, { extensionFactories: [simra, updateNotice(VERSION, join(getAgentDir(), "update-check"))] });
 }
