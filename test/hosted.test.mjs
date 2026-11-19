@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { appendFileSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { randomUUID } from "node:crypto";
 import { simraOAuth } from "../packages/pi-extension/src/hosted.ts";
@@ -90,7 +90,7 @@ test(
 		);
 		writeFileSync(join(agent, "settings.json"), JSON.stringify({ retry: { enabled: false } }));
 		async function run(args, url = origin) {
-			const proc = spawn(process.env.SIMRA_BINARY, args, {
+			const proc = spawn(resolve(process.env.SIMRA_BINARY), args, {
 				cwd: root,
 				env: {
 					PATH: process.env.PATH,
@@ -105,7 +105,10 @@ test(
 			let output = "";
 			proc.stdout.on("data", (c) => (output += c));
 			proc.stderr.on("data", (c) => (output += c));
-			const code = await new Promise((resolve) => proc.on("close", resolve));
+			const code = await new Promise((resolve, reject) => {
+				proc.once("error", reject);
+				proc.once("close", resolve);
+			});
 			return { code, output };
 		}
 		const sessionDir = join(root, "sessions");
