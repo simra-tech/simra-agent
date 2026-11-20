@@ -3,6 +3,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { Model, OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
 
+const DEFAULT_ORIGIN = "https://chipoai--flowfoundry-server-server-serve.modal.run";
 const PROVIDER = "simra";
 const MODEL = "simra-hosted";
 const VERSION = "hosted-1";
@@ -12,7 +13,7 @@ const NOTICE =
 const START = "Run simra hosted to start a fresh recorded session in an authorized work directory.";
 
 function service() {
-	const url = new URL(process.env.SIMRA_FLOW_URL || "https://chipoai--flowfoundry-server-server-serve.modal.run");
+	const url = new URL(process.env.SIMRA_FLOW_URL || DEFAULT_ORIGIN);
 	if (
 		(url.protocol !== "https:" && !(url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname))) ||
 		url.username ||
@@ -121,7 +122,8 @@ export function registerHosted(pi: ExtensionAPI, freshId?: string) {
 				return simraOAuth.refreshToken(credentials, signal);
 			},
 		},
-		baseUrl: service() + "/v1",
+		// Pi requires a catalog URL. The transport validates the configured origin on hosted use.
+		baseUrl: DEFAULT_ORIGIN + "/pilot/v1",
 		api: "simra-hosted-chat",
 		models: [
 			{

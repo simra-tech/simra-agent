@@ -111,6 +111,14 @@ test(
 			});
 			return { code, output };
 		}
+		const invalidOrigin = origin + "/unexpected-path";
+		const byo = await run(["--provider", "own", "--model", "own", "-p", "use my own provider"], invalidOrigin);
+		assert.equal(byo.code, 0, byo.output);
+		const byoRequest = requests.find((r) => r.path === "/own/chat/completions");
+		assert.ok(byoRequest?.body.tools.some((tool) => tool.function.name === "run_experiment"));
+		const misconfigured = await run(["hosted", "-p", "must stay local"], invalidOrigin);
+		assert.notEqual(misconfigured.code, 0, misconfigured.output);
+		assert.deepEqual(requests.map((r) => r.path), ["/own/chat/completions"]);
 		const sessionDir = join(root, "sessions");
 		const marker = "private-tool-" + randomUUID();
 		const own = await run(
