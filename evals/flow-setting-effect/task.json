@@ -1,0 +1,13 @@
+{
+  "name": "flow-setting-effect",
+  "prompt": "task.md",
+  "score": "score.mjs",
+  "environment": "eda",
+  "files": {
+    "config.json": "../../examples/acc-sg13g2/config.json",
+    "task.md": "task.md",
+    "simra.config.json": "../../examples/acc-sg13g2/simra.config.json",
+    "simra.local.json": "../../examples/acc-sg13g2/simra.local.json"
+  },
+  "prepare": { "script": "prepare.sh", "files": { "acc_v1.v": "../../examples/acc-sg13g2/src/acc.v", "acc_v2.v": "files/acc_v2.v" } }
+}

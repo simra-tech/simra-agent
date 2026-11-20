@@ -8,6 +8,13 @@
 // A task can have a companion: "companion": { "script": "<path>", "files": { "<name>": "<path>" } }. The run copies
 // the script and the files to companion/ in the run directory, mounts it read-only at /companion, and starts the
 // script in the sandbox before the agent, in the background. Its output goes to state/companion.log.
+// A task can have a prepare step: "prepare": { "script": "<path>", "files": { "<name>": "<path>" } }. The run copies
+// the script and the files to prepare/ in the run directory, mounts it read-only at /prepare, and runs the script in
+// the environment image with the workspace at /work, before the agent starts (no network; the time does not count).
+// Use it for a state that a tool must make, for example the run directory of a flow. The agent never sees /prepare.
+// The prepared workspace is kept in <runs>/.prepared/<task>-<hash of the script, the files and the image>/ and
+// later runs of the same task copy it, so that every run starts from the same files.
+// A name in "files" can have directories ("src/top.v").
 // score.mjs exports score(ws), which returns (or resolves to) the points of each part and "max": { part: maximum
 // points }.
 //
@@ -44,9 +51,12 @@
 // Usage: node evals/run-arm.mjs <task dir> <simra|pi|opencode|codex> [--model <id>] [--runs <dir>] [--timeout-min <n>]
 //        [--context lean|full]   (simra arm: lean leaves the reasoning of earlier turns out of each model call)
 //        [--upstream <url>] [--codex-dir <dir>]
+//        [--harness <checkout>]  (mount packages/, adapters/, technologies/ and workarounds/ of a checkout of this
+//                                 repository over the copy in the image, read-only: a change is tested without an
+//                                 image build. The base of the image must fit the checkout: same dependencies.)
 
 import { spawn, spawnSync, execFileSync } from "node:child_process";
-import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync, chmodSync } from "node:fs";
+import { copyFileSync, cpSync, createWriteStream, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync, chmodSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { connect, createServer as createNetServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
@@ -64,6 +74,9 @@ const BASE_URL = `http://127.0.0.1:${FORWARD_PORT}`;
 const EXTENSION = "/opt/simra-agent/packages/pi-extension";
 const CODEX_DIR = "/opt/codex";
 const COMPANION_DIR = "/companion";
+const PREPARE_DIR = "/prepare";
+/** The directories of a checkout that --harness mounts over the copy in the image. */
+export const HARNESS_DIRS = ["packages", "adapters", "technologies", "workarounds"];
 /** The Codex backend of a ChatGPT subscription. */
 export const CODEX_UPSTREAM = "https://chatgpt.com/backend-api/codex";
 
@@ -179,7 +192,9 @@ export function makeWorkspace(taskDir, task, ws) {
 	mkdirSync(ws, { recursive: true });
 	for (const [name, src] of Object.entries(task.files)) {
 		const from = resolve(taskDir, src);
-		if (existsSync(from)) copyFileSync(from, join(ws, name));
+		if (!existsSync(from)) continue;
+		mkdirSync(dirname(join(ws, name)), { recursive: true });
+		copyFileSync(from, join(ws, name));
 	}
 	const env = loadConfig(ws).environments[task.environment];
 	if (!env || env.kind !== "container") throw new Error(`environment "${task.environment}" must be a container environment`);
@@ -194,6 +209,53 @@ export function makeWorkspace(taskDir, task, ws) {
 	git("add", ".");
 	git("commit", "-q", "-m", "design");
 	return env;
+}
+
+/** The cache key of a prepared workspace: the image, the script and the files of the prepare step, and the task files. */
+export function prepareKey(taskDir, task, imageId) {
+	const h = createHash("sha256").update(imageId);
+	const add = (name, src) => h.update(`\0${name}\0`).update(existsSync(resolve(taskDir, src)) ? readFileSync(resolve(taskDir, src)) : "");
+	add(basename(task.prepare.script), task.prepare.script);
+	for (const [name, src] of Object.entries(task.prepare.files ?? {}).sort()) add(name, src);
+	for (const [name, src] of Object.entries(task.files).sort()) if (!/simra\.local\.json$/.test(name)) add(name, src);
+	return h.digest("hex").slice(0, 16);
+}
+
+/**
+ * Run the prepare step of a task on the workspace ws (see the file header), or copy the kept result of an earlier run.
+ * prepDir: where the script and its files go (mounted read-only at /prepare). cacheRoot: where prepared workspaces
+ * are kept. Returns { cached, key, duration_s }. Throws when the script fails.
+ */
+export function prepareWorkspace({ taskDir, task, ws, prepDir, cacheRoot, engine, imageId, env }) {
+	const key = prepareKey(taskDir, task, imageId);
+	const kept = join(cacheRoot, `${task.name}-${key}`);
+	const started = Date.now();
+	if (existsSync(join(kept, "ws"))) {
+		// cp -a keeps the file times: the order of the files in time is part of the state.
+		const local = readFileSync(join(ws, "simra.local.json"));
+		rmSync(ws, { recursive: true, force: true });
+		execFileSync("cp", ["-a", join(kept, "ws"), ws]);
+		writeFileSync(join(ws, "simra.local.json"), local);
+		return { cached: true, key, duration_s: (Date.now() - started) / 1000 };
+	}
+	const { dir, script } = companionDir(taskDir, task.prepare, prepDir);
+	const pin = env.cpus ? ["taskset", "-c", env.cpus] : [];
+	const args = ["run", "--rm", "--init", "--network", "none", "--pull", "never", "-u", containerUser(engine), "-v", `${ws}:${WORK}`, "-v", `${dir}:${PREPARE_DIR}:ro`, "-w", WORK,
+		...Object.entries({ ...sandboxToolEnv(env), HOME: "/tmp" }).flatMap(([k, v]) => ["-e", `${k}=${v}`]), imageId, ...pin, "/bin/sh", `${PREPARE_DIR}/${script}`];
+	const r = spawnSync(engine, args, { env: engineEnv(), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+	writeFileSync(join(prepDir, "..", "prepare.log"), `${r.stdout ?? ""}\n${r.stderr ?? ""}`);
+	if (r.status !== 0) throw new Error(`the prepare step failed (exit ${r.status}): see prepare.log in the run directory`);
+	// Keep the result. Another run can prepare the same task at the same time: the first rename wins.
+	mkdirSync(cacheRoot, { recursive: true });
+	const tmp = `${kept}.tmp-${process.pid}`;
+	mkdirSync(tmp, { recursive: true });
+	execFileSync("cp", ["-a", ws, join(tmp, "ws")]);
+	try {
+		renameSync(tmp, kept);
+	} catch {
+		rmSync(tmp, { recursive: true, force: true });
+	}
+	return { cached: false, key, duration_s: (Date.now() - started) / 1000 };
 }
 
 /**
@@ -515,6 +577,19 @@ async function main() {
 		// stream goes to a file in the state mount instead, and the run copies it to transcript.jsonl.
 		cmd.command = ["/bin/sh", "-c", `exec "$0" "$@" > ${STATE}/transcript.jsonl`, ...cmd.command];
 	}
+	// --harness: the code of a checkout over the copy in the image.
+	const harnessArg = opt("--harness", null);
+	let harness = null;
+	if (harnessArg) {
+		const dir = realpathSync(resolve(harnessArg));
+		for (const d of HARNESS_DIRS) {
+			if (!existsSync(join(dir, d))) throw new Error(`--harness ${dir}: no ${d}/ directory`);
+			readOnly[join(dir, d)] = `/opt/simra-agent/${d}`;
+		}
+		const git = (...a) => spawnSync("git", ["-C", dir, ...a], { encoding: "utf8" }).stdout?.trim() ?? "";
+		harness = { commit: git("rev-parse", "HEAD") || null, dirty: git("status", "--porcelain", "--", ...HARNESS_DIRS) !== "" };
+	}
+	const prepared = task.prepare ? prepareWorkspace({ taskDir, task, ws, prepDir: join(run, "prepare"), cacheRoot: join(runs, ".prepared"), engine, imageId, env }) : null;
 	const companion = task.companion ? companionDir(taskDir, task.companion, join(run, "companion")) : null;
 	if (companion) {
 		readOnly[companion.dir] = COMPANION_DIR;
@@ -553,7 +628,7 @@ async function main() {
 	// The sandbox prevents access to host files. These checks remain as a second line.
 	const transcript = readFileSync(join(run, "transcript.jsonl"), "utf8");
 	const contamination = [
-		["task directory", new RegExp(`${escape(taskDir)}|expected\\.json|target\\.json|cross_check|layout-(?:drc-fix|block-fix|false-pass|long-job|stale-state)/|(?:cell|block|flat)-(?:seeded|clean|cheat)\\.gds|v[12]-(?:seeded|clean)\\.gds|${COMPANION_DIR}/`)],
+		["task directory", new RegExp(`${escape(taskDir)}|expected\\.json|target\\.json|cross_check|${PREPARE_DIR}/|layout-(?:drc-fix|block-fix|false-pass|long-job|stale-state)/|(?:cell|block|flat)-(?:seeded|clean|cheat)\\.gds|v[12]-(?:seeded|clean)\\.gds|${COMPANION_DIR}/`)],
 		["this repository", new RegExp(escape(repo))],
 		["another run", new RegExp(`${escape(dirname(runs))}/(?!${escape(`${basename(runs)}/${runName}`)})`)],
 	]
@@ -568,6 +643,9 @@ async function main() {
 		request_models: [...new Set(calls.map((c) => c.request_model))],
 		response_models: [...new Set(calls.map((c) => c.response_model))],
 		context: arm === "simra" ? contextMode : null,
+		// The harness code: the copy in the image, or the checkout that --harness mounted over it.
+		harness: harness ?? "image",
+		prepared,
 		model_calls: calls.length,
 		tokens,
 		started_at: started.toISOString(),

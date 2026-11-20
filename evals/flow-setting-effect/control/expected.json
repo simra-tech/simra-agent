@@ -1,0 +1,9 @@
+{
+  "variant": "control",
+  "provenance": "Reference: two runs of the flow to OpenROAD.STAMidPNR-1 on revision 2 of the RTL, without and with CTS_DISTANCE_BETWEEN_BUFFERS 60. The clock tree has 17 buffers without the setting and 21 with it. LibreLane 3.1.0.dev2, OpenROAD 26Q1-1024-gdcf36133a, IHP SG13G2 PDK commit 84374023. Simulated: timing analysis with placement wire estimates, corner nom_typ_1p20V_25C. old_run: the values of runs/base (revision 1 of the RTL).",
+  "setting_changed_result": true,
+  "before": { "clock_buffers": 17, "hold_ws_ns": 0.03097, "setup_ws_ns": 2.00318 },
+  "after": { "clock_buffers": 21, "hold_ws_ns": 0.03059, "setup_ws_ns": 1.98888 },
+  "old_run": { "clock_buffers": 17, "hold_ws_ns": 0.04206, "setup_ws_ns": 2.29707 },
+  "tol": { "hold_ws_ns": 0.003, "setup_ws_ns": 0.02 }
+}

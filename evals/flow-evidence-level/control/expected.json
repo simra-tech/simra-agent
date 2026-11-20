@@ -1,0 +1,10 @@
+{
+  "provenance": "Reference: OpenROAD.STAPostPNR of the run of record (step 55), which analyses every corner with the extracted wires. LibreLane 3.1.0.dev2, OpenROAD 26Q1-1024-gdcf36133a (the binary that the librelane command of the image uses), IHP SG13G2 PDK commit 84374023. Simulated: static timing analysis with extracted wires.",
+  "wire_level": "extracted",
+  "corners": {
+    "nom_typ_1p20V_25C": { "setup_ws_ns": 4.702, "tol": 0.2 },
+    "nom_slow_1p08V_125C": { "setup_ws_ns": 1.825, "tol": 0.3 },
+    "nom_fast_1p32V_m40C": { "setup_ws_ns": 6.397, "tol": 0.3 }
+  },
+  "setup_met": true
+}

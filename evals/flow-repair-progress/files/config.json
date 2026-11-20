@@ -1,0 +1,10 @@
+{
+  "DESIGN_NAME": "shreg",
+  "VERILOG_FILES": ["dir::src/shreg.v"],
+  "CLOCK_PORT": "clk",
+  "CLOCK_PERIOD": 10,
+  "PNR_SDC_FILE": "dir::shreg.sdc",
+  "SIGNOFF_SDC_FILE": "dir::shreg.sdc",
+  "FP_CORE_UTIL": 40,
+  "PL_RESIZER_HOLD_MAX_BUFFER_PCT": 100
+}

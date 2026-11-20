@@ -1,0 +1,22 @@
+{
+  "name": "flow-vacuous-checker",
+  "prompt": "task.md",
+  "score": "score.mjs",
+  "environment": "eda",
+  "files": {
+    "task.md": "task.md",
+    "simra.config.json": "../../examples/acc-sg13g2/simra.config.json",
+    "simra.local.json": "../../examples/acc-sg13g2/simra.local.json"
+  },
+  "prepare": {
+    "script": "prepare.sh",
+    "files": {
+      "fir_ok.v": "files/fir_ok.v",
+      "fir_new.v": "files/fir_refactor_bug.v",
+      "stim_path": "files/stim_path.seeded",
+      "tb.v": "files/tb.v",
+      "check.py": "files/check.py",
+      "regress.sh": "files/regress.sh"
+    }
+  }
+}

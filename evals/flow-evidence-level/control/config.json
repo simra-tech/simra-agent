@@ -1,0 +1,6 @@
+{
+  "DESIGN_NAME": "acc",
+  "VERILOG_FILES": ["dir::src/acc.v"],
+  "CLOCK_PORT": "clk",
+  "CLOCK_PERIOD": 10.0
+}

@@ -1,0 +1,9 @@
+{
+  "variant": "seeded",
+  "provenance": "Reference: two runs of the flow to OpenROAD.STAMidPNR-1 on revision 2 of the RTL, without and with CTS_DELAY_BUFFER_DERATE_PCT 50. The placed netlist after the clock tree synthesis is the same file in both (same SHA-256). LibreLane 3.1.0.dev2 gives the tool 'clock_tree_synthesis -delay_buffer_derate 0' for the value 50 (integer division by 100 in its script). LibreLane 3.1.0.dev2, OpenROAD 26Q1-1024-gdcf36133a, IHP SG13G2 PDK commit 84374023. Simulated: timing analysis with placement wire estimates, corner nom_typ_1p20V_25C. old_run: the values of runs/base (revision 1 of the RTL).",
+  "setting_changed_result": false,
+  "before": { "clock_buffers": 17, "hold_ws_ns": 0.03097, "setup_ws_ns": 2.00318 },
+  "after": { "clock_buffers": 17, "hold_ws_ns": 0.03097, "setup_ws_ns": 2.00318 },
+  "old_run": { "clock_buffers": 17, "hold_ws_ns": 0.04206, "setup_ws_ns": 2.29707 },
+  "tol": { "hold_ws_ns": 0.003, "setup_ws_ns": 0.02 }
+}
