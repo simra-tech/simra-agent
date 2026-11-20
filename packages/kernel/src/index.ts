@@ -16,6 +16,7 @@ export * from "./summary.ts";
 export * from "./touchstone.ts";
 export * from "./wait.ts";
 export * from "./workarounds.ts";
+export * from "./commandcheck.ts";
 export * from "./commands.ts";
 export * from "./answer.ts";
 export * from "./netlist.ts";

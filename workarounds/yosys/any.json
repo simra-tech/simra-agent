@@ -1,0 +1,21 @@
+{
+  "schema": "simra.workarounds/0",
+  "simulator": "yosys",
+  "pdk": "*",
+  "versions": "Yosys 0.67",
+  "entries": [
+    {
+      "id": "yosys-abc-delay-target-no-effect",
+      "applies_to": {
+        "operations": [
+          "compare"
+        ]
+      },
+      "gap": "abc -liberty <lib> -D <ps> without -constr: the delay target does not change the mapped netlist.",
+      "symptom": "Runs with different -D values give the same netlist (the same hash). No warning.",
+      "workaround": "Compare the netlist hash of two values before you record a delay target as a decision. To change the logic depth, use a depth-oriented ABC script before the mapping, and check the depth with a timing run.",
+      "status": "open",
+      "evidence": "a 4-tap FIR filter with the IHP SG13G2 typical library: no -D, and -D 100, 1000, 5000 and 20000 give the same netlist"
+    }
+  ]
+}

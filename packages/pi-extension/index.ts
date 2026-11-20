@@ -25,7 +25,7 @@
 // All logic lives in @simra-tech/kernel, which works without pi.
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { Type } from "typebox";
 import {
 	type BeforeAgentStartEvent,
@@ -67,6 +67,8 @@ import {
 	renderPage,
 	type ResultRecord,
 	runCheck,
+	commandFindings,
+	formatCommandFindings,
 	queryAdapter,
 	runExperiment,
 	runJobs,
@@ -145,6 +147,76 @@ export function netlistsOf(event: Pick<ToolResultEvent, "toolName" | "input">, c
 			: ["read", "write", "edit"].includes(event.toolName) ? [String(event.input.path ?? "")] : [];
 	const files = words.filter((w) => NETLIST.test(w)).map((w) => (isAbsolute(w) ? w : resolve(cwd, w)));
 	return [...new Set(files)].filter((f) => existsSync(f));
+}
+
+/** True when a directory is a run directory of LibreLane: it has resolved.json and a numbered step directory. */
+export function isFlowRun(dir: string): boolean {
+	try {
+		return existsSync(join(dir, "resolved.json")) && readdirSync(dir).some((n) => /^\d+-/.test(n));
+	} catch {
+		return false;
+	}
+}
+
+/** The digital flow tools that a call uses, from the words of a bash command: librelane, openroad, yosys. */
+export function flowToolsOf(event: Pick<ToolResultEvent, "toolName" | "input">): string[] {
+	if (event.toolName !== "bash") return [];
+	const command = String(event.input.command ?? "");
+	const tools: string[] = [];
+	if (/(^|[\s;&|(/])librelane\b|librelane\.steps/.test(command)) tools.push("librelane");
+	if (/(^|[\s;&|(/])(openroad|sta)\s/.test(command) || tools.includes("librelane")) tools.push("openroad");
+	if (/(^|[\s;&|(/])yosys\b/.test(command) || tools.includes("librelane")) tools.push("yosys");
+	return tools;
+}
+
+/**
+ * The LibreLane run directories that a call touches: a run directory in a word of a bash command or in the path of a
+ * read (the word itself or one of its parents), and, after a bash command that runs librelane, each run directory under
+ * runs/ of the working directory that changed since sinceMs. At most 3, in order of appearance.
+ */
+export function flowRunsOf(event: Pick<ToolResultEvent, "toolName" | "input">, cwd: string, sinceMs: number | null): string[] {
+	const words =
+		event.toolName === "bash"
+			? String(event.input.command ?? "").match(/[^\s"'<>|;&()=]+/g) ?? []
+			: event.toolName === "read" ? [String(event.input.path ?? "")] : [];
+	const found: string[] = [];
+	const add = (dir: string) => {
+		if (!found.includes(dir) && isFlowRun(dir)) found.push(dir);
+	};
+	for (const word of words) {
+		if (!word.includes("/") && !existsSync(resolve(cwd, word))) continue;
+		let dir = isAbsolute(word) ? word : resolve(cwd, word);
+		for (let i = 0; i < 4 && dir.length > 1; i++) {
+			if (existsSync(join(dir, "resolved.json"))) {
+				add(dir);
+				break;
+			}
+			dir = dirname(dir);
+		}
+	}
+	if (flowToolsOf(event).includes("librelane") && sinceMs !== null) {
+		const runs = join(cwd, "runs");
+		let names: string[] = [];
+		try {
+			names = readdirSync(runs);
+		} catch {
+			names = [];
+		}
+		for (const name of names) {
+			const dir = join(runs, name);
+			try {
+				if (statSync(dir).mtimeMs >= sinceMs) add(dir);
+			} catch {
+				// not a directory that can be read
+			}
+		}
+	}
+	return found.slice(0, 3);
+}
+
+/** The key of a flow finding for the once-per-session rule: the text without numbers, so that the same kind of finding for the same names is one finding. */
+export function flowFindingKey(message: string): string {
+	return message.replace(/[-+]?\d+(\.\d+)?/g, "#");
 }
 
 const RECORD_FILE = /(^|\/)simra\/(experiments|checks)\/|(^|\/)(result|verdict|experiment)\.json$/;
@@ -432,8 +504,72 @@ export default function (pi: ExtensionAPI) {
 		return ["", "Simra netlist check (ngspice adapter, operation lint):", ...fresh.map(formatDiagnostic)].join("\n");
 	}
 
+	// Digital flow feedback on the agent's own shell commands: the findings of the librelane adapter (operation read, with
+	// the comparison against the nearest sibling run) for each run directory that a call touches, and the known gaps of
+	// the flow tools, once per session.
+	const callStarts = new Map<string, number>();
+	const flowChecked = new Map<string, number>();
+	async function flowNote(event: ToolResultEvent, cwd: string, sinceMs: number | null): Promise<string | null> {
+		const notes: string[] = [];
+		const root = findRoot(cwd) ?? cwd;
+		const tools = flowToolsOf(event);
+		if (tools.length) {
+			const gaps = gapNote(root, tools).trim();
+			if (gaps) notes.push(gaps);
+		}
+		for (const run of flowRunsOf(event, cwd, sinceMs)) {
+			let stamp = 0;
+			try {
+				stamp = statSync(run).mtimeMs;
+			} catch {
+				continue;
+			}
+			if (flowChecked.get(run) === stamp) continue;
+			flowChecked.set(run, stamp);
+			let found;
+			try {
+				found = await queryAdapter({ root, adapter: "librelane", operation: "read", inputs: { run, against: "auto" } });
+			} catch {
+				continue;
+			}
+			const fresh = found.diagnostics.filter((d) => d.severity === "warning" && !reported.has(flowFindingKey(d.message)));
+			if (fresh.length === 0) continue;
+			for (const d of fresh) reported.add(flowFindingKey(d.message));
+			notes.push([
+				`Simra flow check of ${relative(cwd, run) || run} (librelane adapter, operation read):`,
+				...fresh.map((d) => `- ${d.message}`),
+				"run_experiment with adapter librelane gives the records: read (slack by corner with its evidence level), compare (two runs), replay (one step again, with changed variables or another corner).",
+			].join("\n"));
+		}
+		return notes.length ? ["", ...notes].join("\n") : null;
+	}
+
+	// A command that ended with exit code 0: the logs with error lines and the empty result files that it wrote. A finding
+	// is shown at most two times.
+	const commandShown = new Map<string, number>();
+	function commandNote(event: ToolResultEvent, cwd: string, sinceMs: number | null): string | null {
+		if (event.toolName !== "bash" || event.isError || sinceMs === null) return null;
+		let findings: ReturnType<typeof commandFindings>;
+		try {
+			findings = commandFindings(cwd, sinceMs);
+		} catch {
+			return null;
+		}
+		const fresh = findings.filter((f) => {
+			const key = `${f.kind}|${f.path}|${f.lines?.[0] ?? ""}`;
+			const count = commandShown.get(key) ?? 0;
+			commandShown.set(key, count + 1);
+			return count < 2;
+		});
+		return formatCommandFindings(fresh);
+	}
+
 	pi.on("before_agent_start", (event) => {
 		chipDesignPrompt(event.systemPromptOptions);
+	});
+
+	pi.on("tool_call", (event) => {
+		if (event.toolName === "bash") callStarts.set(event.toolCallId, Date.now() - 5);
 	});
 
 	// In the terminal UI, a Simra header replaces pi's logo and startup help.
@@ -480,7 +616,10 @@ export default function (pi: ExtensionAPI) {
 			outputReads++;
 			if (outputReads <= 3 || outputReads % 10 === 0) outputNote = OUTPUT_READ_NOTE;
 		}
-		const notes = [await netlistNote(event, ctx.cwd), recordNote, outputNote, clock?.(Date.now()) ?? null].filter((n): n is string => n !== null);
+		const since = callStarts.get(event.toolCallId) ?? null;
+		callStarts.delete(event.toolCallId);
+		const flowNotes = process.env.SIMRA_FLOW_CHECK === "off" ? [] : [commandNote(event, ctx.cwd, since), await flowNote(event, ctx.cwd, since)];
+		const notes = [await netlistNote(event, ctx.cwd), ...flowNotes, recordNote, outputNote, clock?.(Date.now()) ?? null].filter((n): n is string => n !== null);
 		if (notes.length === 0) return;
 		return { content: [...event.content, ...notes.map((text) => ({ type: "text" as const, text }))], structuredContent: event.structuredContent };
 	});

@@ -1,0 +1,66 @@
+Reading timing models for corner nom_fast_1p32V_m40C…
+Reading timing library for the 'nom_fast_1p32V_m40C' corner at '/foss/pdks/ihp-sg13g2/libs.ref/sg13g2_stdcell/lib/sg13g2_stdcell_fast_1p32V_m40C.lib'…
+Reading timing library for the 'nom_fast_1p32V_m40C' corner at '/foss/pdks/ihp-sg13g2/libs.ref/sg13g2_io/lib/sg13g2_io_fast_1p32V_3p6V_m40C.lib'…
+Reading timing models for corner nom_slow_1p08V_125C…
+Reading timing library for the 'nom_slow_1p08V_125C' corner at '/foss/pdks/ihp-sg13g2/libs.ref/sg13g2_stdcell/lib/sg13g2_stdcell_slow_1p08V_125C.lib'…
+Reading timing library for the 'nom_slow_1p08V_125C' corner at '/foss/pdks/ihp-sg13g2/libs.ref/sg13g2_io/lib/sg13g2_io_slow_1p08V_3p0V_125C.lib'…
+Reading timing models for corner nom_typ_1p20V_25C…
+Reading timing library for the 'nom_typ_1p20V_25C' corner at '/foss/pdks/ihp-sg13g2/libs.ref/sg13g2_stdcell/lib/sg13g2_stdcell_typ_1p20V_25C.lib'…
+Reading timing library for the 'nom_typ_1p20V_25C' corner at '/foss/pdks/ihp-sg13g2/libs.ref/sg13g2_io/lib/sg13g2_io_typ_1p2V_3p3V_25C.lib'…
+Reading OpenROAD database at '/design/runs/r1/35-openroad-cts/shreg.odb'…
+Reading design constraints file at '/design/shreg_h070.sdc'…
+[INFO] No information on clock propagation in input SDC file-- propagating all clocks.
++ repair_timing -verbose -setup -setup_margin 0.05 -max_buffer_percent 50
+[INFO RSZ-0100] Repair move sequence: UnbufferMove SizeUpMove SwapPinsMove BufferMove CloneMove SplitLoadMove 
+[INFO RSZ-0098] No setup violations found
++ repair_timing -verbose -hold -setup_margin 0.05 -hold_margin 0.1 -max_buffer_percent 100
+[INFO RSZ-0046] Found 11976 endpoints with hold violations.
+Iteration | Resized | Buffers | Cloned Gates |   Area   |   WNS   |   TNS   | Endpoint
+--------------------------------------------------------------------------------------
+        0 |       0 |       0 |            0 |    +0.0% |  -0.648 | -6840.244 | _13546_/D
+       10 |       0 |       9 |            0 |    +0.0% |  -0.639 | -6838.034 | _20179_/D
+       20 |       0 |      19 |            0 |    +0.0% |  -0.627 | -6835.583 | _15635_/D
+       30 |       0 |      29 |            0 |    +0.1% |  -0.624 | -6833.131 | _14960_/D
+       40 |       0 |      39 |            0 |    +0.1% |  -0.621 | -6830.671 | _22616_/D
+       50 |       0 |      49 |            0 |    +0.1% |  -0.619 | -6828.219 | _14585_/D
+    11920 |       0 |   11919 |            0 |   +27.4% |  -0.546 | -3914.679 | _13219_/D
+    11930 |       0 |   11929 |            0 |   +27.4% |  -0.544 | -3912.221 | _20242_/D
+    11940 |       0 |   11939 |            0 |   +27.5% |  -0.541 | -3909.771 | _13776_/D
+    11950 |       0 |   11949 |            0 |   +27.5% |  -0.539 | -3907.301 | _17062_/D
+    11960 |       0 |   11959 |            0 |   +27.5% |  -0.535 | -3904.838 | _15638_/D
+    11970 |       0 |   11969 |            0 |   +27.5% |  -0.521 | -3902.379 | _18148_/D
+    final |       0 |   11976 |            0 |   +27.6% |  -0.404 | -3900.660 | _13546_/D
+--------------------------------------------------------------------------------------
+[WARNING RSZ-0064] Unable to repair all hold checks within margin.
+[INFO RSZ-0032] Inserted 11976 hold buffers.
++ detailed_placement -max_displacement  500 100 
+Placement Analysis
+---------------------------------
+total displacement      78323.4 u
+average displacement        2.1 u
+max displacement           15.7 u
+original HPWL          364574.6 u
+legalized HPWL         492096.1 u
+delta HPWL                   35 %
+
+[INFO DPL-0020] Mirrored 17569 instances
+[INFO DPL-0021] HPWL before          492096.1 u
+[INFO DPL-0022] HPWL after           409052.8 u
+[INFO DPL-0023] HPWL delta              -16.9 %
+Setting global connections for newly added cells…
+[INFO] Setting global connections...
+[INFO ODB-0403] 23952 connections made, 0 conflicts skipped.
+Updating metrics…
+Cell type report:                       Count       Area
+  Buffer                                   24     174.18
+  Clock buffer                           1178   30594.41
+  Timing Repair Buffer                  12024  195911.65
+  Clock inverter                          537    3576.18
+  Sequential cell                       12000  587865.60
+  Multi-Input combinational cell        12000   87091.20
+  Total                                 37763  905213.23
+Writing OpenROAD database to 'rp_s1/out/shreg.odb'…
+Writing netlist to 'rp_s1/out/shreg.nl.v'…
+Writing powered netlist to 'rp_s1/out/shreg.pnl.v'…
+Writing layout to 'rp_s1/out/shreg.def'…
+Writing timing constraints to 'rp_s1/out/shreg.sdc'…

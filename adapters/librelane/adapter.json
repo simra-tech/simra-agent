@@ -1,0 +1,23 @@
+{
+  "contract": "simra.adapter/0",
+  "name": "librelane",
+  "version": "0.1.0",
+  "command": [
+    "python3",
+    "{adapter_dir}/librelane_adapter.py"
+  ],
+  "uses_adapters": [
+    "openroad"
+  ],
+  "operations": {
+    "read": {
+      "description": "Read a LibreLane run directory and give typed records, without a tool run. Inputs: run (runs/<tag>, relative to the design root), against (optional; a second run, or \"auto\" for the sibling run with the fewest different settings: adds the comparison). Measurements: setup_ws_ns@<corner> and hold_ws_ns@<corner>, each from the last step that computed it, with its evidence level (no_wires, placement_estimate, global_route, extracted) and the step; steps, steps_not_done, instances, utilization, clock_buffers, timing_repair_buffers, route_usage_pct (over the die), core_route_usage_pct_estimate, route_overflow. Warnings: a corner whose newest slack has a lower level than the run (the metrics of the last state carry it from an earlier step); a corner name that does not agree with the header of the library that it loaded; a step that did not end; a repair table with a known pattern; a design input newer than the run. Use it before you report a number of a run."
+    },
+    "compare": {
+      "description": "Compare two LibreLane runs, without a tool run: the settings that differ, the first step that reads one of them, and the first step whose netlists or metrics differ. Inputs: run, against. Measurements: settings_changed, steps_compared, steps_different, effect (1: the results differ at or after the first step that reads a changed setting; 0: no step differs, the setting had no effect; failed: the runs differ before that step, so another input differs and the comparison does not show the effect of the setting). Use it before you record that a setting changed a result."
+    },
+    "replay": {
+      "description": "Run one step of a LibreLane run again on its saved input state, with changed variables, in the work directory of the experiment. The run directory is not changed. Inputs: run, step (the step number, directory name or id), set (optional; an object of flow variables for this step, for example {\"PNR_CORNERS\": [\"<corner>\"]} for a timing step at another corner, or a repair or clock tree variable), state_in (optional; a state file to start from: the state_out.json of an earlier replay chains two replays, for example a second repair pass). Measurements: the metrics that differ from the step in the run, metrics_changed, views_changed, runtime_s. A variable that the step does not read fails the request, with the steps that read it. A replay that changes no metric and no netlist gives a warning: the setting has no effect at this step. Use it for an A/B test of one option, or for a timing number at a corner that the flow did not analyse at this step, instead of a full run."
+    }
+  }
+}

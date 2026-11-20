@@ -53,7 +53,15 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
   layout cell as a Touchstone file: one openEMS job per port, then the merge (see [EM S-parameters](#em-s-parameters)).
 - The tool `em_sparameters` (pi) runs `simra em` and lists S at given frequencies. `simra snp-diff` compares two
   Touchstone files per entry in dB, degrees and |dS|.
-- The workaround registry (`workarounds/<simulator>/<pdk>.json`) lists the known gaps of ngspice, Xyce and openEMS and the
+- The openroad adapter has one operation, `parse`: the typed record of an OpenROAD log (repair tables with the pattern
+  that a table shows, the congestion report, messages). The librelane adapter has three operations: `read` (the typed
+  record of a LibreLane run: the slack of each corner with its evidence level, and warnings for carried-over numbers,
+  a corner name that does not agree with its library, and a step that did not end), `compare` (two runs: did a changed
+  setting change a result) and `replay` (one step again on its saved state, with changed variables). After a shell
+  command that runs LibreLane or reads a run directory, the pi extension adds the warnings of `read` to the result.
+  After a shell command with exit code 0, it adds the logs with error lines and the empty result files that the
+  command wrote (see [adapters/librelane/README.md](adapters/librelane/README.md)).
+- The workaround registry (`workarounds/<simulator>/<pdk>.json`) lists the known gaps of ngspice, Xyce, openEMS and the digital flow tools (LibreLane, OpenROAD, Yosys, Verilator) and the
   stated workaround of each. The agent sees the entries of an adapter with its first result in a session; `simra
   workarounds` and the tool `workarounds` list them (see [Workaround registry](#workaround-registry)).
 - A connection table (`simra.connections/0`) holds the pins, supplies, bias needs and control encodings of the blocks of a
