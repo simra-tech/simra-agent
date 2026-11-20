@@ -1,7 +1,7 @@
 # librelane adapter
 
 The librelane adapter reads a run directory of LibreLane (`runs/<tag>`) and can run one step of a run again. It has
-three operations:
+four operations:
 
 - `read`: the typed record of a run, with no tool run. For each corner it gives the worst setup and hold slack from
   the last step that computed it, with the evidence level of that step:
@@ -28,11 +28,24 @@ three operations:
   pass with `state_in` set to the `state_out.json` of the first replay. A variable that the step does not read fails
   the request before the run.
 
+- `preflight`: the check of the environment before a long run. It starts the version command of each flow tool with
+  the PATH of the `librelane` launcher, lists the view counts of each library of the PDK, and checks the free space
+  and a write. It gives a warning for a tool that does not start and for two builds of a tool with different
+  versions. The report is the record of the tool versions.
+
+`read` also records the hashes of the design inputs that the run names (the RTL and the SDC files, as they are now)
+and of the launcher files that the request gives (input `launcher`).
+
 The inputs and measurements are in [adapter.json](adapter.json).
 
 The pi extension calls `read` (with `against: "auto"`) after a shell command that runs LibreLane or reads a run
 directory, and adds the warnings to the result of the command, each one time. The variable `SIMRA_FLOW_CHECK=off`
 turns this off.
+
+The command check is a second hook, off by default (`SIMRA_COMMAND_CHECK=on`): after a shell command with exit code
+0, it adds the logs with error lines and the empty result files that the command wrote. In the pilots of
+`evals/flow-no-work` and `evals/flow-vacuous-checker` the agents found these faults without it, and the notes added
+tokens; so it is not on by default.
 
 `read` and `compare` need only the Python standard library. `replay` needs LibreLane in the environment of the
 experiment (tested with LibreLane 3.1.0.dev2). The adapter uses the log readers of the openroad adapter

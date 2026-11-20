@@ -63,8 +63,9 @@ test("flowToolsOf and flowRunsOf find the tools and the run directories of a cal
 	}
 });
 
-test("tool_result: the flow check adds its finding once, and the command check reports a log with an error", async () => {
+test("tool_result: the flow check adds its finding once, and the command check (when it is on) reports a log with an error", async () => {
 	const design = mkdtempSync(join(tmpdir(), "simra-flow-"));
+	process.env.SIMRA_COMMAND_CHECK = "on";
 	try {
 		makeRun(design, "r1", [TYP]);
 		const emit = hooks();
@@ -83,12 +84,27 @@ test("tool_result: the flow check adds its finding once, and the command check r
 		const second = await emit("tool_result", { ...again, content: [{ type: "text", text: "{}" }], isError: false }, ctx);
 		assert.equal(second, undefined, "a finding is shown once; a file that did not change is not checked again");
 	} finally {
+		delete process.env.SIMRA_COMMAND_CHECK;
+		rmSync(design, { recursive: true, force: true });
+	}
+});
+
+test("tool_result: the command check is off by default", async () => {
+	const design = mkdtempSync(join(tmpdir(), "simra-flow-"));
+	try {
+		const emit = hooks();
+		const call = { toolName: "bash", toolCallId: "c1", input: { command: "./run_sta.sh" } };
+		await emit("tool_call", call, { cwd: design });
+		put(join(design, "sta", "sta.log"), "Error: 171 fir.nl.v line 8, syntax error\n");
+		assert.equal(await emit("tool_result", { ...call, content: [{ type: "text", text: "done" }], isError: false }, { cwd: design }), undefined);
+	} finally {
 		rmSync(design, { recursive: true, force: true });
 	}
 });
 
 test("tool_result, negative control: a clean run and a clean command add no note", async () => {
 	const design = mkdtempSync(join(tmpdir(), "simra-flow-"));
+	process.env.SIMRA_COMMAND_CHECK = "on";
 	try {
 		makeRun(design, "r1", [SLOW, TYP]);
 		const emit = hooks();
@@ -99,6 +115,7 @@ test("tool_result, negative control: a clean run and a clean command add no note
 		const result = await emit("tool_result", { ...call, content: [{ type: "text", text: "{}" }], isError: false }, ctx);
 		assert.equal(result, undefined);
 	} finally {
+		delete process.env.SIMRA_COMMAND_CHECK;
 		rmSync(design, { recursive: true, force: true });
 	}
 });

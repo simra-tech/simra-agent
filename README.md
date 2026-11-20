@@ -59,8 +59,9 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
   a corner name that does not agree with its library, and a step that did not end), `compare` (two runs: did a changed
   setting change a result) and `replay` (one step again on its saved state, with changed variables). After a shell
   command that runs LibreLane or reads a run directory, the pi extension adds the warnings of `read` to the result.
-  After a shell command with exit code 0, it adds the logs with error lines and the empty result files that the
-  command wrote (see [adapters/librelane/README.md](adapters/librelane/README.md)).
+  With `SIMRA_COMMAND_CHECK=on`, after a shell command with exit code 0, it also adds the logs with error lines and
+  the empty result files that the command wrote (off by default; see
+  [adapters/librelane/README.md](adapters/librelane/README.md)).
 - The workaround registry (`workarounds/<simulator>/<pdk>.json`) lists the known gaps of ngspice, Xyce, openEMS and the digital flow tools (LibreLane, OpenROAD, Yosys, Verilator) and the
   stated workaround of each. The agent sees the entries of an adapter with its first result in a session; `simra
   workarounds` and the tool `workarounds` list them (see [Workaround registry](#workaround-registry)).

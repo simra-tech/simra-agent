@@ -283,24 +283,31 @@ def start_time(steps):
     return min(times) if times else None
 
 
-def changed_sources(run, steps):
-    """The design inputs (VERILOG_FILES, the SDC files, the configuration) that are newer than the start of the
-    run: texts. A run with a newer input is not a result for the present design."""
+def design_inputs(run):
+    """The design inputs that the run names (VERILOG_FILES and the SDC files), as files on this machine:
+    [(role, path)]. An input that is not there is left out."""
     resolved = load(os.path.join(run, "resolved.json")) or {}
-    started = start_time(steps)
-    if started is None:
-        return []
-    names = list(resolved.get("VERILOG_FILES") or [])
-    names += [resolved.get(k) for k in ("PNR_SDC_FILE", "SIGNOFF_SDC_FILE") if resolved.get(k)]
-    design_dir = resolved.get("DESIGN_DIR") or os.path.dirname(os.path.dirname(run))
+    design_dir = resolved.get("DESIGN_DIR") or design_dir_of(run)
+    names = [("source", n) for n in (resolved.get("VERILOG_FILES") or [])]
+    names += [("constraint", resolved.get(k)) for k in ("PNR_SDC_FILE", "SIGNOFF_SDC_FILE") if resolved.get(k)]
     out = []
-    for name in names:
+    for role, name in names:
         if not isinstance(name, str):
             continue
         path = local_path(name if os.path.isabs(name) else os.path.join(design_dir, name), run)
-        if path is not None and os.path.getmtime(path) > started + 1:
-            out.append(os.path.relpath(path, design_dir_of(run)))
+        if path is not None and (role, path) not in out:
+            out.append((role, path))
     return out
+
+
+def changed_sources(run, steps):
+    """The design inputs (VERILOG_FILES, the SDC files, the configuration) that are newer than the start of the
+    run: texts. A run with a newer input is not a result for the present design."""
+    started = start_time(steps)
+    if started is None:
+        return []
+    root = design_dir_of(run)
+    return [os.path.relpath(path, root) for _, path in design_inputs(run) if os.path.getmtime(path) > started + 1]
 
 
 # ------------------------------------------------------------------ comparison of two runs

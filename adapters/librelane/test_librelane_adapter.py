@@ -112,6 +112,9 @@ class Reader(unittest.TestCase):
         self.assertEqual(m["setup_ws_ns@nom_slow_1p08V_125C"]["level"], "no_wires")
         self.assertEqual(m["setup_ws_ns@nom_slow_1p08V_125C"]["value"], 0.95)
         self.assertEqual(m["clock_buffers"]["value"], 17)
+        roles = {f.get("role"): f["path"] for f in response["input_files"]["files"]}
+        self.assertEqual(roles.get("source"), "src/a.v")
+        self.assertIn("config", roles)
         carried = [w for w in self.warnings(response) if "carry the old values" in w]
         self.assertEqual(len(carried), 1)
         self.assertIn("nom_slow_1p08V_125C", carried[0])
@@ -180,6 +183,41 @@ class Reader(unittest.TestCase):
         make_run(self.design, "r1")
         self.assertEqual(self.call("replay", {"run": "runs/r1", "step": 99})["status"], "failed")
         self.assertEqual(self.call("read", {"run": "src"})["status"], "failed")
+
+
+class Preflight(unittest.TestCase):
+    def test_preflight_reports_a_tool_that_does_not_start(self):
+        base = tempfile.mkdtemp()
+        try:
+            tools = os.path.join(base, "bin")
+            for name, body in (("yosys", "echo 'Yosys 0.0'"), ("vvp", "echo 'vvp: error while loading shared libraries' >&2; exit 127")):
+                write(os.path.join(tools, name), "#!/bin/sh\n{}\n".format(body))
+                os.chmod(os.path.join(tools, name), 0o755)
+            write(os.path.join(base, "pdk", "demo", "libs.ref", "cells", "lib", "a.lib"), "library (a) {}\n")
+            write(os.path.join(base, "pdk", "demo", "libs.ref", "README"), "not a library\n")
+            work = os.path.join(base, "work")
+            os.makedirs(work)
+            request = {"contract": "simra.adapter/0", "experiment": None, "adapter": "librelane", "operation": "preflight",
+                       "inputs": {"tools": ["yosys", "vvp", "magic"], "pdk_root": os.path.join(base, "pdk"), "pdk": "demo"},
+                       "root": base, "work_dir": work, "response_path": os.path.join(work, "response.json")}
+            write(os.path.join(work, "request.json"), request)
+            saved = os.environ["PATH"]
+            os.environ["PATH"] = tools + ":/usr/bin:/bin"
+            try:
+                self.assertEqual(librelane_adapter.main(["librelane_adapter.py", os.path.join(work, "request.json")]), 0)
+            finally:
+                os.environ["PATH"] = saved
+            with open(request["response_path"]) as f:
+                response = json.load(f)
+            m = response["measurements"]
+            self.assertEqual((m["tools_ok"]["value"], m["tools_failed"]["value"], m["pdk_libraries"]["value"]), (1, 2, 1))
+            messages = " ".join(d["message"] for d in response["diagnostics"])
+            self.assertIn("vvp", messages)
+            self.assertIn("does not start (exit code 127)", messages)
+            self.assertIn("magic is not on PATH", messages)
+            self.assertTrue(any(line.startswith("pdk demo library cells: lib 1") for line in response["report"]))
+        finally:
+            shutil.rmtree(base)
 
 
 if __name__ == "__main__":

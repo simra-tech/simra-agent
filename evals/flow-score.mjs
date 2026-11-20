@@ -74,7 +74,7 @@ export function emptyReport(ws, max) {
 /**
  * The hold repair tables (repair_timing -hold of OpenROAD) in the text files of the workspace: one entry for each
  * file with a table: { path, endpoints, buffers, wns, tns, errors }. endpoints is the number of end points with hold
- * violations at the start; buffers, wns and tns are from the row "final" of the last table; errors is the number of
+ * violations at the start (the largest one of the rounds in the file); buffers, wns and tns are from the row "final" of the last table; errors is the number of
  * [ERROR lines. Files larger than 30 MB and directories named tmp are not read.
  */
 export function holdRepairLogs(ws) {
@@ -85,15 +85,17 @@ export function holdRepairLogs(ws) {
 		if (!text || !text.includes("endpoints with hold violations")) continue;
 		const finals = [...text.matchAll(/^\s*final\s*\|(.*)$/gm)];
 		if (finals.length === 0) continue;
-		const header = text.match(/^\s*Iter(?:ation)?\s*\|.*$/gm)?.pop() ?? "";
+		// The header of the repair table: other tables of the log (for example of the placement) have no WNS column.
+		const header = (text.match(/^\s*Iter(?:ation)?\s*\|.*$/gm) ?? []).filter((h) => /\bWNS\b/.test(h)).pop() ?? "";
 		const names = header.split("|").map((c) => c.trim().toLowerCase());
 		const cells = `final|${finals[finals.length - 1][1]}`.split("|").map((c) => c.trim());
 		const cell = (name) => {
 			const i = names.indexOf(name);
 			return i >= 0 ? Number.parseFloat(cells[i]) : Number.NaN;
 		};
-		const found = [...text.matchAll(/Found (\d+) endpoints with hold violations/g)].pop();
-		out.push({ path: rel, endpoints: found ? Number(found[1]) : null, buffers: cell("buffers"), wns: cell("wns"), tns: cell("tns"), errors: (text.match(/^\[ERROR/gm) ?? []).length });
+		// A log can have several repair rounds: the block is the one with the largest number of end points at a start.
+		const found = [...text.matchAll(/Found (\d+) endpoints with hold violations/g)].map((m) => Number(m[1]));
+		out.push({ path: rel, endpoints: found.length ? Math.max(...found) : null, buffers: cell("buffers"), wns: cell("wns"), tns: cell("tns"), errors: (text.match(/^\[ERROR/gm) ?? []).length });
 	}
 	return out;
 }

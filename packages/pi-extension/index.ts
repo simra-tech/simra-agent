@@ -545,7 +545,7 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	// A command that ended with exit code 0: the logs with error lines and the empty result files that it wrote. A finding
-	// is shown at most two times.
+	// is shown at most two times. Off by default: set SIMRA_COMMAND_CHECK=on.
 	const commandShown = new Map<string, number>();
 	function commandNote(event: ToolResultEvent, cwd: string, sinceMs: number | null): string | null {
 		if (event.toolName !== "bash" || event.isError || sinceMs === null) return null;
@@ -618,7 +618,12 @@ export default function (pi: ExtensionAPI) {
 		}
 		const since = callStarts.get(event.toolCallId) ?? null;
 		callStarts.delete(event.toolCallId);
-		const flowNotes = process.env.SIMRA_FLOW_CHECK === "off" ? [] : [commandNote(event, ctx.cwd, since), await flowNote(event, ctx.cwd, since)];
+		// The flow check is on by default (SIMRA_FLOW_CHECK=off turns it off). The command check is off by default
+		// (SIMRA_COMMAND_CHECK=on turns it on): in the pilots it did not change a result and it added tokens.
+		const flowNotes = [
+			process.env.SIMRA_COMMAND_CHECK === "on" ? commandNote(event, ctx.cwd, since) : null,
+			process.env.SIMRA_FLOW_CHECK === "off" ? null : await flowNote(event, ctx.cwd, since),
+		];
 		const notes = [await netlistNote(event, ctx.cwd), ...flowNotes, recordNote, outputNote, clock?.(Date.now()) ?? null].filter((n): n is string => n !== null);
 		if (notes.length === 0) return;
 		return { content: [...event.content, ...notes.map((text) => ({ type: "text" as const, text }))], structuredContent: event.structuredContent };

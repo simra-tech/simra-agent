@@ -271,7 +271,22 @@ export function sandboxToolEnv(env) {
  * env: extra environment variables. command: the program and its arguments in the container.
  * readOnly: more mounts, { <host directory>: <container directory> }, read-only.
  */
-export function sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar = "DEEPSEEK_API_KEY", env = {}, readOnly = {}, command }) {
+/**
+ * The CPU list that this process may use (for example from `taskset -c 4-5 node evals/run-arm.mjs ...`), or null
+ * when it may use every CPU. The container runtime does not give the affinity of the caller to the container, so
+ * the list is applied again inside the container.
+ */
+export function ownCpus() {
+	try {
+		const allowed = /^Cpus_allowed_list:\s*(\S+)/m.exec(readFileSync("/proc/self/status", "utf8"))?.[1];
+		const online = readFileSync("/sys/devices/system/cpu/online", "utf8").trim();
+		return allowed && allowed !== online ? allowed : null;
+	} catch {
+		return null;
+	}
+}
+
+export function sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar = "DEEPSEEK_API_KEY", env = {}, readOnly = {}, command, cpus = null }) {
 	return [
 		"run",
 		"--rm",
@@ -302,6 +317,8 @@ export function sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar
 		WORK,
 		...Object.entries({ HOME: `${STATE}/home`, [keyVar]: DUMMY_KEY, ...env }).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
 		imageId,
+		// The pin is set inside the container: every tool that the agent starts gets it.
+		...(cpus ? ["taskset", "-c", cpus] : []),
 		"node",
 		"-e",
 		LAUNCH,
@@ -555,6 +572,8 @@ async function main() {
 	const state = join(run, "state");
 	mkdirSync(join(state, "home"), { recursive: true });
 	const env = makeWorkspace(taskDir, task, ws);
+	// The CPUs of the run: the list of the task environment, or else the CPU list of this process.
+	if (!env.cpus) env.cpus = ownCpus() ?? undefined;
 	const engine = env.engine ?? "podman";
 	const imageId = containerImageId(engine, env.image);
 	if (env.image_id && env.image_id !== imageId) throw new Error(`image ${env.image} is ${imageId}, expected ${env.image_id}`);
@@ -606,7 +625,7 @@ async function main() {
 	// task.json "deliverables" (file paths in the workspace) turns on the end guard of the Simra extension: one re-entry
 	// when the agent ends without them or without a complete check of the final design.
 	const deadline = new Date(Date.now() + timeoutMin * 60_000).toISOString();
-	const argv = sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar: model.keyVar, env: { ...toolEnv, ...cmd.env, SIMRA_SESSION_DEADLINE: deadline, SIMRA_CONTEXT: contextMode, ...(Array.isArray(task.deliverables) ? { SIMRA_DELIVERABLES: JSON.stringify(task.deliverables) } : {}) }, readOnly, command: cmd.command });
+	const argv = sandboxArgs({ engine, imageId, name, ws, state, proxyDir, keyVar: model.keyVar, env: { ...toolEnv, ...cmd.env, SIMRA_SESSION_DEADLINE: deadline, SIMRA_CONTEXT: contextMode, ...(Array.isArray(task.deliverables) ? { SIMRA_DELIVERABLES: JSON.stringify(task.deliverables) } : {}) }, readOnly, command: cmd.command, cpus: env.cpus ?? null });
 	const started = new Date();
 	const child = spawn(engine, argv, { env: engineEnv(), stdio: ["ignore", "pipe", "pipe"] });
 	child.stdout.pipe(createWriteStream(join(run, cmd.codex ? "stdout.log" : "transcript.jsonl")));
@@ -645,6 +664,7 @@ async function main() {
 		context: arm === "simra" ? contextMode : null,
 		// The harness code: the copy in the image, or the checkout that --harness mounted over it.
 		harness: harness ?? "image",
+		cpus: env.cpus ?? null,
 		prepared,
 		model_calls: calls.length,
 		tokens,

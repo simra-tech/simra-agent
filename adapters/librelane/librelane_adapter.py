@@ -7,6 +7,9 @@ Operation "read". Inputs:
   run       a run directory of LibreLane (runs/<tag>), relative to the design root
   against   optional; a second run directory: the read adds the comparison with it (see "compare"). The value
             "auto" takes the sibling run with the fewest different settings.
+  launcher  optional; a list of files that started the run (a flow script, a job list): their hashes go into the record
+The record (input_files) has the hashes of resolved.json, of the last state, of the design inputs that the run names
+(VERILOG_FILES and the SDC files, as they are now) and of the launcher files.
 It reads the files of the run and runs no tool. Measurements: for each corner the worst setup and hold slack
 (setup_ws_ns@<corner>, hold_ws_ns@<corner>), each from the last step that computed it, with the evidence level of
 that step in "level" (no_wires, placement_estimate, global_route, extracted) and the step in "source"; steps,
@@ -32,6 +35,14 @@ PATH, as the launcher does. Measurements: the metrics that the replay computed a
 the step in the run (name, value; the old value is in the report), metrics_changed, views_changed, runtime_s.
 A replay with "set" that changes no metric and no netlist gives a warning: the setting has no effect at this step.
 A variable in "set" that the step does not read fails the request before the run, with the steps that read it.
+
+Operation "preflight". Inputs: tools (optional; a list of tool names, default all known), pdk_root and pdk (optional;
+default $PDK_ROOT and $PDK), min_free_gb (optional, default 5). It starts the version command of each flow tool with
+the PATH of the librelane launcher, lists the views of each library of the PDK (counts of lib, lef, gds and verilog
+files), and checks the free space of the design root and a write to the work directory. Measurements: tools_ok,
+tools_failed, pdk_libraries, disk_free_gb, writable. Warnings: a tool that is not found or does not start; two builds
+of a tool with different versions (the launcher PATH and the default PATH); a PDK that is not found; low free space;
+a failed write.
 """
 
 import json
@@ -100,7 +111,7 @@ def run_dir(request, key="run"):
     return path, None
 
 
-def inputs_of(run, steps, root):
+def inputs_of(run, steps, root, launchers=None):
     files = []
     for name in ("resolved.json",):
         if os.path.isfile(os.path.join(run, name)):
@@ -109,7 +120,19 @@ def inputs_of(run, steps, root):
         last = [s for s in steps if s["done"]]
         if last:
             files.append(file_entry(os.path.join(last[-1]["dir"], "state_out.json"), root, "state"))
-    return {"complete": True, "files": files}
+    seen = set()
+    for role, path in run_reader.design_inputs(run):
+        if path not in seen:
+            seen.add(path)
+            files.append(file_entry(path, root, role))
+    complete = True
+    for name in launchers or []:
+        path = name if os.path.isabs(name) else os.path.join(root, name)
+        if os.path.isfile(path):
+            files.append(file_entry(path, root, "launcher"))
+        else:
+            complete = False
+    return {"complete": complete, "files": files}
 
 
 def compare_diagnostic(result, run, against, root):
@@ -151,12 +174,12 @@ def read(request):
         if route["core_usage_pct_estimate"] is not None:
             measurements["core_route_usage_pct_estimate"] = measured(
                 route["core_usage_pct_estimate"], "%",
-                "{}: usage x die area / core area ({:g} / {:g} um2); an estimate".format(route["step"], route["die_area"], route["core_area"]))
+                "{}: usage x die area / core area ({:g} / {:g} um2); an upper estimate".format(route["step"], route["die_area"], route["core_area"]))
             if route["die_area"] / route["core_area"] > 1.25:
                 diagnostics.append(warning(
                     ("step {}: the usage of the congestion report ({:.2f} %) is over all routing resources of the die. "
-                     "The core is {:.0f} % of the die area, so the usage in the core is about {:.1f} % (usage x die area / "
-                     "core area). State which of the two a number is.").format(
+                     "The core is {:.0f} % of the die area, so the usage in the core is higher: at most about {:.1f} % (usage x "
+                     "die area / core area, with all wires inside the core). State which of the two a number is.").format(
                          route["step"], route["usage_pct"], 100 * route["core_area"] / route["die_area"],
                          route["core_usage_pct_estimate"]), route["step"]))
     for text in run_reader.unfinished(run, steps):
@@ -192,7 +215,7 @@ def read(request):
         report.append("{}  {}  {}  {}  {}".format(
             row["corner"], row["check"], "-" if row["value"] is None else "{:+.4f}".format(row["value"]),
             row["level"] or "-", row["step"] or "-"))
-    return {"contract": CONTRACT, "status": "completed", "tool": tool(), "input_files": inputs_of(run, steps, root),
+    return {"contract": CONTRACT, "status": "completed", "tool": tool(), "input_files": inputs_of(run, steps, root, (request.get("inputs") or {}).get("launcher")),
             "outputs": [], "measurements": measurements, "diagnostics": diagnostics, "report": report}
 
 
@@ -377,6 +400,97 @@ def replay(request):
             "outputs": outputs, "measurements": measurements, "diagnostics": diagnostics, "report": report}
 
 
+TOOLS = (("librelane", ["--version"]), ("openroad", ["-version"]), ("sta", ["-version"]), ("yosys", ["-V"]),
+         ("klayout", ["-v"]), ("magic", ["--version"]), ("netgen", ["-batch", "quit"]), ("verilator", ["--version"]),
+         ("iverilog", ["-V"]), ("vvp", ["-V"]))
+VIEWS = (("lib", (".lib", ".lib.gz")), ("lef", (".lef",)), ("gds", (".gds", ".gds.gz")), ("verilog", (".v",)))
+
+
+def start(argv, env):
+    """(exit code or None, the first line of the output) of a version command."""
+    try:
+        done = subprocess.run(argv, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60,
+                              stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return None, str(e)
+    lines = [l.strip() for l in done.stdout.decode(errors="replace").splitlines() if l.strip()]
+    return done.returncode, (lines[0] if lines else "")[:160]
+
+
+def preflight(request):
+    root = request["root"]
+    inputs = request.get("inputs") or {}
+    wanted = inputs.get("tools") or [name for name, _ in TOOLS]
+    flow_env = dict(os.environ)
+    first = launcher_path()
+    if first:
+        flow_env["PATH"] = ":".join(first + [flow_env.get("PATH", "")])
+    measurements, diagnostics, report = {}, [], ["tool  state  path  version"]
+    found = failed = 0
+    for name, arguments in TOOLS:
+        if name not in wanted:
+            continue
+        path = shutil.which(name, path=flow_env["PATH"])
+        if not path:
+            report.append("{}  not found".format(name))
+            diagnostics.append(warning("the tool {} is not on PATH".format(name), "preflight"))
+            failed += 1
+            continue
+        code, line = start([path] + arguments, flow_env)
+        if code != 0:
+            failed += 1
+            report.append("{}  DOES NOT START  {}  {}".format(name, path, line))
+            diagnostics.append(warning("the tool {} ({}) does not start (exit code {}): {}".format(name, path, code, line), "preflight"))
+            continue
+        found += 1
+        report.append("{}  ok  {}  {}".format(name, path, line))
+        other = shutil.which(name)
+        if other and os.path.realpath(other) != os.path.realpath(path):
+            _, other_line = start([other] + arguments, dict(os.environ))
+            if other_line != line:
+                diagnostics.append(warning(
+                    ("two builds of {}: the librelane launcher uses {} ({}); the default PATH has {} ({}). Record the "
+                     "version of the build that the flow uses, and run single steps with the PATH of the launcher.").format(
+                         name, path, line, other, other_line), "preflight"))
+    measurements["tools_ok"] = measured(found, "", "preflight")
+    measurements["tools_failed"] = measured(failed, "", "preflight")
+    pdk_root, pdk = inputs.get("pdk_root") or os.environ.get("PDK_ROOT"), inputs.get("pdk") or os.environ.get("PDK")
+    libraries = 0
+    if pdk_root and pdk and os.path.isdir(os.path.join(pdk_root, pdk, "libs.ref")):
+        base = os.path.join(pdk_root, pdk, "libs.ref")
+        for library in sorted(os.listdir(base)):
+            if not os.path.isdir(os.path.join(base, library)):
+                continue
+            counts = []
+            for view, endings in VIEWS:
+                directory = os.path.join(base, library, view)
+                names = os.listdir(directory) if os.path.isdir(directory) else []
+                counts.append("{} {}".format(view, sum(1 for n in names if n.endswith(endings))))
+            report.append("pdk {} library {}: {}".format(pdk, library, ", ".join(counts)))
+            libraries += 1
+        measurements["pdk_libraries"] = measured(libraries, "", os.path.join(pdk_root, pdk, "libs.ref"))
+    else:
+        measurements["pdk_libraries"] = missing("", "no libs.ref directory for PDK_ROOT={} PDK={}".format(pdk_root, pdk))
+        diagnostics.append(warning("the PDK was not found: PDK_ROOT={} PDK={} has no libs.ref directory".format(pdk_root, pdk), "preflight"))
+    usage = shutil.disk_usage(root)
+    free_gb = round(usage.free / 1e9, 1)
+    measurements["disk_free_gb"] = measured(free_gb, "GB", display(root, root))
+    need = float(inputs.get("min_free_gb", 5))
+    if free_gb < need:
+        diagnostics.append(warning("the design root has {} GB free; the request needs {} GB (min_free_gb)".format(free_gb, need), "preflight"))
+    try:
+        probe = os.path.join(request["work_dir"], "write.probe")
+        with open(probe, "w") as f:
+            f.write("x" * 4096)
+        os.remove(probe)
+        measurements["writable"] = measured(1, "", "work directory")
+    except OSError as e:
+        measurements["writable"] = measured(0, "", "work directory")
+        diagnostics.append(warning("a write to the work directory failed ({}): a full disk or a user quota".format(e), "preflight"))
+    return {"contract": CONTRACT, "status": "completed", "tool": tool(), "input_files": {"complete": True, "files": []},
+            "outputs": [], "measurements": measurements, "diagnostics": diagnostics, "report": report}
+
+
 def main(argv):
     if len(argv) != 2:
         sys.stderr.write("usage: librelane_adapter.py <request.json>\n")
@@ -386,7 +500,7 @@ def main(argv):
     if request.get("contract") != CONTRACT:
         sys.stderr.write("unsupported contract: {}\n".format(request.get("contract")))
         return 2
-    operation = {"read": read, "compare": compare, "replay": replay}.get(request.get("operation"))
+    operation = {"read": read, "compare": compare, "replay": replay, "preflight": preflight}.get(request.get("operation"))
     response = failure("unknown operation: {}".format(request.get("operation"))) if operation is None else operation(request)
     tmp = request["response_path"] + ".tmp"
     with open(tmp, "w") as f:
