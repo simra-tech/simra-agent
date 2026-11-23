@@ -210,11 +210,16 @@ test("with a terminal, install.sh asks and adds the PATH block once; simra unins
 	writeFileSync(profile, `${bashrc}export AFTER=2\n`);
 	mkdirSync(join(home, ".config", "simra"), { recursive: true });
 	writeFileSync(join(home, ".config", "simra", "auth.json"), "{}");
+	// A connector bundle goes; the user's own adapters stay.
+	const data = join(home, ".local", "share", "simra");
+	mkdirSync(join(data, "connectors-1.0.0-abc", "adapters"), { recursive: true });
+	symlinkSync("connectors-1.0.0-abc", join(data, "connectors"));
+	mkdirSync(join(data, "adapters", "mine"), { recursive: true });
 	const uninstall = await run(join(home, ".local", "bin", "simra"), ["uninstall"], env);
 	assert.equal(uninstall.status, 0, uninstall.stderr);
 	assert.equal(readFileSync(profile, "utf8"), "export BEFORE=1\nexport AFTER=2\n");
 	assert.ok(!existsSync(join(home, ".local", "bin", "simra")));
-	assert.ok(!existsSync(join(home, ".local", "share", "simra")));
+	assert.deepEqual(readdirSync(data), ["adapters"]);
 	assert.ok(existsSync(join(home, ".config", "simra", "auth.json")));
 });
 
