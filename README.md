@@ -115,7 +115,7 @@ It changes nothing else. Then run `simra` in a design folder.
 - `simra update` installs the latest release. It keeps the previous release.
 - `SIMRA_VERSION=<version>` installs that release. `SIMRA_HOME=<dir>` installs to `<dir>`, for example a scratch disk.
 - `simra uninstall` removes the releases, the link and the profile block. Settings and logins stay in
-  `~/.config/simra`.
+  `~/.config/simra`. Adapters and packs in `~/.local/share/simra/adapters` and `technologies` stay too.
 
 The machine also needs the EDA tools that the adapters run (for example ngspice, KLayout and Python 3).
 

@@ -69,7 +69,7 @@ export function packClashes(packs: PackEntry[]): { key: string; packs: PackEntry
 	return out;
 }
 
-/** The technology directories of a design: technology_dirs of the configuration, then the built-in one. */
+/** The technology directories of a design: technology_dirs of the configuration, the user's, then the built-in one. */
 export function designTechnologyDirs(root: string): string[] {
 	return technologySearchPath(loadConfig(root).technology_dirs ?? []);
 }

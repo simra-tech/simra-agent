@@ -110,8 +110,11 @@ export function imageParts(root: string, result: Pick<ResultRecord, "outputs">):
 	return parts;
 }
 
-/** One line per operation of the user's and the built-in adapters, for the tool description. A name found twice is the first one, as in the runner. */
-export function adapterCatalog(): string {
+/**
+ * One line per operation of the user's and the built-in adapters, for the tool description. A name found twice is the
+ * first one, as in the runner. A manifest that does not parse is left out: the other tools must still register.
+ */
+function adapterCatalog(): string {
 	const lines: string[] = [];
 	const seen = new Set<string>();
 	for (const base of adapterSearchPath([])) {
@@ -119,9 +122,13 @@ export function adapterCatalog(): string {
 			const path = join(base, name, "adapter.json");
 			if (seen.has(name) || !existsSync(path)) continue;
 			seen.add(name);
-			const manifest = JSON.parse(readFileSync(path, "utf8")) as AdapterManifest;
-			for (const [op, { description }] of Object.entries(manifest.operations)) {
-				lines.push(`- adapter "${manifest.name}", operation "${op}": ${description}`);
+			try {
+				const manifest = JSON.parse(readFileSync(path, "utf8")) as AdapterManifest;
+				for (const [op, { description }] of Object.entries(manifest.operations)) {
+					lines.push(`- adapter "${manifest.name}", operation "${op}": ${description}`);
+				}
+			} catch {
+				// not an adapter
 			}
 		}
 	}

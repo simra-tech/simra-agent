@@ -28,17 +28,18 @@ function setup(t: { after: (fn: () => void) => void }) {
 	return { parent, design };
 }
 
-test("without a user directory the search paths are the configured and the built-in ones", (t) => {
-	setup(t);
-	assert.deepEqual(adapterSearchPath(["/x"]), ["/x", BUILTIN_ADAPTER_DIR]);
+test("the user's directories come after the configured ones; a missing technology directory is left out", (t) => {
+	const { parent } = setup(t);
+	assert.deepEqual(adapterSearchPath(["/x"]), ["/x", userDir("adapters"), BUILTIN_ADAPTER_DIR]);
 	assert.ok(!technologySearchPath([]).includes(userDir("technologies")));
+	mkdirSync(userDir("technologies"), { recursive: true });
+	assert.deepEqual(technologySearchPath([parent]).slice(0, 2), [parent, userDir("technologies")]);
 });
 
 test("two designs without a configuration run an adapter and find a pack of the user's directory", async (t) => {
 	const { parent, design } = setup(t);
 	cpSync(join(fixtures, "adapters", "fake"), join(parent, "data", "simra", "adapters", "fake"), { recursive: true });
 	cpSync(join(fixtures, "technologies"), join(parent, "data", "simra", "technologies"), { recursive: true });
-	assert.deepEqual(adapterSearchPath(["/x"]), ["/x", userDir("adapters"), BUILTIN_ADAPTER_DIR]);
 	for (const root of [design("a"), design("b")]) {
 		const run = await runExperiment({ root, adapter: "fake", operation: "run", inputs: { mode: "ok" }, purpose: "user adapter" });
 		assert.equal(run.result.status, "completed");

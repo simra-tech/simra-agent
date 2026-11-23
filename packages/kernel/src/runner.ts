@@ -57,8 +57,7 @@ export function userDir(kind: "adapters" | "technologies"): string {
 
 /** The directories of the adapters, in search order: the configured ones (adapter_dirs), the user's, the built-in one. */
 export function adapterSearchPath(configured: string[]): string[] {
-	const user = userDir("adapters");
-	return [...new Set([...configured, ...(existsSync(user) ? [user] : []), BUILTIN_ADAPTER_DIR])];
+	return [...configured, userDir("adapters"), BUILTIN_ADAPTER_DIR];
 }
 
 export interface AdapterManifest {
