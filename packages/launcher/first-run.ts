@@ -44,7 +44,8 @@ export function isFirstRun(agentDir: string): boolean {
 	return !Object.entries(process.env).some(([name, value]) => name.endsWith("_API_KEY") && value);
 }
 
-export async function firstRun(agentDir: string): Promise<void> {
+/** true after a Simra sign-in: simra then stops, because hosted use starts with simra hosted. */
+export async function firstRun(agentDir: string): Promise<boolean> {
 	telemetry.capture("setup_started");
 	try {
 		const settings = SettingsManager.create(process.cwd(), agentDir, { projectTrusted: false });
@@ -53,7 +54,7 @@ export async function firstRun(agentDir: string): Promise<void> {
 			{ label: "Sign in with Simra (invited email)", value: "simra" },
 			{ label: "Another provider or a subscription: log in later with /login", value: undefined },
 		]);
-		if (!choice) { telemetry.capture("setup_completed", { outcome: "deferred" }); return; }
+		if (!choice) { telemetry.capture("setup_completed", { outcome: "deferred" }); return false; }
 		if (choice === "simra") {
 			const cred = await simraOAuth.login({
 				onPrompt: async p => (await showStartupInput(settings, p.message)) || "",
@@ -62,15 +63,18 @@ export async function firstRun(agentDir: string): Promise<void> {
 			});
 			await AuthStorage.create(join(agentDir, "auth.json")).modify("simra", async () => ({ ...cred, type: "oauth" }));
 			telemetry.capture("setup_completed", { outcome: "configured", provider: "simra" });
-			console.error(cred.inference ? "Signed in. Run simra hosted for a fresh recorded session." : "Signed in. Use /simra-account to see your installer grant.");
-			return;
+			console.error(cred.inference
+				? "Signed in. Run simra hosted in a directory you may share with Simra to start a Simra-funded session."
+				: "Signed in. Run simra and choose a model with /login. /simra-account shows your grants.");
+			return true;
 		}
 		const key = (await showStartupInput(settings, `${choice.label}. Paste an API key from ${choice.keys}:`))?.trim();
-		if (!key) { telemetry.capture("setup_completed", { outcome: "cancelled" }); return; }
+		if (!key) { telemetry.capture("setup_completed", { outcome: "cancelled" }); return false; }
 		await AuthStorage.create(join(agentDir, "auth.json")).modify(choice.provider, async () => ({ type: "api_key", key }));
 		settings.setDefaultModelAndProvider(choice.provider, choice.model);
 		await settings.flush();
 		telemetry.capture("setup_completed", { outcome: "configured", provider: choice.provider });
+		return false;
 	} catch (error) {
 		telemetry.capture("setup_completed", { outcome: "error" });
 		throw error;
