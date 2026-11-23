@@ -59,7 +59,7 @@ export async function firstRun(agentDir: string): Promise<boolean> {
 			const cred = await simraOAuth.login({
 				onPrompt: async p => (await showStartupInput(settings, p.message)) || "",
 				onDeviceCode: d => console.error(`Open ${d.verificationUri} and enter ${d.userCode}. Ctrl-C cancels.`),
-				onAuth: a => console.error(a.url), onSelect: async () => undefined,
+				onAuth: a => console.error(a.url), onSelect: async () => undefined, onProgress: m => console.error(m),
 			});
 			await AuthStorage.create(join(agentDir, "auth.json")).modify("simra", async () => ({ ...cred, type: "oauth" }));
 			telemetry.capture("setup_completed", { outcome: "configured", provider: "simra" });

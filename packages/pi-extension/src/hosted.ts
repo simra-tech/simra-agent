@@ -12,7 +12,7 @@ const NOTICE =
 	"Simra pays for this model. Prompts and tool outputs go to Simra and can go to its model provider. Commercial tools can return licensed foundry rules, layer names or limits. Use hosted inference only when you are authorized to share all of that material. Simra retains hosted requests and responses, including the tool results sent to the model, for staff review and evaluation creation with no automatic expiry. For confidential work, select your own inference. You can request removal of a trace and its linked evaluations. Project instructions and files read in this work directory can enter the model context.";
 const START = "Run simra hosted to start a fresh recorded session in an authorized work directory.";
 
-function service() {
+export function service() {
 	const url = new URL(process.env.SIMRA_FLOW_URL || DEFAULT_ORIGIN);
 	if (
 		(url.protocol !== "https:" && !(url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname))) ||
@@ -26,7 +26,7 @@ function service() {
 	return url.origin + "/pilot";
 }
 
-async function call(path: string, token?: string, data?: object, signal?: AbortSignal) {
+export async function call(path: string, token?: string, data?: object, signal?: AbortSignal) {
 	const response = await fetch(service() + path, {
 		method: data ? "POST" : "GET",
 		redirect: "error",
@@ -77,7 +77,17 @@ export const simraOAuth = {
 			await sleep(device.interval * 1000, undefined, { signal });
 			const token = await call("/token", undefined, { credential: device.device_code }, signal);
 			if (token.status === "pending") continue;
-			return stored(token);
+			const credentials = stored(token);
+			// An account with the connector grant gets its connector bundle at sign-in.
+			try {
+				if ((await call("/grants", credentials.access, undefined, callbacks.signal)).connectors) {
+					const { installConnectors } = await import("./connectors.ts");
+					callbacks.onProgress?.(await installConnectors(credentials.access, callbacks.signal));
+				}
+			} catch (error) {
+				callbacks.onProgress?.(`The Simra connectors were not installed: ${(error as Error).message} Run simra update --connectors.`);
+			}
+			return credentials;
 		}
 	},
 	async refreshToken(credentials: OAuthCredentials, signal: AbortSignal) {

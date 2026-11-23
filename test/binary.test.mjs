@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
 import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { connect } from "node:net";
@@ -389,16 +390,26 @@ test("the first run: a welcome, a model, an API key, then pi with the Simra head
 
 test("a first-run Simra sign-in ends with the next step; a connector-only sign-in goes on into pi", { skip: skip || (!has("python3") && "python3 not on PATH"), timeout: 120_000 }, async (t) => {
 	let inference = true;
+	// The connector bundle of a connector-only account: the fake adapter and bundle.json.
+	const stage = tempDir(t, "bundle");
+	cpSync(join(root, "packages", "kernel", "test", "fixtures", "adapters", "fake"), join(stage, "adapters", "fake"), { recursive: true });
+	writeFileSync(join(stage, "bundle.json"), JSON.stringify({ name: "simra-connectors", version: "1.0.0" }));
+	const tarball = execFileSync("tar", ["-czf", "-", "-C", stage, "bundle.json", "adapters"]);
+	const sha256 = createHash("sha256").update(tarball).digest("hex");
 	const service = createServer((req, res) => {
 		res.setHeader("Content-Type", "application/json");
 		if (req.url === "/pilot/device") return res.end(JSON.stringify({ user_code: "ABCDE12345", device_code: "d".repeat(40), expires_in: 60, interval: 1 }));
 		if (req.url === "/pilot/token") return res.end(JSON.stringify({ status: "ok", access: "simra-at-test", refresh: "simra-rt-test", expires_in: 900, inference }));
+		if (req.url === "/pilot/grants") return res.end(JSON.stringify({ inference, connectors: !inference }));
+		if (req.url === "/pilot/connectors") return res.end(JSON.stringify({ version: "1.0.0", sha256, bytes: tarball.length }));
+		if (req.url === "/pilot/connectors/bundle") return res.end(tarball);
 		res.writeHead(404).end("{}");
 	});
 	const url = await listen(t, service);
+	const data = tempDir(t, "data");
 	const run = (agentDir, steps) =>
 		promisify(execFile)("python3", ["-I", join(root, "test/fixtures/terminal.py"), JSON.stringify(steps), binary], {
-			cwd: tmpdir(), timeout: 60_000, env: { ...cleanEnv, PI_OFFLINE: "1", SIMRA_NO_ANALYTICS: "1", SIMRA_FLOW_URL: url, SIMRA_CODING_AGENT_DIR: agentDir },
+			cwd: tmpdir(), timeout: 60_000, env: { ...cleanEnv, PI_OFFLINE: "1", SIMRA_NO_ANALYTICS: "1", SIMRA_FLOW_URL: url, SIMRA_CODING_AGENT_DIR: agentDir, XDG_DATA_HOME: data },
 		}).then((r) => ({ ok: true, out: r.stdout }), (e) => ({ ok: false, out: `${e.stdout}${e.stderr}` }));
 	const signIn = [["Welcome to Simra", "\x1b[B\x1b[B\r"], ["Invited email", "invited@example.test\r"]];
 	const hosted = tempDir(t, "agent");
@@ -408,8 +419,12 @@ test("a first-run Simra sign-in ends with the next step; a connector-only sign-i
 	// The next plain start lands on the Simra model, the only one with a login: it says how hosted use starts.
 	assert.ok((await run(hosted, [["Run simra hosted to start", ""]])).ok);
 	inference = false;
-	const connectors = await run(tempDir(t, "agent"), [...signIn, ["a chip-design agent built on pi", ""]]);
+	const connectorAgent = tempDir(t, "agent");
+	const connectors = await run(connectorAgent, [...signIn, ["Installed Simra connectors 1.0.0.", ""], ["a chip-design agent built on pi", ""]]);
 	assert.ok(connectors.ok, connectors.out);
+	assert.ok(existsSync(join(data, "simra", "connectors", "adapters", "fake", "adapter.json")));
+	const update = await promisify(execFile)(binary, ["update", "--connectors"], { timeout: 30_000, env: { ...cleanEnv, SIMRA_FLOW_URL: url, SIMRA_CODING_AGENT_DIR: connectorAgent, XDG_DATA_HOME: data } });
+	assert.match(update.stderr, /Simra connectors 1.0.0 are installed/);
 });
 
 test("failed first-run setup flushes its analytics outcome", { skip: skip || (!has("python3") && "python3 not on PATH"), timeout: 60_000 }, async (t) => {

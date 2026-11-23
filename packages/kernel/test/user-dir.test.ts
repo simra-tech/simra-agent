@@ -3,7 +3,7 @@ import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { adapterSearchPath, BUILTIN_ADAPTER_DIR, runExperiment, technologySearchPath, userDir } from "../src/index.ts";
+import { adapterSearchPath, BUILTIN_ADAPTER_DIR, connectorDir, runExperiment, technologySearchPath, userDir } from "../src/index.ts";
 
 // Adapters and technology packs in the user's directory (<XDG_DATA_HOME>/simra/{adapters,technologies}) reach every
 // design without a configuration, after the configured directories and before the built-in ones.
@@ -30,7 +30,7 @@ function setup(t: { after: (fn: () => void) => void }) {
 
 test("the user's directories come after the configured ones; a missing technology directory is left out", (t) => {
 	const { parent } = setup(t);
-	assert.deepEqual(adapterSearchPath(["/x"]), ["/x", userDir("adapters"), BUILTIN_ADAPTER_DIR]);
+	assert.deepEqual(adapterSearchPath(["/x"]), ["/x", userDir("adapters"), connectorDir("adapters"), BUILTIN_ADAPTER_DIR]);
 	assert.ok(!technologySearchPath([]).includes(userDir("technologies")));
 	mkdirSync(userDir("technologies"), { recursive: true });
 	assert.deepEqual(technologySearchPath([parent]).slice(0, 2), [parent, userDir("technologies")]);

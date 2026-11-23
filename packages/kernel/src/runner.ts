@@ -47,17 +47,24 @@ export const BUILTIN_ADAPTER_DIR = join(INSTALL_DIR, "adapters");
 /** The technology packs (PDK data for adapters, see technologies/README.md). */
 export const BUILTIN_TECHNOLOGY_DIR = join(INSTALL_DIR, "technologies");
 
+const dataDir = () => join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "simra");
+
 /**
  * The adapters or technology packs installed for the user: <XDG_DATA_HOME or ~/.local/share>/simra/<kind>. Every design
  * finds them, and an update keeps them, because they are outside the release folder.
  */
 export function userDir(kind: "adapters" | "technologies"): string {
-	return join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "simra", kind);
+	return join(dataDir(), kind);
 }
 
-/** The directories of the adapters, in search order: the configured ones (adapter_dirs), the user's, the built-in one. */
+/** The adapters or technology packs of the installed connector bundle: <data>/simra/connectors/<kind>, replaced as a unit. */
+export function connectorDir(kind: "adapters" | "technologies"): string {
+	return join(dataDir(), "connectors", kind);
+}
+
+/** The directories of the adapters, in search order: the configured ones (adapter_dirs), the user's, the connector bundle's, the built-in one. */
 export function adapterSearchPath(configured: string[]): string[] {
-	return [...configured, userDir("adapters"), BUILTIN_ADAPTER_DIR];
+	return [...configured, userDir("adapters"), connectorDir("adapters"), BUILTIN_ADAPTER_DIR];
 }
 
 export interface AdapterManifest {
@@ -164,7 +171,7 @@ const CLI_ARGS = IN_BINARY ? [] : [fileURLToPath(new URL("./cli.ts", import.meta
 
 /**
  * The directories of the technology packs that the adapter searches, in order: the configured ones (technology_dirs),
- * the user's, then the built-in one. A configured directory that does not exist is an error. A path with ":" cannot be given,
+ * the user's, the connector bundle's, then the built-in one. A configured directory that does not exist is an error. A path with ":" cannot be given,
  * because SIMRA_TECHNOLOGY_DIR separates the entries with ":".
  */
 export function technologySearchPath(configured: string[]): string[] {
@@ -172,7 +179,7 @@ export function technologySearchPath(configured: string[]): string[] {
 		if (!existsSync(dir)) throw new Error(`technology_dirs: directory not found: ${dir}`);
 		if (dir.includes(":")) throw new Error(`technology_dirs: a path with ":" is not supported: ${dir}`);
 	}
-	const optional = [userDir("technologies"), BUILTIN_TECHNOLOGY_DIR].filter((dir) => existsSync(dir));
+	const optional = [userDir("technologies"), connectorDir("technologies"), BUILTIN_TECHNOLOGY_DIR].filter((dir) => existsSync(dir));
 	return [...new Set([...configured, ...optional])];
 }
 

@@ -31,7 +31,7 @@ const COMMANDS = `Simra commands:
   simra pdf <file>                  Print the text of a PDF (--render <N>: a page image)
   simra pack init --pdk <name>      Propose a technology pack for a PDK (needs an adapter with pack_propose)
   simra pack check --pdk <name>     Check a technology pack against its PDK
-  simra update                      Update simra (--extensions, --models: pi packages, model catalogs)
+  simra update                      Update simra and its connectors (--connectors: only those; --extensions, --models: pi packages, model catalogs)
   simra uninstall                   Remove simra; settings and logins stay
   simra hosted [-p "prompt"]        Start a fresh Simra-funded, recorded session
   simra analytics <on|off|status>    Choose whether to share usage metadata
