@@ -58,12 +58,19 @@ if ((KERNEL_COMMANDS as readonly string[]).includes(args[0])) {
 	// pi's VERSION is the version of the release: pi reads the package.json next to the binary.
 	setVersions(VERSION, piPackage.version);
 	if (args[0] === "--help" || args[0] === "-h") console.log(COMMANDS);
+	let setupError: Error | undefined;
 	try {
-		let signedIn = false;
+		let stop = false;
 		if (args.length === 0 && process.stdin.isTTY && process.stdout.isTTY) {
 			const { firstRun, isFirstRun, askAnalyticsConsent } = await import("./first-run.ts");
 			await askAnalyticsConsent(getAgentDir());
-			if (isFirstRun(getAgentDir())) signedIn = await firstRun(getAgentDir());
+			if (isFirstRun(getAgentDir())) {
+				// A failed setup (network, proxy, login) gets a message after the analytics flush, not a stack trace.
+				stop = await firstRun(getAgentDir()).catch((error: Error) => {
+					setupError = error;
+					return true;
+				});
+			}
 		}
 		const hosted = args[0] === "hosted";
 		if (hosted && !(args.length === 1 || (args.length === 3 && args[1] === "-p"))) {
@@ -71,8 +78,12 @@ if ((KERNEL_COMMANDS as readonly string[]).includes(args[0])) {
 		}
 		const freshId = hosted ? randomUUID() : undefined;
 		const piArgs = freshId ? ["--provider", "simra", "--model", "simra-hosted", "--session-id", freshId, ...(args.length === 3 ? ["-p", "--", args[2]] : [])] : args;
-		if (!signedIn) await main(piArgs, { extensionFactories: [(pi) => simra(pi, freshId), updateNotice(VERSION, join(getAgentDir(), "update-check"))] });
+		if (!stop) await main(piArgs, { extensionFactories: [(pi) => simra(pi, freshId), updateNotice(VERSION, join(getAgentDir(), "update-check"))] });
 	} finally {
 		await telemetry.shutdown();
+		if (setupError) {
+			console.error(`simra: ${setupError.message}`);
+			process.exitCode = 1;
+		}
 	}
 }

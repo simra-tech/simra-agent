@@ -396,9 +396,9 @@ test("a first-run Simra sign-in ends with the next step; a connector-only sign-i
 		res.writeHead(404).end("{}");
 	});
 	const url = await listen(t, service);
-	const run = (agentDir, steps) =>
+	const run = (agentDir, steps, env = {}) =>
 		promisify(execFile)("python3", ["-I", join(root, "test/fixtures/terminal.py"), JSON.stringify(steps), binary], {
-			cwd: tmpdir(), timeout: 60_000, env: { ...cleanEnv, PI_OFFLINE: "1", SIMRA_NO_ANALYTICS: "1", SIMRA_FLOW_URL: url, SIMRA_CODING_AGENT_DIR: agentDir },
+			cwd: tmpdir(), timeout: 60_000, env: { ...cleanEnv, PI_OFFLINE: "1", SIMRA_NO_ANALYTICS: "1", SIMRA_FLOW_URL: url, SIMRA_CODING_AGENT_DIR: agentDir, ...env },
 		}).then((r) => ({ ok: true, out: r.stdout }), (e) => ({ ok: false, out: `${e.stdout}${e.stderr}` }));
 	const signIn = [["Welcome to Simra", "\x1b[B\x1b[B\r"], ["Invited email", "invited@example.test\r"]];
 	const hosted = tempDir(t, "agent");
@@ -410,6 +410,10 @@ test("a first-run Simra sign-in ends with the next step; a connector-only sign-i
 	inference = false;
 	const connectors = await run(tempDir(t, "agent"), [...signIn, ["a chip-design agent built on pi", ""]]);
 	assert.ok(connectors.ok, connectors.out);
+	// A proxy page instead of the service: a message, not a stack trace.
+	const page = await listen(t, createServer((req, res) => res.writeHead(405, { "Content-Type": "text/html" }).end("Request not allowed")));
+	const proxied = await run(tempDir(t, "agent"), [...signIn, ["gave no Simra answer (HTTP 405)", ""]], { SIMRA_FLOW_URL: page });
+	assert.ok(proxied.ok && !proxied.out.includes("Bun v"), proxied.out);
 });
 
 test("failed first-run setup flushes its analytics outcome", { skip: skip || (!has("python3") && "python3 not on PATH"), timeout: 60_000 }, async (t) => {
