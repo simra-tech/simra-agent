@@ -5,6 +5,7 @@ import "../../node_modules/@earendil-works/pi-coding-agent/dist/bun/sandbox-env-
 import "./env.ts";
 import { telemetry } from "@simra-tech/kernel/telemetry";
 import { KERNEL_COMMANDS, setPdfiumWasmPath } from "@simra-tech/kernel";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 // Bun embeds a file import in the binary and gives its path.
 import pdfiumWasm from "@hyzyla/pdfium/pdfium.wasm" with { type: "file" };
@@ -32,6 +33,7 @@ const COMMANDS = `Simra commands:
   simra pack check --pdk <name>     Check a technology pack against its PDK
   simra update                      Update simra (--extensions, --models: pi packages, model catalogs)
   simra uninstall                   Remove simra; settings and logins stay
+  simra hosted [-p "prompt"]        Start a fresh Simra-funded, recorded session
   simra analytics <on|off|status>    Choose whether to share usage metadata
 `;
 
@@ -57,12 +59,19 @@ if ((KERNEL_COMMANDS as readonly string[]).includes(args[0])) {
 	setVersions(VERSION, piPackage.version);
 	if (args[0] === "--help" || args[0] === "-h") console.log(COMMANDS);
 	try {
+		let signedIn = false;
 		if (args.length === 0 && process.stdin.isTTY && process.stdout.isTTY) {
 			const { firstRun, isFirstRun, askAnalyticsConsent } = await import("./first-run.ts");
 			await askAnalyticsConsent(getAgentDir());
-			if (isFirstRun(getAgentDir())) await firstRun(getAgentDir());
+			if (isFirstRun(getAgentDir())) signedIn = await firstRun(getAgentDir());
 		}
-		await main(args, { extensionFactories: [simra, updateNotice(VERSION, join(getAgentDir(), "update-check"))] });
+		const hosted = args[0] === "hosted";
+		if (hosted && !(args.length === 1 || (args.length === 3 && args[1] === "-p"))) {
+			throw Error('Usage: simra hosted [-p "prompt"]. Hosted sessions always start fresh.');
+		}
+		const freshId = hosted ? randomUUID() : undefined;
+		const piArgs = freshId ? ["--provider", "simra", "--model", "simra-hosted", "--session-id", freshId, ...(args.length === 3 ? ["-p", "--", args[2]] : [])] : args;
+		if (!signedIn) await main(piArgs, { extensionFactories: [(pi) => simra(pi, freshId), updateNotice(VERSION, join(getAgentDir(), "update-check"))] });
 	} finally {
 		await telemetry.shutdown();
 	}

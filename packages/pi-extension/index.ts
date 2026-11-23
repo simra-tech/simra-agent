@@ -75,6 +75,7 @@ import {
 } from "@simra-tech/kernel";
 import pkg from "./package.json" with { type: "json" };
 import { telemetry } from "@simra-tech/kernel/telemetry";
+import { registerHosted } from "./src/hosted.ts";
 import { registerAnalytics } from "./src/analytics.ts";
 
 /** The versions that /simra-version and the header show. */
@@ -393,7 +394,8 @@ export function leanContext<T extends Msg>(messages: T[]): T[] {
 
 export const STATE_NOTE_MAX = 3000;
 
-export default function (pi: ExtensionAPI) {
+export default function simra(pi: ExtensionAPI, freshHostedId?: string) {
+	registerHosted(pi, freshHostedId);
 	registerAnalytics(pi);
 
 	// The known gaps of a simulator (workaround registry), shown with the first result of each adapter and PDK in a session.
