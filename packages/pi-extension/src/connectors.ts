@@ -23,20 +23,22 @@ export function installedConnectors(): string | undefined {
 
 /** Install the bundle of the service when its version differs from the installed one. Gives the line for the user. */
 export async function installConnectors(access: string, signal?: AbortSignal): Promise<string> {
-	const offer = await call("/connectors", access, undefined, signal);
-	const version = offer.version;
-	if (typeof version !== "string" || !/^[\w.+-]+$/.test(version) || !/^[0-9a-f]{64}$/.test(offer.sha256)) {
-		throw Error("The Simra service gave no valid connector bundle.");
-	}
-	if (installedConnectors() === version) return `Simra connectors ${version} are installed.`;
+	const valid = (version: unknown): version is string => typeof version === "string" && /^[\w.+-]+$/.test(version);
+	const offered = (await call("/connectors", access, undefined, signal)).version;
+	if (!valid(offered)) throw Error("The Simra service gave no valid connector bundle.");
+	if (installedConnectors() === offered) return `Simra connectors ${offered} are installed.`;
 	const response = await fetch(`${service()}/connectors/bundle`, {
 		headers: { Authorization: `Bearer ${access}` },
 		redirect: "error",
 		signal: AbortSignal.any([AbortSignal.timeout(120_000), ...(signal ? [signal] : [])]),
 	});
 	if (!response.ok) throw Error(`Downloading the Simra connectors failed (HTTP ${response.status}).`);
+	// The bytes carry their own version and digest: the service may have a newer release than the first answer named.
+	const version = response.headers.get("x-simra-connectors-version");
+	const sha256 = response.headers.get("x-simra-connectors-sha256");
+	if (!valid(version) || !/^[0-9a-f]{64}$/.test(sha256 ?? "")) throw Error("The Simra service gave no valid connector bundle.");
 	const data = Buffer.from(await response.arrayBuffer());
-	if (createHash("sha256").update(data).digest("hex") !== offer.sha256) throw Error("The Simra connectors download is incomplete. Nothing changed.");
+	if (createHash("sha256").update(data).digest("hex") !== sha256) throw Error("The Simra connectors download is incomplete. Nothing changed.");
 	const base = dirname(link());
 	mkdirSync(base, { recursive: true });
 	const current = lstatSync(link(), { throwIfNoEntry: false });

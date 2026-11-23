@@ -28,7 +28,7 @@ function bundle(dir: string, version: string): { data: Buffer; sha256: string } 
 
 async function setup(t: { after: (fn: () => void | Promise<void>) => void }) {
 	const dir = mkdtempSync(join(tmpdir(), "simra-connectors-"));
-	const state = { served: bundle(dir, "1.0.0"), version: "1.0.0", connectors: true, corrupt: false, downloads: 0, refreshes: 0, used: new Set<string>(), refresh: "simra-rt-0", script: "exit 0" };
+	const state = { served: bundle(dir, "1.0.0"), version: "1.0.0", connectors: true, corrupt: false, downloads: 0, refreshes: 0, used: new Set<string>(), refresh: "simra-rt-0", script: "exit 0", offered: undefined as string | undefined };
 	const server = createServer(async (req, res) => {
 		let body = "";
 		for await (const chunk of req) body += chunk;
@@ -47,10 +47,12 @@ async function setup(t: { after: (fn: () => void | Promise<void>) => void }) {
 		}
 		if (!auth.startsWith("Bearer simra-at-")) return res.writeHead(401).end(JSON.stringify({ detail: "Sign in with Simra" }));
 		if (req.url === "/pilot/grants") return res.end(JSON.stringify({ inference: false, connectors: state.connectors }));
-		if (req.url === "/pilot/connectors") return res.end(JSON.stringify({ version: state.version, sha256: state.served.sha256, bytes: state.served.data.length }));
+		if (req.url === "/pilot/connectors") return res.end(JSON.stringify({ version: state.offered ?? state.version, sha256: state.served.sha256, bytes: state.served.data.length }));
 		if (req.url === "/pilot/connectors/bundle") {
 			state.downloads++;
 			res.setHeader("Content-Type", "application/gzip");
+			res.setHeader("X-Simra-Connectors-Version", state.version);
+			res.setHeader("X-Simra-Connectors-Sha256", state.served.sha256);
 			return res.end(state.corrupt ? state.served.data.subarray(0, 100) : state.served.data);
 		}
 		res.writeHead(404).end("{}");
@@ -103,6 +105,10 @@ test("the bundle installs once, a new version replaces it, the previous one stay
 	serve("1.1.0");
 	assert.equal(await installConnectors("simra-at-0"), "Installed Simra connectors 1.1.0.");
 	assert.equal(installedConnectors(), "1.1.0");
+	// The metadata came from a container with an older release: the bytes name their own version.
+	serve("1.3.0");
+	state.offered = "1.2.0";
+	assert.equal(await installConnectors("simra-at-0"), "Installed Simra connectors 1.3.0.");
 });
 
 test("a broken download, an unpack failure or another version inside change nothing", async (t) => {

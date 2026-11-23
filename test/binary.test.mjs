@@ -402,7 +402,7 @@ test("a first-run Simra sign-in ends with the next step; a connector-only sign-i
 		if (req.url === "/pilot/token") return res.end(JSON.stringify({ status: "ok", access: "simra-at-test", refresh: "simra-rt-test", expires_in: 900, inference }));
 		if (req.url === "/pilot/grants") return res.end(JSON.stringify({ inference, connectors: !inference }));
 		if (req.url === "/pilot/connectors") return res.end(JSON.stringify({ version: "1.0.0", sha256, bytes: tarball.length }));
-		if (req.url === "/pilot/connectors/bundle") return res.end(tarball);
+		if (req.url === "/pilot/connectors/bundle") return res.writeHead(200, { "X-Simra-Connectors-Version": "1.0.0", "X-Simra-Connectors-Sha256": sha256 }).end(tarball);
 		res.writeHead(404).end("{}");
 	});
 	const url = await listen(t, service);
