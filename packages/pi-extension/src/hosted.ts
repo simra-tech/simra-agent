@@ -39,10 +39,14 @@ async function call(path: string, token?: string, data?: object, signal?: AbortS
 	});
 	if (response.status >= 500) throw Error("Simra service unavailable. Retry or choose your own provider.");
 	// A proxy or a wrong SIMRA_FLOW_URL can answer with a page instead of JSON.
-	const result = await response.json().catch(() => null);
-	if (!result) throw Error(`${service()} gave no Simra answer (HTTP ${response.status}). Check the proxy settings or SIMRA_FLOW_URL.`);
+	const result = await response.json().catch((error) => {
+		if (signal?.aborted) throw error;
+		return undefined;
+	});
+	if (result === undefined)
+		throw Error(`${new URL(service()).origin} gave no Simra answer (HTTP ${response.status}). Check the proxy settings or SIMRA_FLOW_URL.`);
 	if (!response.ok)
-		throw Error(typeof result.detail === "string" ? result.detail : "Simra authorization failed or expired. Retry /login simra.");
+		throw Error(typeof result?.detail === "string" ? result.detail : "Simra authorization failed or expired. Retry /login simra.");
 	return result;
 }
 
