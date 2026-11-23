@@ -115,7 +115,7 @@ It changes nothing else. Then run `simra` in a design folder.
 - `simra update` installs the latest release. It keeps the previous release.
 - `SIMRA_VERSION=<version>` installs that release. `SIMRA_HOME=<dir>` installs to `<dir>`, for example a scratch disk.
 - `simra uninstall` removes the releases, the link and the profile block. Settings and logins stay in
-  `~/.config/simra`.
+  `~/.config/simra`. Adapters and packs in `~/.local/share/simra/adapters` and `technologies` stay too.
 
 The machine also needs the EDA tools that the adapters run (for example ngspice, KLayout and Python 3).
 
@@ -501,7 +501,7 @@ kit. To add a PDK:
    questions. The run is a normal experiment record; `npx simra show <id>` prints it again.
 3. Run the command again with `--write`. In a terminal, the command also asks before it writes. It writes the pack to
    `<dir>/<pdk>/technology.json`. `<dir>` is `--dir`, else the first entry of `technology_dirs`, else
-   `${XDG_DATA_HOME:-~/.local/share}/simra/technologies`. It never overwrites a pack file.
+   `${XDG_DATA_HOME:-~/.local/share}/simra/technologies`, which every design searches. It never overwrites a pack file.
 4. When the command says so, add the directory to `technology_dirs` of `simra.config.json` or `simra.local.json`.
 5. Edit the pack file for the answers of step 2.
 6. Run `npx simra pack check --pdk <name>`. It prints `pass`, `fail` (with the failure class) or `not run` (with the
