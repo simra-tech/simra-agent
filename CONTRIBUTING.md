@@ -193,7 +193,7 @@ Rules:
 - The adapter does not contain PDK facts (for example the parameter names of a MOS model). It reads them from
   a technology pack in the directories that `SIMRA_TECHNOLOGY_DIR` gives, a list separated by `:` that the
   adapter searches in order (see [technologies/README.md](technologies/README.md)). The runner sets this
-  variable from `technology_dirs` of the configuration, the user's directory and the built-in directory, and a container environment
+  variable from `technology_dirs` of the configuration, the user's directory, the connector bundle and the built-in directory, and a container environment
   mounts each directory read-only. The adapter adds the pack file to `input_files` with the role
   `technology`.
 

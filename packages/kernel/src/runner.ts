@@ -62,9 +62,18 @@ export function connectorDir(kind: "adapters" | "technologies"): string {
 	return join(dataDir(), "connectors", kind);
 }
 
+/** The connector bundle's directory through its link, resolved: a run keeps one version while an update swaps the link. */
+function bundleDir(kind: "adapters" | "technologies"): string {
+	try {
+		return realpathSync(connectorDir(kind));
+	} catch {
+		return connectorDir(kind);
+	}
+}
+
 /** The directories of the adapters, in search order: the configured ones (adapter_dirs), the user's, the connector bundle's, the built-in one. */
 export function adapterSearchPath(configured: string[]): string[] {
-	return [...configured, userDir("adapters"), connectorDir("adapters"), BUILTIN_ADAPTER_DIR];
+	return [...configured, userDir("adapters"), bundleDir("adapters"), BUILTIN_ADAPTER_DIR];
 }
 
 export interface AdapterManifest {
@@ -179,7 +188,7 @@ export function technologySearchPath(configured: string[]): string[] {
 		if (!existsSync(dir)) throw new Error(`technology_dirs: directory not found: ${dir}`);
 		if (dir.includes(":")) throw new Error(`technology_dirs: a path with ":" is not supported: ${dir}`);
 	}
-	const optional = [userDir("technologies"), connectorDir("technologies"), BUILTIN_TECHNOLOGY_DIR].filter((dir) => existsSync(dir));
+	const optional = [userDir("technologies"), bundleDir("technologies"), BUILTIN_TECHNOLOGY_DIR].filter((dir) => existsSync(dir));
 	return [...new Set([...configured, ...optional])];
 }
 

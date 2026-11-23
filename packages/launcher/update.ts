@@ -67,14 +67,14 @@ export async function selfUpdate(args: string[]): Promise<number> {
 		console.error("usage: simra update [--connectors] | simra update --extensions | simra update --models");
 		return 2;
 	}
-	const status = only ? 0 : await updateRelease();
+	const status = only ? 0 : await updateRelease().catch((error: Error) => (console.error(`simra update: ${error.message}`), 1));
 	try {
-		const message = await updateConnectors(process.env.SIMRA_CODING_AGENT_DIR ?? "");
+		const message = await updateConnectors(only);
 		if (message) console.error(`simra: ${message}`);
-		else if (only) console.error("simra: no connector bundle for this login. Sign in with /login simra.");
 		return status;
 	} catch (error) {
-		console.error(`simra: the connectors were not updated: ${(error as Error).message}`);
+		// Quiet for a login without connectors: nothing is installed, so nothing is out of date.
+		if (only || installedConnectors()) console.error(`simra: the connectors were not updated: ${(error as Error).message}`);
 		return only ? 1 : status;
 	}
 }
@@ -91,19 +91,22 @@ export async function connectorAccess(agentDir: string): Promise<string | undefi
 		return undefined;
 	}
 	const credential = await AuthStorage.create(path).modify("simra", async (current) => {
-		if (current?.type !== "oauth" || current.expires > Date.now()) return undefined;
+		// Five minutes of validity left at least, as pi does: enough for the download.
+		if (current?.type !== "oauth" || current.expires > Date.now() + 300_000) return undefined;
 		return { ...(await simraOAuth.refreshToken(current, AbortSignal.timeout(20_000))), type: "oauth" };
 	});
 	return credential?.type === "oauth" ? simraOAuth.getApiKey(credential) : undefined;
 }
 
-/** The connector bundle of a login with the connector grant. undefined when there is nothing to say. */
-async function updateConnectors(agentDir: string): Promise<string | undefined> {
-	const access = await connectorAccess(agentDir);
-	if (!access) return undefined;
+/** The connector bundle of a login with the connector grant. The line for the user; without --connectors, undefined when there is nothing to say. */
+async function updateConnectors(only: boolean): Promise<string | undefined> {
+	const agentDir = process.env.SIMRA_CODING_AGENT_DIR;
+	const access = agentDir ? await connectorAccess(agentDir) : undefined;
+	if (!access) return only ? "no Simra login. Sign in with /login simra." : undefined;
 	if ((await call("/grants", access)).connectors) return installConnectors(access);
 	const installed = installedConnectors();
-	return installed ? `no connector grant: the installed Simra connectors ${installed} stay.` : undefined;
+	if (installed) return `no connector grant: the installed Simra connectors ${installed} stay.`;
+	return only ? "this Simra login has no connector grant." : undefined;
 }
 
 /** Run the latest install.sh, in the SIMRA_HOME of this installation. */

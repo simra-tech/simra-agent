@@ -1,11 +1,11 @@
 // The connector bundle of an invited account: adapters and technology packs from the Simra service, released apart
-// from the public simra. <data>/simra/connectors is a link to connectors-<version>/, and an install replaces the link in
-// one rename, so a failed download or unpack leaves the installed set as it was. The kernel searches the link.
+// from the public simra. <data>/simra/connectors is a link to a connectors-<version>-<id>/ folder, and an install replaces
+// the link in one rename, so a failed download or unpack leaves the installed set as it was. The kernel searches the link.
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { connectorDir } from "@simra-tech/kernel";
 import { call, service } from "./hosted.ts";
 
@@ -39,24 +39,26 @@ export async function installConnectors(access: string, signal?: AbortSignal): P
 	if (createHash("sha256").update(data).digest("hex") !== offer.sha256) throw Error("The Simra connectors download is incomplete. Nothing changed.");
 	const base = dirname(link());
 	mkdirSync(base, { recursive: true });
-	const stage = mkdtempSync(join(base, ".connectors-"));
+	const current = lstatSync(link(), { throwIfNoEntry: false });
+	if (current && !current.isSymbolicLink()) throw Error(`${link()} is not the link that simra makes. Move it away, then run simra update --connectors.`);
+	const previous = current ? readlinkSync(link()) : undefined;
+	// A new folder per install: a concurrent install or a running session never sees its files change.
+	const dir = mkdtempSync(join(base, `connectors-${version}-`));
 	try {
-		const tar = spawnSync("tar", ["-xzf", "-", "-C", stage], { input: data, encoding: "utf8" });
-		if (tar.status !== 0) throw Error(`Unpacking the Simra connectors failed: ${tar.stderr.trim()}`);
-		if (JSON.parse(readFileSync(join(stage, "bundle.json"), "utf8")).version !== version) throw Error("The Simra connectors bundle has another version. Nothing changed.");
-		const name = `connectors-${version}`;
-		const previous = existsSync(link()) ? readlinkSync(link()) : undefined;
-		rmSync(join(base, name), { recursive: true, force: true });
-		renameSync(stage, join(base, name));
-		rmSync(join(base, "connectors.new"), { force: true });
-		symlinkSync(name, join(base, "connectors.new"));
-		renameSync(join(base, "connectors.new"), link());
-		// Keep this version and the previous one: a running session may still use the previous one.
-		for (const old of readdirSync(base).filter((n) => n.startsWith("connectors-") && n !== name && n !== previous)) {
-			rmSync(join(base, old), { recursive: true, force: true });
-		}
-	} finally {
-		rmSync(stage, { recursive: true, force: true });
+		const tar = spawnSync("tar", ["-xzf", "-", "--no-same-owner", "-C", dir], { input: data, encoding: "utf8" });
+		if (tar.status !== 0) throw Error(`Unpacking the Simra connectors failed: ${tar.error?.message ?? tar.stderr.trim()}`);
+		if (JSON.parse(readFileSync(join(dir, "bundle.json"), "utf8")).version !== version) throw Error("The Simra connectors bundle has another version. Nothing changed.");
+		const next = mkdtempSync(join(base, ".connectors-link-"));
+		rmSync(next, { recursive: true });
+		symlinkSync(basename(dir), next);
+		renameSync(next, link());
+	} catch (error) {
+		rmSync(dir, { recursive: true, force: true });
+		throw error;
+	}
+	// Keep this version and the previous one, which a running session may still use. Interrupted installs go too.
+	for (const old of readdirSync(base).filter((n) => /^\.?connectors-/.test(n) && n !== basename(dir) && n !== previous)) {
+		rmSync(join(base, old), { recursive: true, force: true });
 	}
 	return `Installed Simra connectors ${version}.`;
 }

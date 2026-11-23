@@ -2,6 +2,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Model, OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
+import { installConnectors } from "./connectors.ts";
 
 const DEFAULT_ORIGIN = "https://chipoai--flowfoundry-server-server-serve.modal.run";
 const PROVIDER = "simra";
@@ -62,6 +63,11 @@ function checkIssuer(credentials: OAuthCredentials) {
 	if (credentials.service !== service()) throw Error("Simra service changed. Sign in again.");
 }
 
+/** The result of the connector install at sign-in, until a session shows it. */
+let connectorNotice: string | undefined;
+/** true once the tools are registered: connectors installed later need a restart. */
+let registered = false;
+
 export const simraOAuth = {
 	name: "Sign in with Simra",
 	async login(callbacks: OAuthLoginCallbacks) {
@@ -80,15 +86,17 @@ export const simraOAuth = {
 			const token = await call("/token", undefined, { credential: device.device_code }, signal);
 			if (token.status === "pending") continue;
 			const credentials = stored(token);
-			// An account with the connector grant gets its connector bundle at sign-in.
+			// An account with the connector grant gets its connector bundle at sign-in. The login dialog closes at once, so
+			// the line is shown again when the session starts or at the next prompt.
 			try {
 				if ((await call("/grants", credentials.access, undefined, callbacks.signal)).connectors) {
-					const { installConnectors } = await import("./connectors.ts");
-					callbacks.onProgress?.(await installConnectors(credentials.access, callbacks.signal));
+					const done = await installConnectors(credentials.access, callbacks.signal);
+					connectorNotice = registered ? `${done} Restart simra so that the agent sees them.` : done;
 				}
 			} catch (error) {
-				callbacks.onProgress?.(`The Simra connectors were not installed: ${(error as Error).message} Run simra update --connectors.`);
+				connectorNotice = `The Simra connectors were not installed: ${(error as Error).message} Run simra update --connectors.`;
 			}
+			if (connectorNotice) callbacks.onProgress?.(connectorNotice);
 			return credentials;
 		}
 	},
@@ -103,6 +111,12 @@ export const simraOAuth = {
 };
 
 export function registerHosted(pi: ExtensionAPI, freshId?: string) {
+	registered = true;
+	const showNotice = (ctx: ExtensionContext) => {
+		if (connectorNotice && ctx.hasUI) ctx.ui.notify(connectorNotice, "info");
+		connectorNotice = undefined;
+	};
+	pi.on("before_agent_start", (_event, ctx) => showNotice(ctx));
 	let active: string | undefined;
 	let generation = 0;
 	let resolvingAccount = false;
@@ -174,6 +188,7 @@ export function registerHosted(pi: ExtensionAPI, freshId?: string) {
 		},
 	});
 	pi.on("session_start", async (event, ctx) => {
+		showNotice(ctx);
 		clear(ctx);
 		const candidate = freshId;
 		const startingGeneration = generation;

@@ -116,7 +116,8 @@ It changes nothing else. Then run `simra` in a design folder.
   also updates the connector bundle. `simra update --connectors` updates only the bundle.
 - `SIMRA_VERSION=<version>` installs that release. `SIMRA_HOME=<dir>` installs to `<dir>`, for example a scratch disk.
 - `simra uninstall` removes the releases, the link and the profile block. Settings and logins stay in
-  `~/.config/simra`. Adapters and packs in `~/.local/share/simra/adapters` and `technologies` stay too.
+  `~/.config/simra`. Adapters and packs in `~/.local/share/simra/adapters` and `technologies` stay too. The connector
+  bundle goes.
 
 The machine also needs the EDA tools that the adapters run (for example ngspice, KLayout and Python 3).
 

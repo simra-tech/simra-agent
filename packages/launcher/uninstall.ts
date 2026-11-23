@@ -34,13 +34,17 @@ export function uninstall(args: string[]): number {
 		writeFileSync(profile, changed);
 		console.log(`removed the simra block from ${profile}`);
 	}
-	// install.sh's files and the connector bundle only: SIMRA_HOME may be a folder with other files.
+	// install.sh's files in SIMRA_HOME and the connector bundle in the data directory only: each may hold other files.
 	const data = dirname(dirname(connectorDir("adapters")));
-	for (const dir of new Set([home, data])) {
+	const owned: [string, RegExp][] = [
+		[home, /^(releases|current|current\.new|receipt\.json|\.staging\..*)$/],
+		[data, /^(connectors|\.?connectors-.*)$/],
+	];
+	for (const [dir, pattern] of owned) {
 		if (!existsSync(dir)) continue;
-		for (const name of readdirSync(dir).filter((n) => /^(releases|current|current\.new|receipt\.json|\.staging\..*|connectors|connectors\.new|\.?connectors-.*)$/.test(n))) {
-			rmSync(join(dir, name), { recursive: true, force: true });
-		}
+		for (const name of readdirSync(dir).filter((n) => pattern.test(n))) rmSync(join(dir, name), { recursive: true, force: true });
+	}
+	for (const dir of new Set([home, data])) {
 		try {
 			rmdirSync(dir);
 		} catch {}
