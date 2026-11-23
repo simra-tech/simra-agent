@@ -407,9 +407,9 @@ test("a first-run Simra sign-in ends with the next step; a connector-only sign-i
 	});
 	const url = await listen(t, service);
 	const data = tempDir(t, "data");
-	const run = (agentDir, steps) =>
+	const run = (agentDir, steps, env = {}) =>
 		promisify(execFile)("python3", ["-I", join(root, "test/fixtures/terminal.py"), JSON.stringify(steps), binary], {
-			cwd: tmpdir(), timeout: 60_000, env: { ...cleanEnv, PI_OFFLINE: "1", SIMRA_NO_ANALYTICS: "1", SIMRA_FLOW_URL: url, SIMRA_CODING_AGENT_DIR: agentDir, XDG_DATA_HOME: data },
+			cwd: tmpdir(), timeout: 60_000, env: { ...cleanEnv, PI_OFFLINE: "1", SIMRA_NO_ANALYTICS: "1", SIMRA_FLOW_URL: url, SIMRA_CODING_AGENT_DIR: agentDir, XDG_DATA_HOME: data, ...env },
 		}).then((r) => ({ ok: true, out: r.stdout }), (e) => ({ ok: false, out: `${e.stdout}${e.stderr}` }));
 	const signIn = [["Welcome to Simra", "\x1b[B\x1b[B\r"], ["Invited email", "invited@example.test\r"]];
 	const hosted = tempDir(t, "agent");
@@ -425,6 +425,10 @@ test("a first-run Simra sign-in ends with the next step; a connector-only sign-i
 	assert.ok(existsSync(join(data, "simra", "connectors", "adapters", "fake", "adapter.json")));
 	const update = await promisify(execFile)(binary, ["update", "--connectors"], { timeout: 30_000, env: { ...cleanEnv, SIMRA_FLOW_URL: url, SIMRA_CODING_AGENT_DIR: connectorAgent, XDG_DATA_HOME: data } });
 	assert.match(update.stderr, /Simra connectors 1.0.0 are installed/);
+	// A proxy page instead of the service: a message, not a stack trace.
+	const page = await listen(t, createServer((req, res) => res.writeHead(405, { "Content-Type": "text/html" }).end("Request not allowed")));
+	const proxied = await run(tempDir(t, "agent"), [...signIn, ["gave no Simra answer (HTTP 405)", ""]], { SIMRA_FLOW_URL: page });
+	assert.ok(proxied.ok && !proxied.out.includes("Bun v"), proxied.out);
 });
 
 test("failed first-run setup flushes its analytics outcome", { skip: skip || (!has("python3") && "python3 not on PATH"), timeout: 60_000 }, async (t) => {
