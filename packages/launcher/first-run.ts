@@ -44,7 +44,7 @@ export function isFirstRun(agentDir: string): boolean {
 	return !Object.entries(process.env).some(([name, value]) => name.endsWith("_API_KEY") && value);
 }
 
-/** true after a Simra sign-in: simra then stops, because hosted use starts with simra hosted. */
+/** true after a Simra sign-in with hosted inference: simra then stops, because hosted use starts with simra hosted. */
 export async function firstRun(agentDir: string): Promise<boolean> {
 	telemetry.capture("setup_started");
 	try {
@@ -65,8 +65,8 @@ export async function firstRun(agentDir: string): Promise<boolean> {
 			telemetry.capture("setup_completed", { outcome: "configured", provider: "simra" });
 			console.error(cred.inference
 				? "Signed in. Run simra hosted in a directory you may share with Simra to start a Simra-funded session."
-				: "Signed in. Run simra and choose a model with /login. /simra-account shows your grants.");
-			return true;
+				: "Signed in. Use /simra-account to see your installer grant.");
+			return cred.inference === true;
 		}
 		const key = (await showStartupInput(settings, `${choice.label}. Paste an API key from ${choice.keys}:`))?.trim();
 		if (!key) { telemetry.capture("setup_completed", { outcome: "cancelled" }); return false; }

@@ -166,6 +166,8 @@ export function registerHosted(pi: ExtensionAPI, freshId?: string) {
 		const candidate = freshId;
 		const startingGeneration = generation;
 		freshId = undefined;
+		// pi starts a plain session on the Simra model when it is the only one with a login: say how hosted use starts.
+		if (!candidate && ctx.model?.provider === PROVIDER && ctx.hasUI) ctx.ui.notify(START, "info");
 		if (
 			!candidate ||
 			event.reason !== "startup" ||
