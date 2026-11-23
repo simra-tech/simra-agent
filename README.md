@@ -112,10 +112,12 @@ The installer needs curl or wget, tar, and sha256sum, shasum or openssl. It need
 
 It changes nothing else. Then run `simra` in a design folder.
 
-- `simra update` installs the latest release. It keeps the previous release.
+- `simra update` installs the latest release. It keeps the previous release. For an invited account with connectors, it
+  also updates the connector bundle. `simra update --connectors` updates only the bundle.
 - `SIMRA_VERSION=<version>` installs that release. `SIMRA_HOME=<dir>` installs to `<dir>`, for example a scratch disk.
 - `simra uninstall` removes the releases, the link and the profile block. Settings and logins stay in
-  `~/.config/simra`.
+  `~/.config/simra`. Adapters and packs in `~/.local/share/simra/adapters` and `technologies` stay too. The connector
+  bundle goes.
 
 The machine also needs the EDA tools that the adapters run (for example ngspice, KLayout and Python 3).
 
@@ -200,6 +202,14 @@ The first start in a terminal, without a model login, shows a short welcome. Cho
 low cost, reads images; or GPT-6.1 Sol: stronger) and paste its API key. To use another provider or a subscription,
 type `/login` in simra. When a provider key is set in the environment (for example `DEEPSEEK_API_KEY`), there is no
 welcome.
+
+### Invited accounts
+
+1. Choose **Sign in with Simra** on first run, or enter `/login simra`. Enter your invited email. Open the verification URL on any device, enter the terminal code and authorize it with the emailed code.
+2. Use `/simra-account` to see your grants. An installer-only invitation works independently of hosted inference.
+3. In a directory authorized for sharing, run `simra hosted`. Read and accept the hosted-use notice before the first prompt. Simra records prompts, responses and tool outputs sent to the model. Project instructions and files read here can enter the model context.
+4. After acceptance, use `simra hosted -p "prompt"` for a fresh print-mode session. Resume private work with your own provider. Select your own provider explicitly if funding runs out.
+5. Use `/logout` and select Simra to remove the local login. Ask the operator to revoke a lost terminal. Usage analytics keeps its separate opt-in.
 
 Once a day, `simra` checks for a newer release and shows `simra <version> is available: run simra update`. It does
 not update itself. Set `SIMRA_NO_UPDATE_CHECK=1` to stop the check.
@@ -501,7 +511,7 @@ kit. To add a PDK:
    questions. The run is a normal experiment record; `npx simra show <id>` prints it again.
 3. Run the command again with `--write`. In a terminal, the command also asks before it writes. It writes the pack to
    `<dir>/<pdk>/technology.json`. `<dir>` is `--dir`, else the first entry of `technology_dirs`, else
-   `${XDG_DATA_HOME:-~/.local/share}/simra/technologies`. It never overwrites a pack file.
+   `${XDG_DATA_HOME:-~/.local/share}/simra/technologies`, which every design searches. It never overwrites a pack file.
 4. When the command says so, add the directory to `technology_dirs` of `simra.config.json` or `simra.local.json`.
 5. Edit the pack file for the answers of step 2.
 6. Run `npx simra pack check --pdk <name>`. It prints `pass`, `fail` (with the failure class) or `not run` (with the

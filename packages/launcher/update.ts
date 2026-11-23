@@ -5,6 +5,9 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileS
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { AuthStorage } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/auth-storage.js";
+import { installConnectors, installedConnectors } from "../pi-extension/src/connectors.ts";
+import { call, simraOAuth } from "../pi-extension/src/hosted.ts";
 
 /** The releases page. The tests replace it with SIMRA_RELEASES_URL. */
 const releases = () => (process.env.SIMRA_RELEASES_URL || "https://github.com/simra-tech/simra-agent/releases").replace(/\/+$/, "");
@@ -54,12 +57,60 @@ export function updateNotice(version: string, stateFile: string) {
 	};
 }
 
-/** simra update: run the latest install.sh, in the SIMRA_HOME of this installation. */
+/**
+ * simra update: the public release, then the connector bundle of a signed-in invited account. A connector failure does
+ * not change the result of the release update. --connectors updates the connector bundle only.
+ */
 export async function selfUpdate(args: string[]): Promise<number> {
-	if (args.length > 0) {
-		console.error("usage: simra update | simra update --extensions | simra update --models");
+	const only = args.length === 1 && args[0] === "--connectors";
+	if (args.length > 0 && !only) {
+		console.error("usage: simra update [--connectors] | simra update --extensions | simra update --models");
 		return 2;
 	}
+	const status = only ? 0 : await updateRelease().catch((error: Error) => (console.error(`simra update: ${error.message}`), 1));
+	try {
+		const message = await updateConnectors(only);
+		if (message) console.error(`simra: ${message}`);
+		return status;
+	} catch (error) {
+		// Quiet for a login without connectors: nothing is installed, so nothing is out of date.
+		if (only || installedConnectors()) console.error(`simra: the connectors were not updated: ${(error as Error).message}`);
+		return only ? 1 : status;
+	}
+}
+
+/**
+ * A valid access token of the stored Simra login, or undefined without one. An expired token is refreshed inside the
+ * auth.json lock, and the rotated credential is written back, so a running session reads the new one.
+ */
+export async function connectorAccess(agentDir: string): Promise<string | undefined> {
+	const path = join(agentDir, "auth.json");
+	try {
+		if (!JSON.parse(readFileSync(path, "utf8")).simra) return undefined;
+	} catch {
+		return undefined;
+	}
+	const credential = await AuthStorage.create(path).modify("simra", async (current) => {
+		// Five minutes of validity left at least, as pi does: enough for the download.
+		if (current?.type !== "oauth" || current.expires > Date.now() + 300_000) return undefined;
+		return { ...(await simraOAuth.refreshToken(current, AbortSignal.timeout(20_000))), type: "oauth" };
+	});
+	return credential?.type === "oauth" ? simraOAuth.getApiKey(credential) : undefined;
+}
+
+/** The connector bundle of a login with the connector grant. The line for the user; without --connectors, undefined when there is nothing to say. */
+async function updateConnectors(only: boolean): Promise<string | undefined> {
+	const agentDir = process.env.SIMRA_CODING_AGENT_DIR;
+	const access = agentDir ? await connectorAccess(agentDir) : undefined;
+	if (!access) return only ? "no Simra login. Sign in with /login simra." : undefined;
+	if ((await call("/grants", access)).connectors) return installConnectors(access);
+	const installed = installedConnectors();
+	if (installed) return `no connector grant: the installed Simra connectors ${installed} stay.`;
+	return only ? "this Simra login has no connector grant." : undefined;
+}
+
+/** Run the latest install.sh, in the SIMRA_HOME of this installation. */
+async function updateRelease(): Promise<number> {
 	const url = `${releases()}/latest/download/install.sh`;
 	const response = await fetch(url, { signal: AbortSignal.timeout(60_000) });
 	if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);

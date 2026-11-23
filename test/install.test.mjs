@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -129,11 +129,17 @@ test("an update keeps the previous release, the next one removes the oldest", { 
 	const { home, env } = user(t, url);
 	const simraHome = join(home, ".local", "share", "simra");
 	const releasesOf = () => readdirSync(join(simraHome, "releases")).sort();
+	// An adapter in the user's directory, beside the releases: each design finds it, and updates keep it.
+	cpSync(join(root, "packages", "kernel", "test", "fixtures", "adapters", "fake"), join(simraHome, "adapters", "fake"), { recursive: true });
+	const design = tempDir(t, "design");
+	writeFileSync(join(design, "spec.json"), JSON.stringify({ adapter: "fake", operation: "run", inputs: { mode: "ok" } }));
 	for (const [version, kept] of [["1.0.0", ["1.0.0"]], ["2.0.0", ["1.0.0", "2.0.0"]], ["3.0.0", ["2.0.0", "3.0.0"]]]) {
 		const install = await run("sh", [script(version)], env);
 		assert.equal(install.status, 0, install.stderr);
 		assert.equal((await run(join(home, ".local", "bin", "simra"), ["--version"], env)).stdout.trim(), version);
 		assert.deepEqual(releasesOf(), kept);
+		const used = await run(join(home, ".local", "bin", "simra"), ["run", "spec.json"], env, design);
+		assert.equal(used.status, 0, used.stdout + used.stderr);
 	}
 	// SIMRA_VERSION runs the installer of that release. SIMRA_HOME puts it elsewhere.
 	const scratch = join(tempDir(t, "scratch"), "simra");
@@ -204,11 +210,16 @@ test("with a terminal, install.sh asks and adds the PATH block once; simra unins
 	writeFileSync(profile, `${bashrc}export AFTER=2\n`);
 	mkdirSync(join(home, ".config", "simra"), { recursive: true });
 	writeFileSync(join(home, ".config", "simra", "auth.json"), "{}");
+	// A connector bundle goes; the user's own adapters stay.
+	const data = join(home, ".local", "share", "simra");
+	mkdirSync(join(data, "connectors-1.0.0-abc", "adapters"), { recursive: true });
+	symlinkSync("connectors-1.0.0-abc", join(data, "connectors"));
+	mkdirSync(join(data, "adapters", "mine"), { recursive: true });
 	const uninstall = await run(join(home, ".local", "bin", "simra"), ["uninstall"], env);
 	assert.equal(uninstall.status, 0, uninstall.stderr);
 	assert.equal(readFileSync(profile, "utf8"), "export BEFORE=1\nexport AFTER=2\n");
 	assert.ok(!existsSync(join(home, ".local", "bin", "simra")));
-	assert.ok(!existsSync(join(home, ".local", "share", "simra")));
+	assert.deepEqual(readdirSync(data), ["adapters"]);
 	assert.ok(existsSync(join(home, ".config", "simra", "auth.json")));
 });
 

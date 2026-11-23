@@ -3,7 +3,8 @@
 
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { connectorDir } from "@simra-tech/kernel";
 import { installHome } from "./update.ts";
 
 export function uninstall(args: string[]): number {
@@ -33,13 +34,21 @@ export function uninstall(args: string[]): number {
 		writeFileSync(profile, changed);
 		console.log(`removed the simra block from ${profile}`);
 	}
-	// install.sh's files only: SIMRA_HOME may be a folder with other files.
-	for (const name of readdirSync(home).filter((n) => /^(releases|current|current\.new|receipt\.json|\.staging\..*)$/.test(n))) {
-		rmSync(join(home, name), { recursive: true, force: true });
+	// install.sh's files in SIMRA_HOME and the connector bundle in the data directory only: each may hold other files.
+	const data = dirname(dirname(connectorDir("adapters")));
+	const owned: [string, RegExp][] = [
+		[home, /^(releases|current|current\.new|receipt\.json|\.staging\..*)$/],
+		[data, /^(connectors|\.?connectors-.*)$/],
+	];
+	for (const [dir, pattern] of owned) {
+		if (!existsSync(dir)) continue;
+		for (const name of readdirSync(dir).filter((n) => pattern.test(n))) rmSync(join(dir, name), { recursive: true, force: true });
 	}
-	try {
-		rmdirSync(home);
-	} catch {}
+	for (const dir of new Set([home, data])) {
+		try {
+			rmdirSync(dir);
+		} catch {}
+	}
 	console.log(`removed simra from ${home} and ${link}. Settings, logins and sessions stay in ${process.env.SIMRA_CODING_AGENT_DIR}.`);
 	return 0;
 }

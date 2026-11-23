@@ -88,8 +88,12 @@ A pack can be in a directory outside this repository, for example in a separate 
 1. Put the pack in `<dir>/<name>/technology.json`.
 2. Add the directory to `technology_dirs` in `simra.config.json` or `simra.local.json` of the design root:
    `{ "technology_dirs": ["../my-packs"] }`. A relative path is resolved against the design root.
-3. Run the experiment. The adapter searches the configured directories first, in the given order, then the
-   directory of this repository.
+3. Run the experiment. The adapter searches the configured directories first, in the given order, then
+   `${XDG_DATA_HOME:-~/.local/share}/simra/technologies`, then the directory of this repository.
+
+A pack in `${XDG_DATA_HOME:-~/.local/share}/simra/technologies` needs no configuration: every design finds it, and
+`simra update` keeps it. Adapters in `${XDG_DATA_HOME:-~/.local/share}/simra/adapters` work the same way, after
+`adapter_dirs` and before the built-in adapters.
 
 A pack name or a PDK name selects the first pack that has it. A pack of a configured directory can thus replace a
 built-in pack with the same name. A configured directory that does not exist stops the run with an error. A path

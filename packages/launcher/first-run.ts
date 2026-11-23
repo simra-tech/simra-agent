@@ -1,8 +1,9 @@
-// The first start in a terminal: a welcome and an API key login (no browser, so it works over SSH), before pi starts.
+// First-run credentials can come from a provider API key or an invited login on another device.
 
 import { ANALYTICS_NOTICE, analyticsOptedOut, getAnalyticsConsent, setAnalyticsConsent, telemetry } from "@simra-tech/kernel/telemetry";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { simraOAuth } from "../pi-extension/src/hosted.ts";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { showStartupInput, showStartupSelector } from "../../node_modules/@earendil-works/pi-coding-agent/dist/cli/startup-ui.js";
 import { AuthStorage } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/auth-storage.js";
@@ -43,21 +44,37 @@ export function isFirstRun(agentDir: string): boolean {
 	return !Object.entries(process.env).some(([name, value]) => name.endsWith("_API_KEY") && value);
 }
 
-export async function firstRun(agentDir: string): Promise<void> {
+/** true after a Simra sign-in with hosted inference: simra then stops, because hosted use starts with simra hosted. */
+export async function firstRun(agentDir: string): Promise<boolean> {
 	telemetry.capture("setup_started");
 	try {
 		const settings = SettingsManager.create(process.cwd(), agentDir, { projectTrusted: false });
-		const choice = await showStartupSelector(settings, "Welcome to Simra, a chip-design agent. Choose a model:", [
+		const choice = await showStartupSelector<typeof SUGGESTIONS[number] | "simra" | undefined>(settings, "Welcome to Simra, a chip-design agent. Choose a model:", [
 			...SUGGESTIONS.map((s) => ({ label: s.label, value: s })),
+			{ label: "Sign in with Simra (invited email)", value: "simra" },
 			{ label: "Another provider or a subscription: log in later with /login", value: undefined },
 		]);
-		if (!choice) { telemetry.capture("setup_completed", { outcome: "deferred" }); return; }
+		if (!choice) { telemetry.capture("setup_completed", { outcome: "deferred" }); return false; }
+		if (choice === "simra") {
+			const cred = await simraOAuth.login({
+				onPrompt: async p => (await showStartupInput(settings, p.message)) || "",
+				onDeviceCode: d => console.error(`Open ${d.verificationUri} and enter ${d.userCode}. Ctrl-C cancels.`),
+				onAuth: a => console.error(a.url), onSelect: async () => undefined, onProgress: m => console.error(m),
+			});
+			await AuthStorage.create(join(agentDir, "auth.json")).modify("simra", async () => ({ ...cred, type: "oauth" }));
+			telemetry.capture("setup_completed", { outcome: "configured", provider: "simra" });
+			console.error(cred.inference
+				? "Signed in. Run simra hosted in a directory you may share with Simra to start a Simra-funded session."
+				: "Signed in. Use /simra-account to see your installer grant.");
+			return cred.inference === true;
+		}
 		const key = (await showStartupInput(settings, `${choice.label}. Paste an API key from ${choice.keys}:`))?.trim();
-		if (!key) { telemetry.capture("setup_completed", { outcome: "cancelled" }); return; }
+		if (!key) { telemetry.capture("setup_completed", { outcome: "cancelled" }); return false; }
 		await AuthStorage.create(join(agentDir, "auth.json")).modify(choice.provider, async () => ({ type: "api_key", key }));
 		settings.setDefaultModelAndProvider(choice.provider, choice.model);
 		await settings.flush();
 		telemetry.capture("setup_completed", { outcome: "configured", provider: choice.provider });
+		return false;
 	} catch (error) {
 		telemetry.capture("setup_completed", { outcome: "error" });
 		throw error;

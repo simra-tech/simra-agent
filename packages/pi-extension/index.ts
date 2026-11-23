@@ -35,7 +35,7 @@ import {
 	VERSION as PI_VERSION,
 } from "@earendil-works/pi-coding-agent";
 import {
-	BUILTIN_ADAPTER_DIR,
+	adapterSearchPath,
 	designRecord,
 	formatWorkarounds,
 	runPdk,
@@ -75,6 +75,7 @@ import {
 } from "@simra-tech/kernel";
 import pkg from "./package.json" with { type: "json" };
 import { telemetry } from "@simra-tech/kernel/telemetry";
+import { registerHosted } from "./src/hosted.ts";
 import { registerAnalytics } from "./src/analytics.ts";
 
 /** The versions that /simra-version and the header show. */
@@ -110,15 +111,26 @@ export function imageParts(root: string, result: Pick<ResultRecord, "outputs">):
 	return parts;
 }
 
-/** One line per built-in adapter operation, for the tool description. */
+/**
+ * One line per operation of the user's and the built-in adapters, for the tool description. A name found twice is the
+ * first one, as in the runner. A manifest that does not parse is left out: the other tools must still register.
+ */
 function adapterCatalog(): string {
 	const lines: string[] = [];
-	for (const name of existsSync(BUILTIN_ADAPTER_DIR) ? readdirSync(BUILTIN_ADAPTER_DIR).sort() : []) {
-		const path = join(BUILTIN_ADAPTER_DIR, name, "adapter.json");
-		if (!existsSync(path)) continue;
-		const manifest = JSON.parse(readFileSync(path, "utf8")) as AdapterManifest;
-		for (const [op, { description }] of Object.entries(manifest.operations)) {
-			lines.push(`- adapter "${manifest.name}", operation "${op}": ${description}`);
+	const seen = new Set<string>();
+	for (const base of adapterSearchPath([])) {
+		for (const name of existsSync(base) ? readdirSync(base).sort() : []) {
+			const path = join(base, name, "adapter.json");
+			if (seen.has(name) || !existsSync(path)) continue;
+			seen.add(name);
+			try {
+				const manifest = JSON.parse(readFileSync(path, "utf8")) as AdapterManifest;
+				for (const [op, { description }] of Object.entries(manifest.operations)) {
+					lines.push(`- adapter "${manifest.name}", operation "${op}": ${description}`);
+				}
+			} catch {
+				// not an adapter
+			}
 		}
 	}
 	return lines.join("\n");
@@ -382,7 +394,8 @@ export function leanContext<T extends Msg>(messages: T[]): T[] {
 
 export const STATE_NOTE_MAX = 3000;
 
-export default function (pi: ExtensionAPI) {
+export default function simra(pi: ExtensionAPI, freshHostedId?: string) {
+	registerHosted(pi, freshHostedId);
 	registerAnalytics(pi);
 
 	// The known gaps of a simulator (workaround registry), shown with the first result of each adapter and PDK in a session.

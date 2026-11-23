@@ -9,7 +9,7 @@ import { telemetry } from "./telemetry.ts";
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { closeSync, createWriteStream, existsSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import kernelPackage from "../package.json" with { type: "json" };
@@ -46,6 +46,35 @@ const INSTALL_DIR = IN_BINARY ? dirname(realpathSync(process.execPath)) : fileUR
 export const BUILTIN_ADAPTER_DIR = join(INSTALL_DIR, "adapters");
 /** The technology packs (PDK data for adapters, see technologies/README.md). */
 export const BUILTIN_TECHNOLOGY_DIR = join(INSTALL_DIR, "technologies");
+
+const dataDir = () => join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "simra");
+
+/**
+ * The adapters or technology packs installed for the user: <XDG_DATA_HOME or ~/.local/share>/simra/<kind>. Every design
+ * finds them, and an update keeps them, because they are outside the release folder.
+ */
+export function userDir(kind: "adapters" | "technologies"): string {
+	return join(dataDir(), kind);
+}
+
+/** The adapters or technology packs of the installed connector bundle: <data>/simra/connectors/<kind>, replaced as a unit. */
+export function connectorDir(kind: "adapters" | "technologies"): string {
+	return join(dataDir(), "connectors", kind);
+}
+
+/** The connector bundle's directory through its link, resolved: a run keeps one version while an update swaps the link. */
+function bundleDir(kind: "adapters" | "technologies"): string {
+	try {
+		return realpathSync(connectorDir(kind));
+	} catch {
+		return connectorDir(kind);
+	}
+}
+
+/** The directories of the adapters, in search order: the configured ones (adapter_dirs), the user's, the connector bundle's, the built-in one. */
+export function adapterSearchPath(configured: string[]): string[] {
+	return [...configured, userDir("adapters"), bundleDir("adapters"), BUILTIN_ADAPTER_DIR];
+}
 
 export interface AdapterManifest {
 	contract: string;
@@ -151,7 +180,7 @@ const CLI_ARGS = IN_BINARY ? [] : [fileURLToPath(new URL("./cli.ts", import.meta
 
 /**
  * The directories of the technology packs that the adapter searches, in order: the configured ones (technology_dirs),
- * then the built-in one. A configured directory that does not exist is an error. A path with ":" cannot be given,
+ * the user's, the connector bundle's, then the built-in one. A configured directory that does not exist is an error. A path with ":" cannot be given,
  * because SIMRA_TECHNOLOGY_DIR separates the entries with ":".
  */
 export function technologySearchPath(configured: string[]): string[] {
@@ -159,8 +188,8 @@ export function technologySearchPath(configured: string[]): string[] {
 		if (!existsSync(dir)) throw new Error(`technology_dirs: directory not found: ${dir}`);
 		if (dir.includes(":")) throw new Error(`technology_dirs: a path with ":" is not supported: ${dir}`);
 	}
-	const dirs = existsSync(BUILTIN_TECHNOLOGY_DIR) ? [...configured, BUILTIN_TECHNOLOGY_DIR] : [...configured];
-	return [...new Set(dirs)];
+	const optional = [userDir("technologies"), bundleDir("technologies"), BUILTIN_TECHNOLOGY_DIR].filter((dir) => existsSync(dir));
+	return [...new Set([...configured, ...optional])];
 }
 
 /** Check the options, make the experiment directory, and write experiment.json and request.json. */
@@ -174,7 +203,7 @@ function prepareExperiment(opts: RunOptions): { job: Job; env: NodeJS.ProcessEnv
 	}
 	if (opts.cpus !== undefined) parseCpuList(opts.cpus);
 	const envConfig = opts.cpus === undefined ? configured : { ...configured, cpus: opts.cpus };
-	const { dir: adapterDir, manifest } = findAdapter(opts.adapter, [...(config.adapter_dirs ?? []), BUILTIN_ADAPTER_DIR]);
+	const { dir: adapterDir, manifest } = findAdapter(opts.adapter, adapterSearchPath(config.adapter_dirs ?? []));
 	if (manifest.contract !== CONTRACT) {
 		throw new Error(`adapter "${opts.adapter}" uses contract ${manifest.contract}; this kernel supports ${CONTRACT}`);
 	}
@@ -191,7 +220,7 @@ function prepareExperiment(opts: RunOptions): { job: Job; env: NodeJS.ProcessEnv
 	const adapterCommand = [...manifest.command.map((part) => part.replaceAll("{adapter_dir}", adapterDir)), requestPath];
 	// Build the invocation first: a configuration error must not leave an empty experiment behind.
 	const technologyDirs = technologySearchPath(config.technology_dirs ?? []);
-	const usedAdapterDirs = Object.fromEntries((manifest.uses_adapters ?? []).map((n) => [n, findAdapter(n, [...(config.adapter_dirs ?? []), BUILTIN_ADAPTER_DIR]).dir]));
+	const usedAdapterDirs = Object.fromEntries((manifest.uses_adapters ?? []).map((n) => [n, findAdapter(n, adapterSearchPath(config.adapter_dirs ?? [])).dir]));
 	const invocation = buildInvocation({ name: envName, config: envConfig, root, adapterDir, adapterCommand, experimentId: id, technologyDirs, usedAdapterDirs });
 	createExperimentDir(root, id);
 
@@ -378,7 +407,7 @@ export interface QueryOutcome {
 export async function queryAdapter(opts: Omit<RunOptions, "environment" | "purpose">): Promise<QueryOutcome> {
 	const root = resolve(opts.root);
 	const config = loadConfig(root);
-	const { dir: adapterDir, manifest } = findAdapter(opts.adapter, [...(config.adapter_dirs ?? []), BUILTIN_ADAPTER_DIR]);
+	const { dir: adapterDir, manifest } = findAdapter(opts.adapter, adapterSearchPath(config.adapter_dirs ?? []));
 	if (!manifest.operations[opts.operation]) {
 		throw new Error(`adapter "${opts.adapter}" has no operation "${opts.operation}"`);
 	}
