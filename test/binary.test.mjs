@@ -427,8 +427,10 @@ test("a first-run Simra sign-in ends with the next step; a connector-only sign-i
 	assert.match(update.stderr, /Simra connectors 1.0.0 are installed/);
 	// A proxy page instead of the service: a message, not a stack trace.
 	const page = await listen(t, createServer((req, res) => res.writeHead(405, { "Content-Type": "text/html" }).end("Request not allowed")));
-	const proxied = await run(tempDir(t, "agent"), [...signIn, ["gave no Simra answer (HTTP 405)", ""]], { SIMRA_FLOW_URL: page });
-	assert.ok(proxied.ok && !proxied.out.includes("Bun v"), proxied.out);
+	// One line, then simra ends: pi never starts, and there is no stack trace.
+	const proxied = await run(tempDir(t, "agent"), [...signIn, ["simra: http://127.0.0.1", ""], ["a chip-design agent built on pi", ""]], { SIMRA_FLOW_URL: page });
+	assert.ok(!proxied.ok && proxied.out.includes("gave no Simra answer (HTTP 405)") && proxied.out.includes("the program ended before"), proxied.out);
+	assert.ok(!proxied.out.includes("Bun v"), proxied.out);
 });
 
 test("failed first-run setup flushes its analytics outcome", { skip: skip || (!has("python3") && "python3 not on PATH"), timeout: 60_000 }, async (t) => {
