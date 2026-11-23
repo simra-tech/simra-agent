@@ -35,7 +35,7 @@ import {
 	VERSION as PI_VERSION,
 } from "@earendil-works/pi-coding-agent";
 import {
-	BUILTIN_ADAPTER_DIR,
+	adapterSearchPath,
 	designRecord,
 	formatWorkarounds,
 	runPdk,
@@ -110,15 +110,19 @@ export function imageParts(root: string, result: Pick<ResultRecord, "outputs">):
 	return parts;
 }
 
-/** One line per built-in adapter operation, for the tool description. */
-function adapterCatalog(): string {
+/** One line per operation of the user's and the built-in adapters, for the tool description. A name found twice is the first one, as in the runner. */
+export function adapterCatalog(): string {
 	const lines: string[] = [];
-	for (const name of existsSync(BUILTIN_ADAPTER_DIR) ? readdirSync(BUILTIN_ADAPTER_DIR).sort() : []) {
-		const path = join(BUILTIN_ADAPTER_DIR, name, "adapter.json");
-		if (!existsSync(path)) continue;
-		const manifest = JSON.parse(readFileSync(path, "utf8")) as AdapterManifest;
-		for (const [op, { description }] of Object.entries(manifest.operations)) {
-			lines.push(`- adapter "${manifest.name}", operation "${op}": ${description}`);
+	const seen = new Set<string>();
+	for (const base of adapterSearchPath([])) {
+		for (const name of existsSync(base) ? readdirSync(base).sort() : []) {
+			const path = join(base, name, "adapter.json");
+			if (seen.has(name) || !existsSync(path)) continue;
+			seen.add(name);
+			const manifest = JSON.parse(readFileSync(path, "utf8")) as AdapterManifest;
+			for (const [op, { description }] of Object.entries(manifest.operations)) {
+				lines.push(`- adapter "${manifest.name}", operation "${op}": ${description}`);
+			}
 		}
 	}
 	return lines.join("\n");

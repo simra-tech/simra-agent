@@ -4,15 +4,30 @@
 // image of page N that it renders first.
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { validateRequirements } from "@simra-tech/kernel";
 import { makePdf } from "../../kernel/test/pdf-fixture.ts";
-import extension, { endGuardItems, endGuardMessage, END_GUARD_TYPE, checkHints, leanContext, netlistsOf, readsOutputs, readPath, readsRecords, REQUIREMENTS_EXAMPLE, sessionClock } from "../index.ts";
+import extension, { adapterCatalog, endGuardItems, endGuardMessage, END_GUARD_TYPE, checkHints, leanContext, netlistsOf, readsOutputs, readPath, readsRecords, REQUIREMENTS_EXAMPLE, sessionClock } from "../index.ts";
 
 const fakeAdapters = new URL("../../kernel/test/fixtures/adapters", import.meta.url).pathname;
+
+test("the adapter list of run_experiment has the adapters of the user's directory", (t) => {
+	const data = mkdtempSync(join(tmpdir(), "simra-ext-data-"));
+	const saved = process.env.XDG_DATA_HOME;
+	t.after(() => {
+		if (saved === undefined) delete process.env.XDG_DATA_HOME;
+		else process.env.XDG_DATA_HOME = saved;
+		rmSync(data, { recursive: true, force: true });
+	});
+	process.env.XDG_DATA_HOME = data;
+	assert.doesNotMatch(adapterCatalog(), /adapter "fake"/);
+	cpSync(join(fakeAdapters, "fake"), join(data, "simra", "adapters", "fake"), { recursive: true });
+	assert.match(adapterCatalog(), /adapter "fake", operation "run"/);
+	assert.match(adapterCatalog(), /adapter "ngspice", operation "simulate"/);
+});
 
 test("run_experiment runs the adapter and names the records", async (t) => {
 	const tools = new Map<string, any>();

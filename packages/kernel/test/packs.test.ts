@@ -81,13 +81,14 @@ test("simra pack check runs pack_check on the pack and prints pass, fail or not 
 	assert.match(failed.stdout, / {2}simulate bad: fail \(simulator\): invented failure/);
 });
 
-test("without technology_dirs the pack goes to the data directory of the user, and the CLI says to add it", (t) => {
+test("without technology_dirs the pack goes to the user's technology directory, which every design searches", (t) => {
 	const { root, parent } = design(t);
-	const out = simra(root, ["pack", "init", "--pdk", "MYPDK", "--write"], { XDG_DATA_HOME: join(parent, "data") });
+	const env = { XDG_DATA_HOME: join(parent, "data") };
+	const out = simra(root, ["pack", "init", "--pdk", "MYPDK", "--write"], env);
 	assert.equal(out.status, 0, out.stderr);
-	const dir = join(parent, "data", "simra", "technologies");
-	assert.ok(existsSync(join(dir, "MYPDK", "technology.json")));
-	assert.ok(out.stdout.includes(`add ${dir} to technology_dirs`), out.stdout);
+	assert.ok(existsSync(join(parent, "data", "simra", "technologies", "MYPDK", "technology.json")));
+	assert.doesNotMatch(out.stdout, /add .* to technology_dirs/);
+	assert.equal(simra(root, ["pack", "check", "--pdk", "MYPDK"], env).status, 0);
 });
 
 test("a proposal without a pack writes nothing and exits with 1", (t) => {

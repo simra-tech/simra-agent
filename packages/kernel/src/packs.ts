@@ -3,11 +3,10 @@
 // (operation pack_check). The kernel holds no PDK fact: it finds, records and writes packs.
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { loadConfig } from "./config.ts";
 import { readJson } from "./records.ts";
-import { BUILTIN_ADAPTER_DIR, findAdapter, runExperiment, technologySearchPath } from "./runner.ts";
+import { adapterSearchPath, findAdapter, runExperiment, technologySearchPath, userDir } from "./runner.ts";
 import type { RunOutcome } from "./runner.ts";
 
 export interface PackEntry {
@@ -75,17 +74,14 @@ export function designTechnologyDirs(root: string): string[] {
 	return technologySearchPath(loadConfig(root).technology_dirs ?? []);
 }
 
-/** The directory for a new pack: the first entry of technology_dirs, else the per-user data directory. */
-export function defaultPackDir(root: string): { dir: string; configured: boolean } {
-	const configured = loadConfig(root).technology_dirs ?? [];
-	if (configured.length) return { dir: configured[0], configured: true };
-	const data = process.env.XDG_DATA_HOME || join(homedir(), ".local", "share");
-	return { dir: join(data, "simra", "technologies"), configured: false };
+/** The directory for a new pack: the first entry of technology_dirs, else the user's technology directory. */
+export function defaultPackDir(root: string): string {
+	return loadConfig(root).technology_dirs?.[0] ?? userDir("technologies");
 }
 
 /** The adapters of the design that have the operation. */
 export function adaptersWith(root: string, operation: string): string[] {
-	const dirs = [...(loadConfig(root).adapter_dirs ?? []), BUILTIN_ADAPTER_DIR];
+	const dirs = adapterSearchPath(loadConfig(root).adapter_dirs ?? []);
 	const names = new Set<string>();
 	for (const base of dirs) {
 		if (!existsSync(base)) continue;
@@ -134,7 +130,7 @@ export interface PackInitOutcome {
 	target: string;
 	/** True when the flow wrote the file. */
 	written: boolean;
-	/** True when the target directory is not in technology_dirs (the user must add it). */
+	/** True when the target directory is not searched (the user must add it to technology_dirs). */
 	outsideConfig: boolean;
 	/** Another pack with the same PDK name in the search path, or null. */
 	clash: PackEntry | null;
@@ -160,12 +156,11 @@ export async function packInit(opts: PackInitOptions): Promise<PackInitOutcome> 
 	});
 	const tool = (run.result.tool ?? {}) as { pack?: Record<string, unknown>; questions?: string[] };
 	const pack = run.result.status === "completed" && tool.pack ? tool.pack : null;
-	const fallback = defaultPackDir(root);
-	const dir = opts.dir ? resolve(opts.dir) : fallback.dir;
+	const dir = opts.dir ? resolve(opts.dir) : defaultPackDir(root);
 	const target = join(dir, opts.pdk, "technology.json");
 	const searched = designTechnologyDirs(root);
 	const clash = listPacks(searched).find((p) => p.path !== target && (p.pdks.includes(opts.pdk) || p.name === pack?.name)) ?? null;
-	const outcome: PackInitOutcome = { run, pack, questions: tool.questions ?? [], target, written: false, outsideConfig: !searched.includes(dir), clash };
+	const outcome: PackInitOutcome = { run, pack, questions: tool.questions ?? [], target, written: false, outsideConfig: !searched.includes(dir) && dir !== userDir("technologies"), clash };
 	return opts.write && pack ? { ...outcome, ...writeProposed(outcome) } : outcome;
 }
 
