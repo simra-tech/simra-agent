@@ -82,7 +82,11 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
   lists the rows of an assumption.
 - The commands `simra pack init` and `simra pack check` add a PDK to a site: an adapter proposes a technology pack
   from the kit, the user confirms it, and the adapter checks it (see "Add a PDK").
-- One example design exists: a two-stage OTA for the open IHP SG13G2 PDK.
+- The openroad adapter has one operation, `parse`. The librelane adapter has four operations: `read`, `compare`,
+  `replay` and `preflight`. The pi extension adds the findings of `read` to the result of a shell command that runs
+  LibreLane or reads a run directory (see [Digital flow](#digital-flow)).
+- Three example designs exist for the open IHP SG13G2 PDK: a two-stage OTA, and two digital blocks
+  (`examples/acc-sg13g2` and `examples/shreg-sg13g2`).
 
 ## Tools for RF and mixed-signal blocks
 
@@ -101,7 +105,7 @@ What the harness has now, and what a task needs that it does not have yet.
 | Antenna | `em_sparameters` (S11) | far-field gain and pattern |
 | Baseband amplifier, filter, regulator | ngspice ac, noise, transient, `monte_carlo` | loop gain at an internal node (a loop-probe operation) |
 | Bias reference with trim | ngspice, `monte_carlo` | a trim search per Monte Carlo seed |
-| Digital control | none | a digital flow adapter (synthesis, place and route) |
+| Digital control | `librelane` (`read`, `compare`, `replay`, `preflight`), `openroad` (`parse`), flow check (see [Digital flow](#digital-flow)) | an operation that starts a complete flow; adapters for synthesis (Yosys) and for RTL simulation (Verilator, Icarus Verilog) |
 | Whole chip | `assemble_dc` | a whole-chip transient or harmonic-balance check |
 
 ## Install
@@ -438,6 +442,10 @@ simulator fails in the stored device-class probe has an entry.
 | Xyce 7.10 | any | no autonomous HB or HB noise, .step with HB, YLIN outside HB, .temp ignored |
 | ngspice 46 | IHP SG13G2 | KLU on a large mixed deck, Monte Carlo DC with reltol 1e-4, HBT self-heating, antenna diode step |
 | ngspice 46 | any | pulse with PW = 0, trnoise with a round step, trnoise current source, threads in a container, .pss |
+| LibreLane 3.1.0.dev2 | any | timing steps in the layout analyse one corner, integer clock tree derate (open), empty step log, two OpenROAD builds |
+| OpenROAD 26Q1-1024, OpenSTA 2.7.0 and 3.1.0 | any | hold repair stops after one pass, `signed` in a netlist |
+| Yosys 0.67 | any | `abc -D` without `-constr` has no effect (open) |
+| Verilator 5.050 | any | no trace of names that start with an underscore |
 | openEMS 0.37 | any | MUR energy plateau, thin dielectric time step, headless runs |
 
 ## Connection table
@@ -1246,6 +1254,38 @@ see what a change of an assumption affects, run `npx simra assumptions [<id>]` o
 lists each requirement that depends on the assumption, and how (requirement, experiment or condition), and the rows of
 the newest check with their status, when that check used the current requirements file.
 
+## Digital flow
+
+The harness reads and checks a digital flow that LibreLane runs. It does not start a complete flow: the agent starts
+LibreLane with a shell command. Two adapters exist:
+
+| Adapter | Operation | Function |
+| --- | --- | --- |
+| librelane | `read` | reads a run directory: the slack of each corner with its evidence level (no wires, placement estimate, global route, extracted), the steps that did not end, the hashes of the design inputs. It warns when a slack comes from an earlier step, or when a corner name does not agree with the library. |
+| librelane | `compare` | compares two runs: the settings that differ, and whether the results differ at or after the first step that reads a changed setting |
+| librelane | `replay` | runs one step of a run again on its saved state, with changed variables. It does not change the run directory. |
+| librelane | `preflight` | starts the version command of each flow tool, lists the PDK views, checks the free disk space |
+| openroad | `parse` | reads an OpenROAD log: messages, repair tables with a known pattern (for example the buffer limit), global route congestion |
+
+Only `replay` and `preflight` start a tool. See [adapters/librelane/README.md](adapters/librelane/README.md).
+
+The pi extension has two checks on a shell command of the agent:
+
+- Flow check: after a command that runs LibreLane or a call that reads a run directory, the result gets the warnings
+  of `read`, each one time. `SIMRA_FLOW_CHECK=off` stops it.
+- Command check: after a command with exit code 0, the result gets the logs with error lines and the empty result
+  files that the command wrote. It is off by default. `SIMRA_COMMAND_CHECK=on` starts it.
+
+Yosys and Verilator have no adapter. Each has one entry in the [workaround registry](#workaround-registry).
+`preflight` reads their versions.
+
+Eight demo tasks are in `evals/flow-*`: `flow-setting-effect`, `flow-evidence-level`, `flow-no-work`,
+`flow-vacuous-checker`, `flow-corner-label`, `flow-repair-progress`, `flow-step-replay` and `flow-handoff`. The first
+five have a control variant. All of them use IHP SG13G2; no task uses a second PDK. They are not decision benchmarks.
+The README of each task has the pilot counts of 2026-11-20 (3 to 5 runs for each arm and model, 1 run for each model
+in a control variant; a count is not a rate). In six tasks, the harness without the digital adapters passes all runs
+too.
+
 ## Read a layout
 
 To read a layout, the agent calls `run_experiment` with the adapter `klayout`, the operation `query` and several
@@ -1273,8 +1313,11 @@ boxes and the shapes do not tell which edge to move, and to write Python only to
 | `adapters/klayout/` | klayout adapter (Python) and its tests: DRC and LVS with the stock KLayout decks of the PDK, with typed verdicts, questions about a layout (`query`), the comparison of two layouts (`diff`) and pictures of a region or a marker (`render`) |
 | `adapters/touchstone/` | touchstone adapter (Python, numpy) and its tests: a passive rational model of a Touchstone file as a SPICE subcircuit (`fit_to_spice`) |
 | `adapters/xyce/` | xyce adapter (Python) and its tests: `parse` (model gaps), `simulate` and `hb` (harmonic balance) |
+| `adapters/openroad/` | openroad adapter (Python) and its tests: `parse` (an OpenROAD log) |
+| `adapters/librelane/` | librelane adapter (Python) and its tests: `read`, `compare`, `replay` and `preflight` for LibreLane runs |
 | `technologies/` | technology packs: the PDK facts that adapters need |
 | `examples/ota-sg13g2/` | two-stage OTA for IHP SG13G2 |
+| `examples/acc-sg13g2/`, `examples/shreg-sg13g2/` | digital blocks for IHP SG13G2 (LibreLane): an accumulator and a shift register bank |
 | `evals/` | demo evaluations for the inner development loop (not decision benchmarks): the OTA at 3 corners, the OTA against a PVT spec, OTA synthesis from a pin specification (`ota-synthesis`), comparator synthesis from a pin specification (`comparator-synthesis`), their scorers and an arm runner. `synthesis-family.mjs` makes variants of the two synthesis tasks with tighter limits, from a hidden target design and a difficulty factor |
 | `evals/rf-passive-gain/` | demo RF task (not a decision benchmark): the gain of an amplifier deck with a matching network that exists only as a Touchstone file; PDK-free |
 | `evals/layout-drc-fix/` | demo layout task (not a decision benchmark): fix the seeded DRC violations of a small analog cell, with the stock KLayout DRC and LVS decks, on IHP SG13G2 and SKY130 |

@@ -195,8 +195,9 @@ class NoiseTerms(unittest.TestCase):
 
 
 
-LC = ["* LC with a nonlinear conductance g1 v - g3 v^3 (negative g1 starts, positive g1 does not)",
-      "l1 a 0 1n", "c1 a 0 1p", "bg a 0 i={g1}*v(a)+{g3}*v(a)^3", "ik 0 a pwl(0 0 10p 1m 20p 0)"]
+# The cubic is a product: v^3 of a negative v is |v|^3 in ngspice 42 and 45.2, and v^3 in ngspice 47.
+LC = ["* LC with a nonlinear conductance g1 v + g3 v^3 (negative g1 starts, positive g1 does not)",
+      "l1 a 0 1n", "c1 a 0 1p", "bg a 0 i={g1}*v(a)+{g3}*v(a)*v(a)*v(a)", "ik 0 a pwl(0 0 10p 1m 20p 0)"]
 
 
 class StartCheck(unittest.TestCase):
