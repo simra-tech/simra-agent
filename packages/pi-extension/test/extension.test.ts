@@ -11,7 +11,9 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { answerConsistency, validateRequirements } from "@simra-tech/kernel";
 import { makePdf } from "../../kernel/test/pdf-fixture.ts";
-import extension, { endGuardItems, endGuardMessage, END_GUARD_TYPE, checkHints, leanContext, netlistsOf, readsOutputs, readPath, readsRecords, REQUIREMENTS_EXAMPLE, sessionClock } from "../index.ts";
+import simra, { endGuardItems, endGuardMessage, END_GUARD_TYPE, checkHints, leanContext, netlistsOf, readsOutputs, readPath, readsRecords, REQUIREMENTS_EXAMPLE, sessionClock } from "../index.ts";
+
+const extension = (api: Parameters<typeof simra>[0]) => simra(Object.assign({ registerProvider: () => {} }, api));
 
 const fakeAdapters = new URL("../../kernel/test/fixtures/adapters", import.meta.url).pathname;
 

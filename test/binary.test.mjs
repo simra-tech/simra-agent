@@ -387,6 +387,37 @@ test("the first run: a welcome, a model, an API key, then pi with the Simra head
 	assert.doesNotMatch(terminal({ SIMRA_CODING_AGENT_DIR: tempDir(t, "agent"), DEEPSEEK_API_KEY: "sk-env" }, [["a chip-design agent built on pi", ""]]), /Welcome to Simra/);
 });
 
+test("a first-run Simra sign-in ends with the next step; a connector-only sign-in goes on into pi", { skip: skip || (!has("python3") && "python3 not on PATH"), timeout: 120_000 }, async (t) => {
+	let inference = true;
+	const service = createServer((req, res) => {
+		res.setHeader("Content-Type", "application/json");
+		if (req.url === "/pilot/device") return res.end(JSON.stringify({ user_code: "ABCDE12345", device_code: "d".repeat(40), expires_in: 60, interval: 1 }));
+		if (req.url === "/pilot/token") return res.end(JSON.stringify({ status: "ok", access: "simra-at-test", refresh: "simra-rt-test", expires_in: 900, inference }));
+		res.writeHead(404).end("{}");
+	});
+	const url = await listen(t, service);
+	const run = (agentDir, steps, env = {}) =>
+		promisify(execFile)("python3", ["-I", join(root, "test/fixtures/terminal.py"), JSON.stringify(steps), binary], {
+			cwd: tmpdir(), timeout: 60_000, env: { ...cleanEnv, PI_OFFLINE: "1", SIMRA_NO_ANALYTICS: "1", SIMRA_FLOW_URL: url, SIMRA_CODING_AGENT_DIR: agentDir, ...env },
+		}).then((r) => ({ ok: true, out: r.stdout }), (e) => ({ ok: false, out: `${e.stdout}${e.stderr}` }));
+	const signIn = [["Welcome to Simra", "\x1b[B\x1b[B\r"], ["Invited email", "invited@example.test\r"]];
+	const hosted = tempDir(t, "agent");
+	const ended = await run(hosted, [...signIn, ["Signed in. Run simra hosted", ""], ["a chip-design agent built on pi", ""]]);
+	assert.ok(!ended.ok && ended.out.includes("the program ended before 'a chip-design agent built on pi'"), ended.out);
+	assert.equal(JSON.parse(readFileSync(join(hosted, "auth.json"), "utf8")).simra.inference, true);
+	// The next plain start lands on the Simra model, the only one with a login: it says how hosted use starts.
+	assert.ok((await run(hosted, [["Run simra hosted to start", ""]])).ok);
+	inference = false;
+	const connectors = await run(tempDir(t, "agent"), [...signIn, ["a chip-design agent built on pi", ""]]);
+	assert.ok(connectors.ok, connectors.out);
+	// A proxy page instead of the service: a message, not a stack trace.
+	const page = await listen(t, createServer((req, res) => res.writeHead(405, { "Content-Type": "text/html" }).end("Request not allowed")));
+	// One line, then simra ends: pi never starts, and there is no stack trace.
+	const proxied = await run(tempDir(t, "agent"), [...signIn, ["simra: http://127.0.0.1", ""], ["a chip-design agent built on pi", ""]], { SIMRA_FLOW_URL: page });
+	assert.ok(!proxied.ok && proxied.out.includes("gave no Simra answer (HTTP 405)") && proxied.out.includes("the program ended before"), proxied.out);
+	assert.ok(!proxied.out.includes("Bun v"), proxied.out);
+});
+
 test("failed first-run setup flushes its analytics outcome", { skip: skip || (!has("python3") && "python3 not on PATH"), timeout: 60_000 }, async (t) => {
 	const events = [];
 	const server = createServer(async (req, res) => {
