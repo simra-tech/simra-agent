@@ -25,7 +25,7 @@ also work without pi. See [README.md](README.md) for the status.
 
 ## Build and test
 
-1. Use Node.js 22.19 or later.
+1. Use Node.js 22.22 or later.
 2. Run `npm ci`.
 3. Run `npm test`.
 

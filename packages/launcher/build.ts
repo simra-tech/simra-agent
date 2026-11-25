@@ -31,6 +31,8 @@ execFileSync(
 		"--no-compile-autoload-bunfig",
 		"--no-compile-autoload-dotenv",
 		"--compile-exec-argv=--use-system-ca",
+		"--define", `SIMRA_POSTHOG_PROJECT_TOKEN=${JSON.stringify(process.env.POSTHOG_PROJECT_TOKEN || "")}`,
+		"--define", `SIMRA_POSTHOG_HOST=${JSON.stringify(process.env.POSTHOG_HOST || "")}`,
 		join(launcher, "main.ts"),
 		join(launcher, "src/utils/image-resize-worker.ts"),
 		join(launcher, "src/extensions/codemode/worker.ts"),

@@ -13,7 +13,7 @@ Thank you for your interest. The project is at stage 1. The structure is still s
 
 ## Development
 
-1. Install Node.js 22.19 or later.
+1. Install Node.js 22.22 or later.
 2. Run `npm ci`.
 3. Run `npm test`.
 
@@ -28,6 +28,43 @@ A tag `v<version>` starts `.github/workflows/release.yml`.
 A tag with a suffix, for example `v0.2.0-rc.1`, gives a pre-release, which the install line does not use.
 
 Turn on release immutability in the repository settings once. Then the files of a published release cannot change.
+
+## Analytics
+
+Use `telemetry` from `@simra-tech/kernel/telemetry` for analytics in the CLI and extensions. The kernel has no
+pi dependency. The runner captures adapter activity for both entry points. Adapters must not send their request
+or response JSON to an analytics service. Plugins use the same API and opt-out policy; do not create another SDK
+client or enable automatic logs, exception capture or LLM wrappers that collect content.
+
+The shared boundary requires explicit saved opt-in in `analytics.json`. Never infer consent from an API key,
+an analytics identifier or another setting. The launcher asks before setup events and defaults to off.
+Headless runs never ask. `simra analytics on/off/status` manages the preference without sending events.
+Environment opt-outs always win, and the transport checks consent again before sending queued batches.
+
+1. Add a named event and its property rules in `packages/kernel/src/telemetry.ts`.
+2. Review every property for design content, identifiers, paths, secrets and arbitrary strings. Prefer fixed
+   categories, booleans and counts. Unrecognized fields are dropped at runtime. Custom names become `custom`.
+3. Add a payload test that includes private content and verifies it cannot leave the boundary.
+4. Call `telemetry.capture(...)` with selected metadata. Do not spread an event, model object or record.
+5. Await `telemetry.shutdown()` at a standalone process boundary. Do not flush after each tool call.
+
+The pi extension registers only the shipped public model catalog with `registerPublicModels`. Never register
+user model configuration or a live provider catalog. Usage counts come from finalized assistant messages,
+including failed/aborted responses when pi emits them. pi excludes cache tokens from input counts, so native
+PostHog generation events set `$ai_cache_reporting_exclusive=true`. Costs come from pi; `cost_is_estimate`
+distinguishes catalog estimates from provider-reported totals. These are usage metrics, not billing records.
+Requests outside pi's assistant lifecycle are not automatically instrumented.
+
+For releases, set the GitHub repository variables `POSTHOG_PROJECT_TOKEN` and `POSTHOG_HOST`. Use a public
+project ingestion token, never a personal API key. The release workflow passes these to the Bun build, which
+embeds them in the binary. Local builds use the same environment variables. Empty settings produce a binary
+with analytics inactive unless the user supplies runtime settings. Every build also requires the user's saved
+opt-in before sending any events. CI and release tests set
+`SIMRA_NO_ANALYTICS=1`; this opt-out is checked at runtime and is not baked into the binary. The eval runner
+also forces the opt-out inside each container, after caller-supplied environment values.
+
+Run `npm test` to check filtering, model/token events, trace linkage, opt-out behavior and real HTTP delivery to
+a local capture server. Tests use a dummy ingestion token and do not send test events to PostHog.
 
 ## The pi dependency
 
