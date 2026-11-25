@@ -47,6 +47,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 		all_pass: verdict.rows.every((x) => x.status === "pass"),
 		failed: verdict.rows.filter((x) => x.status !== "pass").map((x) => `${x.condition} ${x.requirement}: ${x.status}${x.reason ? ` (${x.reason})` : ""}`),
 		rows,
+		// Rows measured at a condition and not scored (requirement.reported): the value, and why the row is not scored.
+		reported: Object.fromEntries((verdict.reported ?? []).map((x) => [`${x.condition} ${x.requirement}`, x.value ?? null])),
+		reported_notes: Object.fromEntries((verdict.reported ?? []).map((x) => [`${x.condition} ${x.requirement}`, `${x.status === "fail" ? "the reference core does not meet the limit" : x.status === "pass" ? "the reference core meets the limit" : x.status} (${x.op} ${x.limit}); ${x.reported_reason}`])),
 	};
 	writeFileSync(`${here}expected.json`, `${JSON.stringify(expected, null, 2)}\n`);
 	console.log(JSON.stringify(expected, null, 2));

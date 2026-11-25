@@ -1,0 +1,14 @@
+{
+  "provenance": "Reference: OpenROAD.STAMidPNR run again as a single step on the state of step 43 of the run of record, once for each corner (PNR_CORNERS with one corner). LibreLane 3.1.0.dev2, OpenROAD 26Q1-1024-gdcf36133a (the binary that the librelane command of the image uses), IHP SG13G2 PDK commit 84374023. Simulated: static timing analysis with global-route wire estimates.",
+  "wire_level": "global_route",
+  "corners": {
+    "nom_typ_1p20V_25C": { "setup_ws_ns": 1.629, "tol": 0.2 },
+    "nom_slow_1p08V_125C": { "setup_ws_ns": -1.354, "tol": 0.3 },
+    "nom_fast_1p32V_m40C": { "setup_ws_ns": 3.390, "tol": 0.3 }
+  },
+  "carried": {
+    "nom_slow_1p08V_125C": 0.954,
+    "nom_fast_1p32V_m40C": 4.343
+  },
+  "setup_met": false
+}

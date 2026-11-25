@@ -461,9 +461,7 @@
     "device_check": {
       "ngspice_experiment": "sp",
       "xyce_experiment": "hb",
-      "conditions": [
-        "tt"
-      ],
+      "conditions": ["tt", "slow_hot", "slow_cold", "fast_hot", "fast_cold"],
       "devices": [
         {
           "name": "npn13G2_nx8",

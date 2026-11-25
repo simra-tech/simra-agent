@@ -1,0 +1,7 @@
+{
+  "cause": "buffer_count_limit",
+  "endpoints": 72000,
+  "buffers_of_record": 47620,
+  "tol_buffers": 400,
+  "tol_ns": 0.05
+}

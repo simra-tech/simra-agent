@@ -19,8 +19,20 @@ Method:
      table of the device (isf.devices: the device alone, a 2-D dc sweep of two node voltages; the table is interpolated
      at the transient values of two axis vectors, for example the internal vbe and vbc, as the R2 method). mult counts identical sources by symmetry. The total is the sum over the sources.
      output_multiplier N (a frequency multiplier after the oscillator) adds 20 log10(N).
+     A thermal source (input thermal_ohm R) has S = 4 k T / R for a current between two nodes, or S = 4 k T R for a
+     series voltage, with T from the input temp_c of the condition (default 27 C), not a fixed 300 K.
   4. Flicker noise of a source (input flicker {device, current, kf, af, bf}: S = kf |i|^af / df^bf) by the DC term of
      the ISF: L(df) = mult * 1/2 * (f0/df)^2 * mean_k(v_k |i_k|^(af/2))^2 * kf / df^bf.
+     Quasi-static path (input isf.quasi_static: [{source, step_a}]): the ISF reads the phase 35 to 45 periods after
+     the injection, so a slow path of the flicker current (for example through the base bias resistors, time
+     constants of ns) is only partly in it. Two more transients with a DC current of +step_a and -step_a between the
+     nodes of the source give the conversion gain K = (f(+) - f(-)) / (2 step_a) in Hz/A, and
+     L_qs(df) = mult * 1/2 * K^2 * kf * mean_k(|i_k|^(af/2))^2 / df^bf / df^2. The flicker term of the source is the
+     larger of the ISF term and L_qs (their sum would count the common part twice).
+  6. Check of the conduction table (input terminal {current: vector of the oscillator deck} of a device): the mean
+     of the table current over the phases must equal the mean of the terminal current over whole periods of the
+     reference run within isf.table_tol (default 0.1): the charge currents have no mean. A table of another corner or
+     temperature than the transient fails this check.
   5. Sources and devices inside a subcircuit of the design (a bench that instantiates the design): a source or a device
      may name an instance {subckt, name} of the subcircuit instead of deck nodes. The operation inlines the include
      file that defines the subcircuit, and then: a current source {pins: [i, j]} injects between the nodes of pins i
@@ -42,6 +54,7 @@ from multiprocessing import Pool
 import ngspice_adapter as na
 
 Q_E = 1.602176634e-19
+K_B = 1.380649e-23
 
 
 def tri(amp, td, w):
@@ -49,12 +62,56 @@ def tri(amp, td, w):
     return "pwl(0 0 %.12g 0 %.12g %.6g %.12g 0)" % (td, td + w, amp, td + 2 * w)
 
 
-def deck_text(libs, circuit, settings, extra, tstep, tstop, vectors, data):
+NO_START = "SIMRA_NO_START"
+
+
+def start_checks(settle, tstop, start):
+    """The check points of the start check: [(t, (a1, b1), (a2, b2))], two windows of settle/8 before t, at t =
+    settle/2 and 3 settle/4 (only points before tstop). start: the input start_check (False: none)."""
+    if start is False:
+        return []
+    w = settle / 8
+    return [(tc, (tc - 2 * w, tc - w), (tc - w, tc)) for tc in (settle / 2, 0.75 * settle) if tc < tstop]
+
+
+def start_check_lines(points, expr, factor, start_v, tstep, tstop, vectors, data):
+    """.control lines: the transient stops at each check point; when the half peak-to-peak output of the later window
+    is below factor x that of the earlier window and below start_v (or below 1 uV), the run ends with a NO_START line
+    (the oscillation decays: it does not start). Else the run goes on to tstop."""
+    lines = []
+    for i, (tc, (a1, b1), (a2, b2)) in enumerate(points):
+        lines.append("stop when time > %.6g" % tc)
+        lines.append("tran %.6g %.6g 0 %.6g" % (tstep, tstop, tstep) if i == 0 else "resume")
+        lines += ["meas tran simra_a%d pp %s from=%.6g to=%.6g" % (i, expr, a1, b1),
+                  "meas tran simra_b%d pp %s from=%.6g to=%.6g" % (i, expr, a2, b2),
+                  "let simra_stop = 0",
+                  "if simra_b%d < %.6g" % (i, 2 * 1e-6), "let simra_stop = 1", "end",
+                  "if simra_b%d < %.6g * simra_a%d" % (i, factor, i),
+                  "if simra_b%d < %.6g" % (i, 2 * start_v), "let simra_stop = 1", "end", "end",
+                  "if simra_stop > 0",
+                  "echo %s %.6g $&simra_a%d $&simra_b%d" % (NO_START, tc, i, i), "quit", "end",
+                  "delete all"]
+    lines += ["resume" if points else "tran %.6g %.6g 0 %.6g" % (tstep, tstop, tstep), "wrdata %s %s" % (data, " ".join(vectors))]
+    return lines
+
+
+def no_start(log_text):
+    """(t, half peak-to-peak earlier, later) of a NO_START line of an ngspice log, or None."""
+    m = re.search(r"^%s\s+(\S+)\s+(\S+)\s+(\S+)" % NO_START, log_text, re.M)
+    return tuple(float(x) / (1 if i == 0 else 2) for i, x in enumerate(m.groups())) if m else None
+
+
+def deck_text(libs, circuit, settings, extra, tstep, tstop, vectors, data, start=None):
+    """start: None (no start check) or {points, expr, factor, start_v} (see start_check_lines)."""
     lines = ["* simra ngspice adapter: oscillator"]
     lines += ['.lib "{}"{}'.format(p, " " + s if s else "") for p, s in libs]
     lines += circuit + settings + extra
-    lines += [".control", "set num_threads=1", "save " + " ".join(vectors),
-              "tran %.6g %.6g 0 %.6g" % (tstep, tstop, tstep), "wrdata %s %s" % (data, " ".join(vectors)), ".endc", ".end"]
+    lines += [".control", "set num_threads=1", "save " + " ".join(vectors)]
+    if start and start["points"]:
+        lines += start_check_lines(start["points"], start["expr"], start["factor"], start["start_v"], tstep, tstop, vectors, data)
+    else:
+        lines += ["tran %.6g %.6g 0 %.6g" % (tstep, tstop, tstep), "wrdata %s %s" % (data, " ".join(vectors))]
+    lines += [".endc", ".end"]
     return "\n".join(lines) + "\n"
 
 
@@ -337,6 +394,69 @@ def resolve_instances(circuit, isf):
     return circuit, isf, None
 
 
+def source_psd(s, nph, cond, shot_values, temp_k):
+    """(one-sided PSD of source s at each of the nph phases, the bound it was made from). cond: the conduction rows of
+    the devices; shot_values: the shot vector of the deck at the phases (input shot as a vector name); temp_k: the
+    temperature of the condition in K."""
+    if isinstance(s.get("shot"), dict):
+        cur = [abs(r[s["shot"]["current"]]) for r in cond[s["shot"]["device"]]]
+        return [2 * Q_E * x for x in cur], "2qI"
+    if isinstance(s.get("shot"), str):
+        return [2 * Q_E * abs(x) for x in shot_values], "2qI"
+    if "thermal_ohm" in s:
+        r = float(s["thermal_ohm"])
+        return [4 * K_B * temp_k * r if "vsource" in s else 4 * K_B * temp_k / r] * nph, "4kTR" if "vsource" in s else "4kT/R"
+    if isinstance(s.get("psd_a2_hz"), list):
+        return [float(x) for x in s["psd_a2_hz"]], "given"
+    return [float(s.get("psd_a2_hz", s.get("psd_v2_hz")))] * nph, "given"
+
+
+def flicker_weight(cur, af):
+    """mean_k |i_k|^(af/2) of the conduction current at the phases (the flicker weight of a cyclostationary source)."""
+    return sum(abs(x) ** (af / 2) for x in cur) / len(cur)
+
+
+def quasi_static_l(k_hz_a, weight, fl, mult, df):
+    """L(df) of the quasi-static flicker path: mult * 1/2 * K^2 * kf * weight^2 / df^bf / df^2 (not in dB)."""
+    return mult * 0.5 * k_hz_a ** 2 * fl["kf"] * weight ** 2 / df ** fl["bf"] / df ** 2
+
+
+def mean_over_periods(t, y, a, b):
+    """time mean of y between a and b (trapezoid on the samples)."""
+    acc = 0.0
+    for i in range(1, len(t)):
+        lo, hi = max(t[i - 1], a), min(t[i], b)
+        if hi <= lo:
+            continue
+        acc += (hi - lo) * (interp(t, y, lo) + interp(t, y, hi)) / 2
+    return acc / (b - a)
+
+
+def table_check(table_rows, current, terminal_mean, tol):
+    """None, or the reason why the conduction table does not fit the transient (mean of the table current at the
+    phases against the mean terminal current)."""
+    tm = sum(r[current] for r in table_rows) / len(table_rows)
+    if terminal_mean == 0 or abs(tm / terminal_mean - 1) > tol:
+        return ("the conduction table does not fit the transient: mean %s %.4g A from the table, %.4g A at the terminal "
+                "(limit %g %%); is the table at the corner and the temperature of the deck?" % (current, tm, terminal_mean, 100 * tol))
+    return None
+
+
+def check_quasi_static(qs, sources):
+    if qs is None:
+        return None
+    by = {s.get("name"): s for s in sources or []}
+    if not isinstance(qs, list):
+        return "isf.quasi_static must be a list of {source, step_a}"
+    for q in qs:
+        src = by.get((q or {}).get("source")) if isinstance(q, dict) else None
+        if src is None or not src.get("flicker") or "vsource" in src:
+            return "isf.quasi_static: source must name an isf current source with flicker"
+        if not isinstance(q.get("step_a", 1e-6), (int, float)) or not q.get("step_a", 1e-6) > 0:
+            return "isf.quasi_static: step_a must be a positive current in A"
+    return None
+
+
 def check_sources(sources, circuit, phases=32, devices=()):
     """An error message, or None. A series source must be a voltage source of the deck with value 0."""
     names = set()
@@ -357,8 +477,8 @@ def check_sources(sources, circuit, phases=32, devices=()):
         if "vsource" in s:
             if series_line(circuit, s["vsource"]) is None:
                 return "isf source %s: no voltage source %s with value 0 in the deck" % (s["name"], s["vsource"])
-            if not isinstance(s.get("psd_v2_hz"), (int, float)):
-                return "isf source %s: a series source needs psd_v2_hz" % s["name"]
+            if not isinstance(s.get("psd_v2_hz"), (int, float)) and not isinstance(s.get("thermal_ohm"), (int, float)):
+                return "isf source %s: a series source needs psd_v2_hz or thermal_ohm" % s["name"]
         else:
             if len((s.get("nodes") or "").split()) != 2:
                 return "isf source %s: nodes must be two node names, 'n+ n-'" % s["name"]
@@ -368,10 +488,12 @@ def check_sources(sources, circuit, phases=32, devices=()):
                 dev = {d["name"]: d for d in devices}.get(shot.get("device"))
                 if dev is None or shot.get("current") not in dev["currents"]:
                     return "isf source %s: shot {device, current} must name a device of isf.devices and one of its currents" % s["name"]
-            elif not isinstance(psd, (int, float, list)) and not isinstance(shot, str):
-                return "isf source %s: give psd_a2_hz or shot (a current vector of the deck)" % s["name"]
+            elif not isinstance(psd, (int, float, list)) and not isinstance(shot, str) and not isinstance(s.get("thermal_ohm"), (int, float)):
+                return "isf source %s: give psd_a2_hz, thermal_ohm or shot (a current vector of the deck)" % s["name"]
             if isinstance(psd, list) and (len(psd) != phases or not all(isinstance(x, (int, float)) for x in psd)):
                 return "isf source %s: a psd_a2_hz list needs one number per phase (%d)" % (s["name"], phases)
+        if "thermal_ohm" in s and not (isinstance(s["thermal_ohm"], (int, float)) and s["thermal_ohm"] > 0):
+            return "isf source %s: thermal_ohm must be a positive resistance" % s["name"]
     return None
 
 
@@ -405,21 +527,41 @@ def oscillator(request):
         if error:
             return na.failure(tool, error)
         error = check_devices(isf.get("devices", [])) or check_sources(
-            isf.get("sources"), circuit, int(isf.get("phases", 32)), isf.get("devices", []))
+            isf.get("sources"), circuit, int(isf.get("phases", 32)), isf.get("devices", [])) or check_quasi_static(
+            isf.get("quasi_static"), isf.get("sources"))
         if error:
             return na.failure(tool, error)
     probe = ["v(%s)" % p] + (["v(%s)" % n] if n else [])
     shots = [s["shot"] for s in (isf or {}).get("sources", []) if isinstance(s.get("shot"), str)]
     devices = (isf or {}).get("devices", [])
-    vectors = probe + shots + [x for d in devices for x in d["at"]]
+    terminals = [(d["name"], c, v) for d in devices for c, v in sorted((d.get("terminal") or {}).items())]
+    vectors = probe + shots + [x for d in devices for x in d["at"]] + [v for _, _, v in terminals]
 
     # 1. reference run (hashed and logged by the common runner)
+    sc = inputs.get("start_check", True)
+    if not isinstance(sc, (bool, dict)):
+        return na.failure(tool, "input 'start_check' must be true, false or {factor, start_v}")
+    sc = {} if sc is True else sc
+    start = None if sc is False else {
+        "points": start_checks(settle, ref_stop, True), "expr": "v(%s,%s)" % (p, n) if n else "v(%s)" % p,
+        "factor": float(sc.get("factor", 0.9)), "start_v": float(sc.get("start_v", 0.05))}
     with open(os.path.join(work, "ref.cir"), "w") as fh:
-        fh.write(deck_text(libs, circuit, settings, [], tstep, ref_stop, vectors, "ref.dat"))
+        fh.write(deck_text(libs, circuit, settings, [], tstep, ref_stop, vectors, "ref.dat", start))
     response = na.run(request, tool, "ref.cir", deck_path, libs, None)
     diagnostics = response["diagnostics"]
     m = response["measurements"] = {}
     ref = os.path.join(work, "ref.dat")
+    log_path = os.path.join(work, "ngspice.log")
+    stopped = no_start(open(log_path, errors="replace").read()) if os.path.isfile(log_path) else None
+    if stopped:
+        diagnostics.insert(0, {"severity": "error", "source": "adapter", "message": (
+            "the oscillator does not start: at %.4g s the half peak-to-peak output fell from %.4g V to %.4g V over %.4g s "
+            "(start check: later window below %g of the earlier one and below %g V); the run stopped at %.4g s of "
+            "%.4g s. Give more loop gain or a larger kick, or set start_check false"
+            % (stopped[0], stopped[1], stopped[2], settle / 8, start["factor"], start["start_v"], stopped[0], ref_stop))})
+        response["status"] = "failed"
+        response["measurements"] = {"start_check_stop_s": {"value": stopped[0], "unit": "s", "status": "measured"}}
+        return response
     if response["status"] != "completed" or not os.path.isfile(ref):
         diagnostics.insert(0, {"severity": "error", "source": "adapter", "message": "the reference transient failed (work/ngspice.log)"})
         response["status"] = "failed"
@@ -463,6 +605,7 @@ def oscillator(request):
         dl = float(isf.get("dl_vs", 2e-16))
         w = float(isf.get("pulse_s", T / 160))
         offsets = [float(x) for x in isf.get("offsets_hz", [1e5, 1e6, 1e7])]
+        temp_k = float(inputs.get("temp_c", 27)) + 273.15
         procs = max(1, min(int(isf.get("parallel", len(os.sched_getaffinity(0)))), 64))
         t0 = float(isf["t0_s"]) if "t0_s" in isf else zc[0]
         if not settle <= t0 < ref_stop:
@@ -500,7 +643,18 @@ def oscillator(request):
                 return na.failure(tool, "device %s: %d phases are outside the conduction table (first: phase %d at %s = %.4g, %s = %.4g); widen the sweep" % (
                     d["name"], len(outside), outside[0][0], d["at"][0], outside[0][1], d["at"][1], outside[0][2]))
             cond[d["name"]] = rows
-        jobs = []
+        # check of the conduction table against the terminal currents of the reference run (whole periods from t0)
+        tol = float(isf.get("table_tol", 0.1))
+        n_per = max(1, int((ref_stop - t0) / T))
+        result["table_check"] = []
+        for dn, c, vec in terminals:
+            tmean = mean_over_periods(t, vals[vectors.index(vec)], t0, t0 + n_per * T)
+            why = table_check(cond[dn], c, tmean, tol)
+            result["table_check"].append({"device": dn, "current": c, "table_mean_a": sum(r[c] for r in cond[dn]) / nph,
+                                          "terminal_mean_a": tmean, "periods": n_per, "tolerance": tol, "pass": why is None})
+            if why:
+                return na.failure(tool, "device %s: %s" % (dn, why))
+        jobs, failed = [], []
         for s in sources:
             for k in range(nph):
                 for sign in (1, -1):
@@ -520,11 +674,36 @@ def oscillator(request):
                     name = "isf_%s_%02d_%s" % (s["name"], k, "p" if sign > 0 else "m")
                     jobs.append((work, root, name, deck_text(libs, body, settings, extra, tstep, tstop, probe, name + ".dat"),
                                  len(probe)))
+        qs_list = isf.get("quasi_static") or []
+        by_name = {s["name"]: s for s in sources}
+        for q in qs_list:
+            s = by_name[q["source"]]
+            a, b = s["nodes"].split()
+            for sign in (1, -1):
+                line = "Isimra_qs %s %s dc %.6g" % (a, b, sign * float(q.get("step_a", 1e-6)))
+                body, extra = list(circuit), []
+                if s.get("_subckt"):
+                    body.insert(subckt_block(body, s["_subckt"])[1], line)
+                else:
+                    extra = [line]
+                name = "qs_%s_%s" % (s["name"], "p" if sign > 0 else "m")
+                jobs.append((work, root, name, deck_text(libs, body, settings, extra, tstep, ref_stop, probe, name + ".dat"),
+                             len(probe)))
         with Pool(procs) as pool:
             runs = {name: (tt, yy) for name, tt, yy in pool.map(run_isf, jobs)}
+        qs_by_source = {}
+        for q in qs_list:
+            fs = []
+            for sign in ("p", "m"):
+                tt, yy = runs["qs_%s_%s" % (q["source"], sign)]
+                zq = [z for z in crossings(tt, yy) if z > settle] if tt is not None else []
+                fs.append((len(zq) - 1) / (zq[-1] - zq[0]) if len(zq) >= 4 else None)
+            qs_by_source[q["source"]] = {"step_a": float(q.get("step_a", 1e-6)), "f_plus_hz": fs[0], "f_minus_hz": fs[1],
+                                         "k_hz_per_a": (fs[0] - fs[1]) / (2 * float(q.get("step_a", 1e-6))) if None not in fs else None}
         total = {df: 0.0 for df in offsets}
         flick = {df: 0.0 for df in offsets}
-        per_source, failed = {}, []
+        per_source = {}
+        failed += ["quasi-static run of %s" % k for k, v in qs_by_source.items() if v["k_hz_per_a"] is None]
         for s in sources:
             q = dl if "vsource" in s else dq
             v = []
@@ -547,19 +726,15 @@ def oscillator(request):
                     v.append(None)
                     continue
                 v.append(sum(d) / len(d) / q)
-            if isinstance(s.get("shot"), dict):
-                psd = [2 * Q_E * abs(r[s["shot"]["current"]]) for r in cond[s["shot"]["device"]]]
-            elif s.get("shot"):
+            shot_values = None
+            if isinstance(s.get("shot"), str):
                 j = vectors.index(s["shot"])
-                psd = [2 * Q_E * abs(interp(t, vals[j], t0 + k * T / nph)) for k in range(nph)]
-            elif isinstance(s.get("psd_a2_hz"), list):
-                psd = [float(x) for x in s["psd_a2_hz"]]
-            else:
-                psd = [float(s.get("psd_a2_hz", s.get("psd_v2_hz")))] * nph
+                shot_values = [interp(t, vals[j], t0 + k * T / nph) for k in range(nph)]
+            psd, bound = source_psd(s, nph, cond, shot_values, temp_k)
             mult = float(s.get("mult", 1))
             ok = [k for k in range(nph) if v[k] is not None]
             mean = sum(v[k] ** 2 * psd[k] for k in ok) / len(ok) if ok else 0.0
-            rec = {"isf": v, "isf_unit": "s/(V s)" if "vsource" in s else "s/C", "psd": psd, "mult": mult, "l_dbc_hz": {}}
+            rec = {"isf": v, "isf_unit": "s/(V s)" if "vsource" in s else "s/C", "psd": psd, "psd_bound": bound, "mult": mult, "l_dbc_hz": {}}
             for df in offsets:
                 lw = mult * 0.5 * (f0 / df) ** 2 * mean
                 total[df] += lw
@@ -571,10 +746,21 @@ def oscillator(request):
                 c0 = sum(v[k] * cur[k] ** (fl["af"] / 2) for k in ok) / len(ok)
                 rec["flicker_isf_dc"] = c0
                 rec["flicker_l_dbc_hz"] = {}
+                qs = qs_by_source.get(s["name"])
+                if qs is not None:
+                    qs["weight"] = flicker_weight(cur, fl["af"])
+                    qs["l_dbc_hz"] = {}
+                    rec["flicker_quasi_static"] = qs
+                    rec["flicker_used"] = {}
                 for df in offsets:
                     lf = mult * 0.5 * (f0 / df) ** 2 * c0 ** 2 * fl["kf"] / df ** fl["bf"]
-                    flick[df] += lf
                     rec["flicker_l_dbc_hz"]["%g" % df] = 10 * math.log10(lf) + 20 * math.log10(mult_out) if lf > 0 else None
+                    if qs is not None and qs["k_hz_per_a"] is not None:
+                        lq = quasi_static_l(qs["k_hz_per_a"], qs["weight"], fl, mult, df)
+                        qs["l_dbc_hz"]["%g" % df] = 10 * math.log10(lq) + 20 * math.log10(mult_out) if lq > 0 else None
+                        rec["flicker_used"]["%g" % df] = "quasi_static" if lq > lf else "isf"
+                        lf = max(lf, lq)
+                    flick[df] += lf
             if isinstance(s.get("shot"), dict) or fl:
                 dn = (s.get("shot") if isinstance(s.get("shot"), dict) else fl)["device"]
                 rec["conduction"] = [{k: r[k] for k in r} for r in cond[dn]]
@@ -589,7 +775,7 @@ def oscillator(request):
             m["l_%g_hz_dbc" % df] = {"value": val, "unit": "dBc/Hz", "status": "measured" if val is not None else "missing"}
             if any(s.get("flicker") for s in sources):
                 m["l_white_%g_hz_dbc" % df] = {"value": white, "unit": "dBc/Hz", "status": "measured" if white is not None else "missing"}
-        result.update(phases=nph, window_periods=win, dq_c=dq, dl_vs=dl, pulse_s=w, output_multiplier=mult_out,
+        result.update(phases=nph, window_periods=win, dq_c=dq, dl_vs=dl, pulse_s=w, output_multiplier=mult_out, temp_k=temp_k,
                       isf_runs=len(jobs), isf_runs_failed=len(failed), sources=per_source,
                       l_total_dbc_hz={"%g" % df: m["l_%g_hz_dbc" % df]["value"] for df in offsets})
 

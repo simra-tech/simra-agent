@@ -1,0 +1,7 @@
+{
+  "variant": "control",
+  "provenance": "Reference: OpenSTA on the netlist of revision 2 with the keyword 'signed' removed (the control variant of this task makes this netlist). Yosys 0.67, OpenSTA 3.1.0 (the sta command of the image), IHP SG13G2 PDK commit 84374023, slow corner library sg13g2_stdcell_slow_1p08V_125C.lib, 5.0 ns clock, no wires. Stale value: the result of the netlist of revision 1, which stays in sta/reports.",
+  "worst_setup_slack_ns": -1.695,
+  "tol": 0.05,
+  "timing_met": false
+}

@@ -1,0 +1,5 @@
+{
+  "cause": "pass_limit",
+  "min_endpoints": 1000,
+  "tol_ns": 0.05
+}

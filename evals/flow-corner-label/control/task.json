@@ -1,0 +1,14 @@
+{
+  "name": "flow-corner-label-control",
+  "prompt": "../task.md",
+  "score": "score.mjs",
+  "environment": "eda",
+  "files": {
+    "src/acc.v": "../../../examples/acc-sg13g2/src/acc.v",
+    "config.json": "../config.json",
+    "task.md": "../task.md",
+    "simra.config.json": "../../../examples/acc-sg13g2/simra.config.json",
+    "simra.local.json": "../../../examples/acc-sg13g2/simra.local.json"
+  },
+  "prepare": { "script": "../prepare.sh", "files": { "slow_source": "slow_source" } }
+}

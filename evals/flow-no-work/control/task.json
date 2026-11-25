@@ -1,0 +1,22 @@
+{
+  "name": "flow-no-work-control",
+  "prompt": "../task.md",
+  "score": "score.mjs",
+  "environment": "eda",
+  "files": {
+    "task.md": "../task.md",
+    "simra.config.json": "../../../examples/acc-sg13g2/simra.config.json",
+    "simra.local.json": "../../../examples/acc-sg13g2/simra.local.json"
+  },
+  "prepare": {
+    "script": "../prepare.sh",
+    "files": {
+      "fir_v1.v": "../files/fir_v1.v",
+      "fir_v2.v": "../files/fir_v2.v",
+      "synth.ys": "../files/synth_control.ys",
+      "sta.tcl": "../files/sta.tcl",
+      "run_sta.sh": "../files/run_sta.sh",
+      "summary.py": "../files/summary.py"
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "variant": "seeded",
+  "provenance": "Reference: the regression with the stimulus path of the test bench corrected (tb/stim.hex). Icarus Verilog of the tool image. The RTL of the last commit has one wrong coefficient (10 in place of 11).",
+  "verdict": "fail",
+  "as_given": { "printed": "PASS: 0 mismatches", "exit_code": 0, "result_lines": 0 },
+  "with_stimulus": { "printed": "FAIL: 996 mismatches", "result_lines": 1000 }
+}

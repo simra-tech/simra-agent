@@ -1,0 +1,8 @@
+{
+  "variant": "seeded",
+  "provenance": "Reference: OpenROAD.STAPrePNR of the same netlist with the slow library of the PDK (the control variant of this task). LibreLane 3.1.0.dev2, Yosys 0.67, OpenSTA 2.7.0 (the binary that the librelane command of the image uses), IHP SG13G2 PDK commit 84374023. Simulated: static timing analysis without wires. The run of record of the seeded variant gives 3.057 ns for the slow-corner label, with the typical library.",
+  "setup_ws_ns": 0.954,
+  "tol": 0.05,
+  "rule_met": false,
+  "wrong_library_ws_ns": 3.057
+}

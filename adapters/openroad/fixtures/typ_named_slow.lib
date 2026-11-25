@@ -1,0 +1,10 @@
+/* A test header: the file name says slow, the content is a typical-corner library. Not a PDK file. */
+library (demo_stdcell_typ_1p20V_25C) {
+  delay_model : table_lookup;
+  nom_process : 1;
+  nom_temperature : 25;
+  nom_voltage : 1.2;
+  default_operating_conditions : demo_stdcell_typ_1p20V_25C;
+  cell (demo_inv_1) {
+  }
+}

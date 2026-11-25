@@ -56,6 +56,13 @@ Xyce 7.10):
 With `sw_nqs=1` and a frequency list that includes 1 GHz, one finding stays: y22 at 1 GHz is 0.114 mS in ngspice
 and 0.068 mS in Xyce (3.5 % of the largest y). Its cause is not known; both cards have self-heating on.
 
+With `reference_temp_c` (27) and another `temp_c`, the operation runs both temperatures. A difference at `temp_c`
+while the 27 °C values agree is a temperature finding (reported, not counted in `findings`). Result for the same
+device with `sw_nqs=1` at 125 °C (simulated, equal base voltage): 0 findings at 27 °C; 7 temperature findings at
+125 °C: DC current 1.9 %, y21 5.2 % at 61 GHz and 8.9 % at 122.5 GHz (Xyce lower), y11 7.5 % at 122.5 GHz
+(registry entry `xyce-sg13g2-hbt-temperature`). −40 °C: not run for this device (the PA task runs Nx 8 at its
+corners).
+
 ## Evaluation on two technologies
 
 The tests in `test/xyce-pdk-container.test.mjs` run in an image with both PDKs (`SIMRA_TEST_IMAGE`).

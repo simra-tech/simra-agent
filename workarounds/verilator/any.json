@@ -1,0 +1,19 @@
+{
+  "schema": "simra.workarounds/0",
+  "simulator": "verilator",
+  "pdk": "*",
+  "versions": "Verilator 5.050",
+  "entries": [
+    {
+      "id": "verilator-trace-underscore",
+      "applies_to": {
+        "operations": []
+      },
+      "gap": "Verilator does not trace a signal whose name starts with an underscore, unless --trace-underscore is given.",
+      "symptom": "A VCD of a gate-level or generated netlist (net names such as _0123_) has no activity for these nets. An activity or power estimate from it is too low, with no error.",
+      "workaround": "Give --trace-underscore. Check that the trace has the number of signals that the netlist has, before you use it.",
+      "status": "worked_around",
+      "evidence": "a 2-net test module: the net _hidden is in the VCD only with --trace-underscore"
+    }
+  ]
+}

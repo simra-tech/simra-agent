@@ -19,8 +19,13 @@ const skip = !process.env.SIMRA_TEST_IMAGE && "SIMRA_TEST_IMAGE is not set";
 // The test image replaces the image of the task; the environment variables of the task stay.
 const local = { environments: { eda: { engine: process.env.SIMRA_TEST_ENGINE ?? "podman", image: process.env.SIMRA_TEST_IMAGE, cpus: process.env.SIMRA_TEST_CPUS } } };
 
-/** The same value: within 1e-4 relative, or 1e-12 absolute for values near 0 (vol_rel, vos_v of the cheat). */
-const same = (a, b) => Math.abs(a - b) <= Math.max(1e-4 * Math.abs(b), 1e-12);
+/**
+ * The same value: within 1e-4 relative, or within the floor for values near 0. The floor of a metric is one tenth of
+ * the absolute tolerance of the task (expected.json), else 1e-12. The offset of the cheat (an ideal symmetric
+ * comparator) is 0, so its simulated value is numerical noise of the time steps: 1.5e-10 V with ngspice 47 (the
+ * recorded run) and 1.7e-6 V with ngspice 46. The limit is 5 mV and the tolerance of the task 0.1 mV.
+ */
+const same = (a, b, floor = 1e-12) => Math.abs(a - b) <= Math.max(1e-4 * Math.abs(b), floor);
 
 for (const name of ["sg13cmos5l", "sky130"]) {
 	test(`comparator-synthesis ${name}: the check gives the recorded results of the four reference designs (container)`, { skip, timeout: 2_400_000 }, async (t) => {
@@ -41,8 +46,13 @@ for (const name of ["sg13cmos5l", "sky130"]) {
 				for (const m of METRICS) {
 					const got = v[corner].worst[m];
 					const want = c.worst[m];
-					assert.ok(same(got.value, want.value), `${k} ${corner} ${m}: ${got.value}, recorded ${want.value}`);
-					assert.ok(Math.abs(got.vcm - want.vcm) < 1e-6, `${k} ${corner} ${m}: at VCM ${got.vcm}, recorded ${want.vcm}`);
+					const floor = (expected.tolerance?.[m]?.abs ?? 1e-11) / 10;
+					assert.ok(same(got.value, want.value, floor), `${k} ${corner} ${m}: ${got.value}, recorded ${want.value}`);
+					// The VCM of the worst value has a meaning only when the recorded values differ over the sweep. For the
+					// cheat they are equal at every VCM, so the worst point is the choice of the numerical noise.
+					const recorded = c.sweep.map((p) => p[m]);
+					const tied = recorded.every((x) => same(x, recorded[0], floor));
+					assert.ok(tied || Math.abs(got.vcm - want.vcm) < 1e-6, `${k} ${corner} ${m}: at VCM ${got.vcm}, recorded ${want.vcm}`);
 					assert.equal(got.pass, want.pass, `${k} ${corner} ${m}: pass`);
 				}
 			}

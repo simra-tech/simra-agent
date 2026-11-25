@@ -1,0 +1,15 @@
+{
+  "name": "flow-repair-progress",
+  "prompt": "task.md",
+  "score": "score.mjs",
+  "environment": "eda",
+  "files": {
+    "src/shreg.v": "files/shreg.v",
+    "config.json": "files/config.json",
+    "shreg.sdc": "files/shreg.sdc",
+    "task.md": "task.md",
+    "simra.config.json": "../../examples/shreg-sg13g2/simra.config.json",
+    "simra.local.json": "../../examples/shreg-sg13g2/simra.local.json"
+  },
+  "prepare": { "script": "prepare.sh" }
+}

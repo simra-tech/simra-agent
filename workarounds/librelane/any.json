@@ -1,0 +1,62 @@
+{
+  "schema": "simra.workarounds/0",
+  "simulator": "librelane",
+  "pdk": "*",
+  "versions": "LibreLane 3.1.0.dev2",
+  "entries": [
+    {
+      "id": "librelane-midpnr-sta-one-corner",
+      "applies_to": {
+        "operations": [
+          "read",
+          "replay"
+        ]
+      },
+      "gap": "The timing steps between the layout steps (OpenROAD.STAMidPNR) analyse one corner only: the default corner, or the first corner of PNR_CORNERS. The metrics of the state keep the numbers of the other corners from the timing step before the layout (OpenROAD.STAPrePNR, no wires).",
+      "symptom": "state_out.json and the metrics of a run after placement or global routing show a slack for each corner. The slack of the slow and the fast corner is the same number as in step STAPrePNR.",
+      "workaround": "Read the metrics that the step computed (or_metrics_out.json of the step), not the state. For another corner, run the timing step again with PNR_CORNERS set to that one corner (librelane adapter, operation replay; or python3 -m librelane.steps run). With several corners in PNR_CORNERS the step still reports the first one only.",
+      "status": "worked_around",
+      "evidence": "examples/acc-sg13g2 with IHP SG13G2: step 43 after global routing gives the typical corner only; a replay with PNR_CORNERS of the slow corner gives a slow slack 2.3 ns lower than the carried number (eval flow-evidence-level)"
+    },
+    {
+      "id": "librelane-cts-delay-buffer-derate-integer",
+      "applies_to": {
+        "operations": [
+          "compare",
+          "replay"
+        ]
+      },
+      "gap": "CTS_DELAY_BUFFER_DERATE_PCT is divided by 100 with an integer division in the clock tree script (expr $pct / 100): 50 gives 0, 150 gives 1. A value below 100 is the same as 0.",
+      "symptom": "A run with the variable set gives the same clock tree and the same netlist as a run without it. No warning.",
+      "workaround": "Do not use the variable for a fraction. Check each change of a clock tree variable with a comparison of the two runs (librelane adapter, operation compare) or a replay of step OpenROAD.CTS, before you record it.",
+      "status": "open",
+      "evidence": "examples/acc-sg13g2 with IHP SG13G2: the values unset, 0, 50, 100 and 300 give the same placed netlist (eval flow-setting-effect); CTS_DISTANCE_BETWEEN_BUFFERS changes it"
+    },
+    {
+      "id": "librelane-step-log-empty-until-end",
+      "applies_to": {
+        "operations": [
+          "replay"
+        ]
+      },
+      "gap": "The log of an OpenROAD step is empty until the step ends.",
+      "symptom": "A long step (a timing repair, a detailed route) shows a log of 0 bytes for minutes or hours.",
+      "workaround": "Do not read an empty step log as 'no progress' or as a failure. Use the process state and the files that the tool writes (for the detailed route: DRT_SAVE_DRC_REPORT_ITERS gives one report for each iteration).",
+      "status": "worked_around",
+      "evidence": "examples/shreg-sg13g2 with IHP SG13G2: the log of the timing repair step has 0 bytes during the 6 minutes of the step"
+    },
+    {
+      "id": "librelane-two-openroad-builds",
+      "applies_to": {
+        "operations": [
+          "replay"
+        ]
+      },
+      "gap": "A tool image can have two OpenROAD builds. The librelane launcher puts its own build first in PATH. A step that is run by hand with the default PATH uses the other build.",
+      "symptom": "A step script run by hand fails with a message such as 'not the name of a scene', or gives other numbers than the flow.",
+      "workaround": "Run one step with python3 -m librelane.steps run -c <step>/config.json -i <step>/state_in.json -o <dir> and the PATH of the launcher (the librelane adapter, operation replay, does both). Record the OpenROAD version of the flow from the step log or `openroad -version` with that PATH.",
+      "status": "worked_around",
+      "evidence": "an IIC-OSIC-TOOLS based image with LibreLane 3.1.0.dev2: OpenROAD 26Q1-1024 (OpenSTA 2.7.0) for the flow, 26Q3-850 (OpenSTA 3.1.0) on the default PATH"
+    }
+  ]
+}

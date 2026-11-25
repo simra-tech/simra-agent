@@ -1,0 +1,11 @@
+{
+  "DESIGN_NAME": "acc",
+  "VERILOG_FILES": ["dir::src/acc.v"],
+  "CLOCK_PORT": "clk",
+  "CLOCK_PERIOD": 7.1,
+  "CELL_LIBS": {
+    "*_typ_1p20V_25C": ["dir::lib/sg13g2_stdcell_typ_1p20V_25C.lib"],
+    "*_slow_1p08V_125C": ["dir::lib/sg13g2_stdcell_slow_1p08V_125C.lib"],
+    "*_fast_1p32V_m40C": ["dir::lib/sg13g2_stdcell_fast_1p32V_m40C.lib"]
+  }
+}

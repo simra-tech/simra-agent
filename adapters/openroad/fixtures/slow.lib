@@ -1,0 +1,10 @@
+/* A test header: a slow-corner library. Not a PDK file. */
+library (demo_stdcell_slow_1p08V_125C) {
+  delay_model : table_lookup;
+  nom_process : 1;
+  nom_temperature : 125;
+  nom_voltage : 1.08;
+  default_operating_conditions : demo_stdcell_slow_1p08V_125C;
+  cell (demo_inv_1) {
+  }
+}

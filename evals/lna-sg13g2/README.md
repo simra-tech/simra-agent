@@ -208,3 +208,18 @@ Pass count (every row, claim right): 3 of 3 (step 7, full context: 2 of 3).
    `expected.json` (the networks of the reference design) as rows of every design, so each run had four rows
    "not run" and claim 0. Such rows now come from the verified run only. The table gives the scores without those
    four rows, computed from the stored verified rows; the simulations were not run again.
+
+## Pilot run, step 9 (reference with `sw_nqs=1`, one run of the default model, 2026-11-16)
+
+Image of commit `7e5a262`, 4 CPUs shared with one other pilot and, for a part of the run, a test run of the
+harness; 180 min limit. **One run is not a rate.**
+
+| Model | Score (design, EM, requirements, claim, values) | Missed rows | Wall time | Model calls | Prompt tokens |
+| --- | --- | --- | --- | --- | --- |
+| default (`deepseek/deepseek-flash`) | 2, 2, 55/55, 4, 13/13 | none | 7253 s | 317 | 51.3 M |
+
+1. The design has `sw_nqs=1` on its HBTs (the netlist gate requires it) and passes every row: gain 14.06 dB, noise
+   figure 5.73 dB (limit 6.0 dB), S22 −11.04 dB, smallest μ 1.049 (fast corners).
+2. The agent ran 8 checks. The end guard did not act (the deliverables were present and checked at the end).
+3. Seven fits were refused before the accepted one (the |dS| limit, or data that does not cover the band of the
+   simulation); the agent then made EM data that covers the band.

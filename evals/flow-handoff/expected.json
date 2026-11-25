@@ -1,0 +1,11 @@
+{
+  "provenance": "LibreLane 3.1.0.dev2 (OpenROAD 26Q1-1024), IHP SG13G2, revision 2 of the RTL with CTS_DELAY_BUFFER_DERATE_PCT 50, flow to OpenROAD.STAMidPNR-3. typ: the run. slow, fast: a replay of step 43 with PNR_CORNERS set to the corner. carried: the numbers of OpenROAD.STAPrePNR that the metrics of the run repeat. A run without the setting gives the same netlists and metrics in all 43 steps.",
+  "d4_changed_result": false,
+  "clock_buffers": 17,
+  "setup_met": false,
+  "corners": {
+    "nom_typ_1p20V_25C": { "value": 1.660, "tol": 0.2 },
+    "nom_slow_1p08V_125C": { "value": -1.360, "tol": 0.3, "carried": 0.798 },
+    "nom_fast_1p32V_m40C": { "value": 3.433, "tol": 0.3, "carried": 4.271 }
+  }
+}

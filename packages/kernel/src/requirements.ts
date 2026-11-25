@@ -105,6 +105,10 @@ export interface DeviceCheckGate {
 	devices: { name: string; cell: string; params?: Record<string, number>; pins: string[]; bias_v: [number, number]; ngspice_params?: Record<string, number>; xyce_params?: Record<string, number> }[];
 	freqs_hz: number[];
 	tolerance?: { dc_rel?: number; y_rel?: number };
+	/** The temperature at which the two model cards are expected to agree (default 27). At a condition with another
+	 * temperature the check runs both; a difference only at the temperature of the condition is a finding in the reason
+	 * of the row, not a failure. */
+	reference_temp_c?: number;
 	environment?: string;
 }
 
@@ -164,6 +168,12 @@ export interface Requirement {
 	conditions?: string[];
 	/** Where the limit comes from (see LimitSource). */
 	limit_source?: LimitSource;
+	/**
+	 * Conditions at which the value is measured and reported, not scored: the check runs the experiment there and
+	 * writes the row (status from the limit, as information) to verdict.reported, not to rows. A reported row does
+	 * not change the status of the check or meets_spec. reason says why the row is not scored there.
+	 */
+	reported?: { conditions: string[]; reason: string };
 }
 
 /**
@@ -247,10 +257,14 @@ export interface VerdictRecord {
 	requirements_file: { path: string; sha256: string };
 	selection: { requirements: string[] | null; conditions: string[] | null };
 	design: ExperimentRecord["design"];
+	/** The design file of the netlist gate (gates.netlist.file) with its hash at the start of the check, or null. */
+	design_file?: { path: string; sha256: string } | null;
 	simra: { kernel_version: string };
 	/** Each experiment of the check, with its error and warning diagnostics (for example a design error with its file and line). */
 	experiments: { id: string; experiment: string; condition: string | null; status: ExecutionStatus; diagnostics: Diagnostic[] }[];
 	rows: VerdictRow[];
+	/** Rows that are reported and not scored (Requirement.reported); absent when the file has none. */
+	reported?: (VerdictRow & { reported_reason: string })[];
 }
 
 export interface CheckOptions {
@@ -442,6 +456,18 @@ export function validateRequirements(file: RequirementsFile): string[] {
 			if (!conditions[c]) errors.push(`${where}: condition "${c}" is not defined`);
 			const limit = limitFor(r, c);
 			if (!validLimit(r.op, limit)) errors.push(`${where}: no valid limit for op ${r.op} at condition "${c}"`);
+		}
+		if (r.reported !== undefined) {
+			const rp = r.reported;
+			if (!rp || !Array.isArray(rp.conditions) || !rp.conditions.length || typeof rp.reason !== "string" || !rp.reason) {
+				errors.push(`${where}: reported needs conditions (at least one) and a reason`);
+			} else {
+				for (const c of rp.conditions) {
+					if (!conditions[c]) errors.push(`${where}: reported condition "${c}" is not defined`);
+					else if (r.conditions.includes(c)) errors.push(`${where}: condition "${c}" is both scored and reported`);
+					else if (!validLimit(r.op, limitFor(r, c))) errors.push(`${where}: no valid limit for op ${r.op} at reported condition "${c}"`);
+				}
+			}
 		}
 	}
 	return errors;
@@ -768,7 +794,9 @@ export function deviceCheckGateRows(runs: { device: string; condition: string; i
 		}
 		const found = run.result.diagnostics.filter((d) => d.severity === "warning" && d.message.startsWith("finding: ")).map((d) => d.message.slice(9));
 		const worst = `largest difference: DC ${(100 * (m.dc_rel_max?.value ?? 0)).toFixed(2)} %, y ${(100 * (m.y_rel_max?.value ?? 0)).toFixed(2)} %`;
-		const reason = n > 0 ? `${found.slice(0, 2).join("; ")}${found.length > 2 ? `; and ${found.length - 2} more` : ""}; the simulators do not agree for this device (see the workaround registry of the PDK)` : worst;
+		const atTemp = run.result.diagnostics.filter((d) => d.severity === "warning" && d.message.startsWith("temperature finding: ")).map((d) => d.message.slice(21));
+		const tempNote = atTemp.length ? `; ${atTemp.length} temperature finding${atTemp.length === 1 ? "" : "s"} (the simulators agree at the reference temperature, so this is a finding and not an error): ${atTemp.slice(0, 2).join("; ")}${atTemp.length > 2 ? `; and ${atTemp.length - 2} more` : ""}` : "";
+		const reason = n > 0 ? `${found.slice(0, 2).join("; ")}${found.length > 2 ? `; and ${found.length - 2} more` : ""}; the simulators do not agree for this device (see the workaround registry of the PDK)` : `${worst}${tempNote}`;
 		return { ...base, value: n, margin: -n, status: n > 0 ? "fail" : "pass", reason } as VerdictRow;
 	});
 }
@@ -971,6 +999,9 @@ export function loadRequirements(root: string, file = REQUIREMENTS_FILE): { path
 export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: string; verdict: VerdictRecord }> {
 	const root = resolve(opts.root);
 	const { path, file } = loadRequirements(root, opts.file);
+	// The design file at the start of the check: an answer is consistent only with a check of the final file.
+	const designRel = file.gates?.netlist?.file;
+	const designFile = typeof designRel === "string" && existsSync(join(root, designRel)) ? { path: designRel, sha256: sha256File(join(root, designRel)) } : null;
 	const known = new Set(file.requirements.map((r) => r.id));
 	for (const id of opts.requirements ?? []) if (!known.has(id)) throw new Error(`requirement "${id}" is not defined`);
 	for (const c of opts.conditions ?? []) if (!file.conditions[c]) throw new Error(`condition "${c}" is not defined`);
@@ -985,6 +1016,13 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 	const pairs = new Map<string, { experiment: string; condition: string | null }>();
 	for (const r of file.requirements) {
 		for (const c of conditionsOf(r)) if (selected(r, c)) pairs.set(key(r.experiment, c), { experiment: r.experiment, condition: c });
+	}
+	// Reported rows run their experiment too; they are added after the scored pairs, so the gates (which follow the
+	// conditions of the scored rows) do not change.
+	const reportedOf = (r: Requirement) => r.reported?.conditions ?? [];
+	const reportedPairs = new Map<string, { experiment: string; condition: string | null }>();
+	for (const r of file.requirements) {
+		for (const c of reportedOf(r)) if (selected(r, c) && !pairs.has(key(r.experiment, c))) reportedPairs.set(key(r.experiment, c), { experiment: r.experiment, condition: c });
 	}
 
 	// The operating-limit gate: one device_limits run per (experiment, condition) pair of the gate.
@@ -1004,7 +1042,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 	const id = newExperimentId();
 	const runs = new Map<string, { id: string; result: ResultRecord }>();
 	const limitRuns: { experiment: string; condition: string | null; id: string; result: ResultRecord }[] = [];
-	const list = [...pairs];
+	const list = [...pairs, ...reportedPairs];
 	const done: (VerdictRecord["experiments"][number] | null)[] = list.map(() => null);
 	const jobs = list.map(([pair, { experiment, condition }], i) => async () => {
 		const t = file.experiments[experiment];
@@ -1074,7 +1112,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 					xyce_libs: xy.libs,
 					ngspice_params: { ...required, ...(d.ngspice_params ?? {}) },
 					...(d.xyce_params ? { xyce_params: d.xyce_params } : {}),
-					...(ng.temp_c !== undefined ? { temp_c: ng.temp_c } : {}),
+					...(ng.temp_c !== undefined ? { temp_c: ng.temp_c, reference_temp_c: dgate!.reference_temp_c ?? 27 } : {}),
 					...(dgate!.tolerance ? { tolerance: dgate!.tolerance } : {}),
 				};
 				const outcome = await runExperiment({ root, adapter: "xyce", operation: "device_crosscheck", inputs, environment: dgate!.environment ?? file.experiments[dgate!.xyce_experiment].environment, purpose: `check ${id}: gate device_check ${d.name} at ${condition}`, signal: opts.signal });
@@ -1104,6 +1142,15 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 			rows.push(cited.length ? { ...row, assumptions: cited } : row);
 		}
 	}
+	const reported: NonNullable<VerdictRecord["reported"]> = [];
+	for (const r of file.requirements) {
+		for (const c of reportedOf(r)) {
+			const run = selected(r, c) ? (runs.get(key(r.experiment, c)) ?? null) : null;
+			const row = evaluateRow(r, c, run, selected(r, c) ? "the check was cancelled before this experiment" : NOT_SELECTED, root);
+			const cited = rowAssumptions(file, r, c);
+			reported.push({ ...(cited.length ? { ...row, assumptions: cited } : row), reported_reason: r.reported!.reason });
+		}
+	}
 	rows.push(...stabilityGateRows(file, rows));
 	rows.push(...connectionGateRows(file, root));
 	rows.push(...limitsGateRows(limitRuns, root));
@@ -1124,9 +1171,11 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 		requirements_file: { path: relative(root, path), sha256: sha256File(path) },
 		selection: { requirements: opts.requirements ?? null, conditions: opts.conditions ?? null },
 		design: gitState(root),
+		design_file: designFile,
 		simra: { kernel_version: KERNEL_VERSION },
 		experiments,
 		rows,
+		...(reported.length ? { reported } : {}),
 	};
 	const dir = join(checksDir(root), id);
 	mkdirSync(dir, { recursive: true });

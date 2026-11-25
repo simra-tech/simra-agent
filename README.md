@@ -53,7 +53,16 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
   layout cell as a Touchstone file: one openEMS job per port, then the merge (see [EM S-parameters](#em-s-parameters)).
 - The tool `em_sparameters` (pi) runs `simra em` and lists S at given frequencies. `simra snp-diff` compares two
   Touchstone files per entry in dB, degrees and |dS|.
-- The workaround registry (`workarounds/<simulator>/<pdk>.json`) lists the known gaps of ngspice, Xyce and openEMS and the
+- The openroad adapter has one operation, `parse`: the typed record of an OpenROAD log (repair tables with the pattern
+  that a table shows, the congestion report, messages). The librelane adapter has three operations: `read` (the typed
+  record of a LibreLane run: the slack of each corner with its evidence level, and warnings for carried-over numbers,
+  a corner name that does not agree with its library, and a step that did not end), `compare` (two runs: did a changed
+  setting change a result) and `replay` (one step again on its saved state, with changed variables). After a shell
+  command that runs LibreLane or reads a run directory, the pi extension adds the warnings of `read` to the result.
+  With `SIMRA_COMMAND_CHECK=on`, after a shell command with exit code 0, it also adds the logs with error lines and
+  the empty result files that the command wrote (off by default; see
+  [adapters/librelane/README.md](adapters/librelane/README.md)).
+- The workaround registry (`workarounds/<simulator>/<pdk>.json`) lists the known gaps of ngspice, Xyce, openEMS and the digital flow tools (LibreLane, OpenROAD, Yosys, Verilator) and the
   stated workaround of each. The agent sees the entries of an adapter with its first result in a session; `simra
   workarounds` and the tool `workarounds` list them (see [Workaround registry](#workaround-registry)).
 - A connection table (`simra.connections/0`) holds the pins, supplies, bias needs and control encodings of the blocks of a
@@ -73,7 +82,11 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
   lists the rows of an assumption.
 - The commands `simra pack init` and `simra pack check` add a PDK to a site: an adapter proposes a technology pack
   from the kit, the user confirms it, and the adapter checks it (see "Add a PDK").
-- One example design exists: a two-stage OTA for the open IHP SG13G2 PDK.
+- The openroad adapter has one operation, `parse`. The librelane adapter has four operations: `read`, `compare`,
+  `replay` and `preflight`. The pi extension adds the findings of `read` to the result of a shell command that runs
+  LibreLane or reads a run directory (see [Digital flow](#digital-flow)).
+- Three example designs exist for the open IHP SG13G2 PDK: a two-stage OTA, and two digital blocks
+  (`examples/acc-sg13g2` and `examples/shreg-sg13g2`).
 
 ## Tools for RF and mixed-signal blocks
 
@@ -92,7 +105,7 @@ What the harness has now, and what a task needs that it does not have yet.
 | Antenna | `em_sparameters` (S11) | far-field gain and pattern |
 | Baseband amplifier, filter, regulator | ngspice ac, noise, transient, `monte_carlo` | loop gain at an internal node (a loop-probe operation) |
 | Bias reference with trim | ngspice, `monte_carlo` | a trim search per Monte Carlo seed |
-| Digital control | none | a digital flow adapter (synthesis, place and route) |
+| Digital control | `librelane` (`read`, `compare`, `replay`, `preflight`), `openroad` (`parse`), flow check (see [Digital flow](#digital-flow)) | an operation that starts a complete flow; adapters for synthesis (Yosys) and for RTL simulation (Verilator, Icarus Verilog) |
 | Whole chip | `assemble_dc` | a whole-chip transient or harmonic-balance check |
 
 ## Install
@@ -429,6 +442,10 @@ simulator fails in the stored device-class probe has an entry.
 | Xyce 7.10 | any | no autonomous HB or HB noise, .step with HB, YLIN outside HB, .temp ignored |
 | ngspice 46 | IHP SG13G2 | KLU on a large mixed deck, Monte Carlo DC with reltol 1e-4, HBT self-heating, antenna diode step |
 | ngspice 46 | any | pulse with PW = 0, trnoise with a round step, trnoise current source, threads in a container, .pss |
+| LibreLane 3.1.0.dev2 | any | timing steps in the layout analyse one corner, integer clock tree derate (open), empty step log, two OpenROAD builds |
+| OpenROAD 26Q1-1024, OpenSTA 2.7.0 and 3.1.0 | any | hold repair stops after one pass, `signed` in a netlist |
+| Yosys 0.67 | any | `abc -D` without `-constr` has no effect (open) |
+| Verilator 5.050 | any | no trace of names that start with an underscore |
 | openEMS 0.37 | any | MUR energy plateau, thin dielectric time step, headless runs |
 
 ## Connection table
@@ -681,11 +698,21 @@ Set `SIMRA_DELIVERABLES` to a JSON list of file paths (relative to the working d
 2. With a `requirements.json` in the design root: a `check_requirements` run is recorded.
 3. The last check has no run that did not complete (an aborted simulation gives rows that are not run).
 4. The design file of the netlist gate (`gates.netlist.file`) did not change after the last check.
+5. When the list has an `answer.json`: the answer belongs to the final design. The answer file is not older than the
+   design file; a check of the final design file exists (each check records the hash of the file at its start,
+   `design_file` of `verdict.json`); that check completed every run; each value of the answer equals the value of
+   the row of that check (0.2 % relative); and `meets_spec` equals "every row of that check passes" (kernel
+   `answerConsistency`).
 
 If an item fails, the session gets one more turn with a message that names each missing item. This occurs one time
 per session. The event is a custom message of type `simra-end-guard` in the session, and the file
 `simra/end_guard.json` of the design root records the items at the re-entry and the items at the end. The eval runner
 sets the variable from `deliverables` of `task.json` and copies the record into `score.json` (`end_guard`).
+
+The end state of a session is `consistent`, `inconsistent_answer` (items of rule 5 remain after the re-entry) or
+`no_answer`. The extension records it at the end (`settled.end_state`). The eval runner computes it again from the
+workspace after the session, so that a session that the time limit stops (no last turn) also has one
+(`end_state` in `score.json`, with the items). The end state does not change the points of the scorer.
 
 ## Operating point
 
@@ -776,6 +803,17 @@ The operation `oscillator` of the ngspice adapter gives the steady-state frequen
    identical sources by symmetry.
    `flicker: {device, current, kf, af, bf}` on a source adds flicker noise S = kf |i|^af / df^bf by the DC term of the
    ISF: L(df) = mult x 1/2 x (f0/df)^2 x mean(ISF x |i|^(af/2))^2 x kf / df^bf.
+   `thermal_ohm: R` on a source gives S = 4 k T / R (a current source) or 4 k T R (a series source), with T from
+   `temp_c` of the condition, not a fixed 300 K.
+   `isf.quasi_static: [{source, step_a}]`: the slow path of the flicker current of a source. The ISF reads the phase
+   35 to 45 periods after the injection, so a path with nanosecond time constants (for example the base current
+   through the base bias resistors) is only partly in it. Two more transients with a DC current of +step_a and
+   −step_a (default 1 µA) between the nodes of the source give K = (f(+) − f(−)) / (2 step_a) in Hz/A, and
+   L_qs(df) = mult x 1/2 x K^2 x kf x mean(|i|^(af/2))^2 / df^bf / df^2. The flicker term of the source is the larger
+   of the ISF term and L_qs (the sum would count the common part twice).
+   `terminal: {current: vector}` on a device checks its conduction table: the mean table current over the phases
+   must equal the mean terminal current of the reference run over whole periods within `isf.table_tol` (default
+   10 %); the charge currents have no mean. A table made at another corner or temperature fails the check.
 3. For each source and each of `phases` phases, two runs inject +q and -q with a short triangle pulse. The shift of
    the output zero crossings in `window_periods` (default 35 to 45 periods after the injection) gives the ISF. Then
    L(df) = mult x 1/2 x (f0/df)^2 x mean(ISF^2 x S) for each source, and the total is the sum.
@@ -791,6 +829,14 @@ The operation `oscillator` of the ngspice adapter gives the steady-state frequen
 5. `output_multiplier` gives L after an ideal frequency multiplier (+20 log10 of it). The measurements are
    `l_<offset>_hz_dbc`, for example `l_1e+06_hz_dbc`, and `l_white_<offset>_hz_dbc` when a source has flicker.
    `work/oscillator.json` has the ISF, the PSD, the conduction currents and L of each source.
+6. Start check (`start_check`, default on; `false` turns it off; `{factor, start_v}` changes it). An oscillator that
+   does not start uses the full `ref_stop_s` of each run. So the reference run stops early when the output does not
+   grow: at `settle_s`/2 and at 3 `settle_s`/4 the operation compares the amplitude (half the peak-to-peak output)
+   of two windows of `settle_s`/8. When the later amplitude is below `factor` (default 0.9) times the earlier one
+   and below `start_v` (default 0.05 V), or below 1 µV, the run stops. The response is then failed with "the oscillator does not start", the time and
+   both values, and the measurement `start_check_stop_s`. No ISF run starts. The test `StartCheck` of
+   [adapters/ngspice/test_oscillator.py](adapters/ngspice/test_oscillator.py) runs an LC oscillator that decays (it
+   stops at 4 ns), one that starts slowly and one that starts (both run to the end).
 
 AM-to-PM conversion after the oscillator is not included. The test
 [test/ngspice-oscillator.test.mjs](test/ngspice-oscillator.test.mjs) uses an LC oscillator with a limiting negative
@@ -1149,11 +1195,33 @@ per terminal; `bias_v` is the DC voltage of port 1 and of port 2. The row `gate 
 of findings (a DC current or a y-parameter that differs by more than the tolerance); it passes with 0. A selection
 of requirements leaves the gate out. The gate does not say which simulator is right.
 
+At a condition with a temperature other than `reference_temp_c` (default 27) the check runs at both temperatures.
+A difference at the reference temperature fails the row. A difference only at the temperature of the condition is a
+temperature finding: the row passes, and its reason gives the differences. The two cards then have the same model at
+the reference temperature and a different temperature dependence (ihp-sg13g2: registry entry
+`xyce-sg13g2-hbt-temperature`). List the corner conditions of the task in `conditions`, not only the typical one.
+
+A y difference at a frequency below a few hundred MHz can come from the self-heating network of the HBT card. In
+ngspice the AC self-heating term of npn13G2 has the wrong sign (registry `ngspice-sg13g2-hbt-selft-ac`): Re(y22) at
+1 kHz is −291.8 µS against a DC slope dIc/dVce of +453 µS; Xyce gives +450.2 µS, equal to its DC slope (simulated,
+Nx 1, 2.03 mA, VCE 1.2 V). With `selft=0` the two simulators agree, but the DC point moves, so `selft=0` is not a
+fix. RF frequencies are not affected.
+
 ### Limit sources
 
 A requirement or an extra limit can carry `limit_source`: `{ "kind": "specification" | "pdk" | "reference_design" |
 "task", "ref": "..." }`. The kind `reference_design` marks a limit that was set after a reference run: the reference
 passes it by construction.
+
+### Reported rows
+
+A requirement can carry `reported: { "conditions": [...], "reason": "..." }`. At these conditions the check runs the
+experiment and writes the row to `verdict.reported`, not to `rows`. Its status (within or outside the limit) is
+information only. It does not change the status of the check or `meets_spec`. The check output lists it as
+`REPORTED`, with the reason. A condition cannot be both scored and reported. Use it when the reference design does
+not meet a limit at a condition and the limit must not change: the value is still measured and reported. The end
+guard and the RF scorer compare the reported value of the answer with the verified run (a value point, no
+requirement point). Example: `evals/vco-sg13g2`, row `pn_dev` at `slow_hot`.
 
 ### Stability diagnosis
 
@@ -1186,6 +1254,38 @@ see what a change of an assumption affects, run `npx simra assumptions [<id>]` o
 lists each requirement that depends on the assumption, and how (requirement, experiment or condition), and the rows of
 the newest check with their status, when that check used the current requirements file.
 
+## Digital flow
+
+The harness reads and checks a digital flow that LibreLane runs. It does not start a complete flow: the agent starts
+LibreLane with a shell command. Two adapters exist:
+
+| Adapter | Operation | Function |
+| --- | --- | --- |
+| librelane | `read` | reads a run directory: the slack of each corner with its evidence level (no wires, placement estimate, global route, extracted), the steps that did not end, the hashes of the design inputs. It warns when a slack comes from an earlier step, or when a corner name does not agree with the library. |
+| librelane | `compare` | compares two runs: the settings that differ, and whether the results differ at or after the first step that reads a changed setting |
+| librelane | `replay` | runs one step of a run again on its saved state, with changed variables. It does not change the run directory. |
+| librelane | `preflight` | starts the version command of each flow tool, lists the PDK views, checks the free disk space |
+| openroad | `parse` | reads an OpenROAD log: messages, repair tables with a known pattern (for example the buffer limit), global route congestion |
+
+Only `replay` and `preflight` start a tool. See [adapters/librelane/README.md](adapters/librelane/README.md).
+
+The pi extension has two checks on a shell command of the agent:
+
+- Flow check: after a command that runs LibreLane or a call that reads a run directory, the result gets the warnings
+  of `read`, each one time. `SIMRA_FLOW_CHECK=off` stops it.
+- Command check: after a command with exit code 0, the result gets the logs with error lines and the empty result
+  files that the command wrote. It is off by default. `SIMRA_COMMAND_CHECK=on` starts it.
+
+Yosys and Verilator have no adapter. Each has one entry in the [workaround registry](#workaround-registry).
+`preflight` reads their versions.
+
+Eight demo tasks are in `evals/flow-*`: `flow-setting-effect`, `flow-evidence-level`, `flow-no-work`,
+`flow-vacuous-checker`, `flow-corner-label`, `flow-repair-progress`, `flow-step-replay` and `flow-handoff`. The first
+five have a control variant. All of them use IHP SG13G2; no task uses a second PDK. They are not decision benchmarks.
+The README of each task has the pilot counts of 2026-11-20 (3 to 5 runs for each arm and model, 1 run for each model
+in a control variant; a count is not a rate). In six tasks, the harness without the digital adapters passes all runs
+too.
+
 ## Read a layout
 
 To read a layout, the agent calls `run_experiment` with the adapter `klayout`, the operation `query` and several
@@ -1213,8 +1313,11 @@ boxes and the shapes do not tell which edge to move, and to write Python only to
 | `adapters/klayout/` | klayout adapter (Python) and its tests: DRC and LVS with the stock KLayout decks of the PDK, with typed verdicts, questions about a layout (`query`), the comparison of two layouts (`diff`) and pictures of a region or a marker (`render`) |
 | `adapters/touchstone/` | touchstone adapter (Python, numpy) and its tests: a passive rational model of a Touchstone file as a SPICE subcircuit (`fit_to_spice`) |
 | `adapters/xyce/` | xyce adapter (Python) and its tests: `parse` (model gaps), `simulate` and `hb` (harmonic balance) |
+| `adapters/openroad/` | openroad adapter (Python) and its tests: `parse` (an OpenROAD log) |
+| `adapters/librelane/` | librelane adapter (Python) and its tests: `read`, `compare`, `replay` and `preflight` for LibreLane runs |
 | `technologies/` | technology packs: the PDK facts that adapters need |
 | `examples/ota-sg13g2/` | two-stage OTA for IHP SG13G2 |
+| `examples/acc-sg13g2/`, `examples/shreg-sg13g2/` | digital blocks for IHP SG13G2 (LibreLane): an accumulator and a shift register bank |
 | `evals/` | demo evaluations for the inner development loop (not decision benchmarks): the OTA at 3 corners, the OTA against a PVT spec, OTA synthesis from a pin specification (`ota-synthesis`), comparator synthesis from a pin specification (`comparator-synthesis`), their scorers and an arm runner. `synthesis-family.mjs` makes variants of the two synthesis tasks with tighter limits, from a hidden target design and a difficulty factor |
 | `evals/rf-passive-gain/` | demo RF task (not a decision benchmark): the gain of an amplifier deck with a matching network that exists only as a Touchstone file; PDK-free |
 | `evals/layout-drc-fix/` | demo layout task (not a decision benchmark): fix the seeded DRC violations of a small analog cell, with the stock KLayout DRC and LVS decks, on IHP SG13G2 and SKY130 |

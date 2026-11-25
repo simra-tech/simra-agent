@@ -1,0 +1,14 @@
+{
+  "contract": "simra.adapter/0",
+  "name": "openroad",
+  "version": "0.1.0",
+  "command": [
+    "python3",
+    "{adapter_dir}/openroad_adapter.py"
+  ],
+  "operations": {
+    "parse": {
+      "description": "Read a log of OpenROAD and give typed records, without a tool run. Inputs: log (the log, relative to the design root), liberty (optional; a list of Liberty files: the report gives the library name and nominal conditions of each). Measurements: errors, warnings; for each repair table n of repair_timing or repair_design: repair<n>_rows, repair<n>_wns_ns, repair<n>_tns_ns, repair<n>_buffers (the last row); route_usage_pct (over all routing resources of the die), route_overflow, route_wirelength_um. Diagnostics: one error per error message code; one warning per repair table that shows a known pattern: buffer_limit (the repair stopped at the maximum buffer count), one_pass_per_endpoint (a hold repair that made one sweep), worst_slack_constant, margin_only (all checks met; the message is about the margin). Use it when a repair step says 'unable to repair', before you name a cause."
+    }
+  }
+}

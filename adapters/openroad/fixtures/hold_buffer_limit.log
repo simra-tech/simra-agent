@@ -1,0 +1,37 @@
+Reading timing models for corner nom_fast_1p32V_m40C…
+Reading timing library for the 'nom_fast_1p32V_m40C' corner at '/foss/pdks/ihp-sg13g2/libs.ref/sg13g2_stdcell/lib/sg13g2_stdcell_fast_1p32V_m40C.lib'…
+Reading timing library for the 'nom_fast_1p32V_m40C' corner at '/foss/pdks/ihp-sg13g2/libs.ref/sg13g2_io/lib/sg13g2_io_fast_1p32V_3p6V_m40C.lib'…
+Reading timing models for corner nom_slow_1p08V_125C…
+Reading timing library for the 'nom_slow_1p08V_125C' corner at '/foss/pdks/ihp-sg13g2/libs.ref/sg13g2_stdcell/lib/sg13g2_stdcell_slow_1p08V_125C.lib'…
+Reading timing library for the 'nom_slow_1p08V_125C' corner at '/foss/pdks/ihp-sg13g2/libs.ref/sg13g2_io/lib/sg13g2_io_slow_1p08V_3p0V_125C.lib'…
+Reading timing models for corner nom_typ_1p20V_25C…
+Reading timing library for the 'nom_typ_1p20V_25C' corner at '/foss/pdks/ihp-sg13g2/libs.ref/sg13g2_stdcell/lib/sg13g2_stdcell_typ_1p20V_25C.lib'…
+Reading timing library for the 'nom_typ_1p20V_25C' corner at '/foss/pdks/ihp-sg13g2/libs.ref/sg13g2_io/lib/sg13g2_io_typ_1p2V_3p3V_25C.lib'…
+Reading OpenROAD database at '/design/runs/r1/35-openroad-cts/shreg.odb'…
+Reading design constraints file at '/design/shreg.sdc'…
+[INFO] No information on clock propagation in input SDC file-- propagating all clocks.
++ repair_timing -verbose -setup -setup_margin 0.05000000000000000277555756156289135105907917022705078125 -max_buffer_percent 50
+[INFO RSZ-0100] Repair move sequence: UnbufferMove SizeUpMove SwapPinsMove BufferMove CloneMove SplitLoadMove 
+[INFO RSZ-0098] No setup violations found
++ repair_timing -verbose -hold -setup_margin 0.05000000000000000277555756156289135105907917022705078125 -hold_margin 0.1000000000000000055511151231257827021181583404541015625 -max_buffer_percent 50
+[INFO RSZ-0046] Found 11976 endpoints with hold violations.
+Iteration | Resized | Buffers | Cloned Gates |   Area   |   WNS   |   TNS   | Endpoint
+--------------------------------------------------------------------------------------
+        0 |       0 |       0 |            0 |    +0.0% |  -0.397 | -3843.622 | _08224_/D
+       10 |       0 |       9 |            0 |    +0.0% |  -0.392 | -3841.415 | _11144_/D
+       20 |       0 |      19 |            0 |    +0.0% |  -0.390 | -3838.963 | _10174_/D
+       30 |       0 |      29 |            0 |    +0.1% |  -0.377 | -3836.510 | _09778_/D
+       40 |       0 |      39 |            0 |    +0.1% |  -0.368 | -3834.056 | _11777_/D
+       50 |       0 |      49 |            0 |    +0.1% |  -0.360 | -3831.603 | _09263_/D
+     7920 |       0 |    7919 |            0 |   +20.2% |  -0.319 | -1901.366 | _07460_/D
+     7930 |       0 |    7929 |            0 |   +20.3% |  -0.319 | -1898.914 | _02456_/D
+     7940 |       0 |    7939 |            0 |   +20.3% |  -0.319 | -1896.461 | _02135_/D
+     7950 |       0 |    7949 |            0 |   +20.3% |  -0.319 | -1894.009 | _04095_/D
+     7960 |       0 |    7959 |            0 |   +20.3% |  -0.319 | -1891.556 | _01350_/D
+     7970 |       0 |    7969 |            0 |   +20.4% |  -0.319 | -1889.106 | _03034_/D
+    final |       0 |    7971 |            0 |   +20.4% |  -0.319 | -1888.614 | _00498_/D
+--------------------------------------------------------------------------------------
+[WARNING RSZ-0064] Unable to repair all hold checks within margin.
+[INFO RSZ-0032] Inserted 7971 hold buffers.
+[ERROR RSZ-0060] Max buffer count reached.
+Error: rsz_timing_postcts.tcl, 58 RSZ-0060

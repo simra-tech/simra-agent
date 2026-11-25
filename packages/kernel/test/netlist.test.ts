@@ -171,12 +171,17 @@ test("device-check gate: validation and rows", () => {
 		{ device: "q", condition: "hot", id: "e2", result: result(1, [{ severity: "warning", message: "finding: y21 at 122.5 GHz: ngspice 60.9 mS, Xyce 62.97 mS, difference 13.7 % (tolerance 2 %)" }]) },
 		{ device: "q", condition: "cold", id: "e3", result: { status: "failed", measurements: {}, diagnostics: [] } as unknown as ResultRecord },
 		{ device: "q", condition: "x", id: null, result: null, why: "not selected in this check" },
+		{ device: "q", condition: "hot_ok", id: "e4", result: result(0, [{ severity: "warning", message: "temperature finding: y21 at 122.5 GHz at 125 C: ngspice 50 mS, Xyce 48 mS, difference 4.2 % (tolerance 2 %)" }]) },
 	]);
+	const hotOk = rows.find((x) => x.condition === "hot_ok");
+	assert.equal(hotOk?.status, "pass");
+	assert.match(hotOk?.reason ?? "", /1 temperature finding \(the simulators agree at the reference temperature, so this is a finding and not an error\): y21 at 122.5 GHz at 125 C/);
 	assert.deepEqual(rows.map((x) => [x.requirement, x.condition, x.status, x.value]), [
 		["gate device_check q", "tt", "pass", 0],
 		["gate device_check q", "hot", "fail", 1],
 		["gate device_check q", "cold", "not_run", null],
 		["gate device_check q", "x", "not_run", null],
+		["gate device_check q", "hot_ok", "pass", 0],
 	]);
 	assert.match(rows[0].reason ?? "", /largest difference: DC 0\.02 %, y 1\.20 %/);
 	assert.match(rows[1].reason ?? "", /y21 at 122\.5 GHz.*the simulators do not agree/);

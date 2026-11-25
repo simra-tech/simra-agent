@@ -1,0 +1,6 @@
+{
+  "variant": "control",
+  "provenance": "Reference: the regression as given. Icarus Verilog of the tool image. The RTL of the last commit is correct and the test bench reads tb/stim.hex.",
+  "verdict": "pass",
+  "as_given": { "printed": "PASS: 0 mismatches", "exit_code": 0, "result_lines": 1000 }
+}

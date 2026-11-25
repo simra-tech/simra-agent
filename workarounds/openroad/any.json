@@ -1,0 +1,35 @@
+{
+  "schema": "simra.workarounds/0",
+  "simulator": "openroad",
+  "pdk": "*",
+  "versions": "OpenROAD 26Q1-1024, OpenSTA 2.7.0 and 3.1.0",
+  "entries": [
+    {
+      "id": "openroad-hold-repair-one-sweep",
+      "applies_to": {
+        "operations": [
+          "parse",
+          "replay"
+        ]
+      },
+      "gap": "repair_timing -hold makes one pass for each violating end point and then stops, also when violations remain. It also stops at the maximum buffer count (-max_buffer_percent of the instance count; error RSZ-0060). The warning RSZ-0064 ('unable to repair all hold checks within margin') does not tell which of these happened, and it is also given when all checks are met but not the margin.",
+      "symptom": "A block with many short flop-to-flop paths ends the hold repair with RSZ-0064 and negative hold slack, or with RSZ-0060. The number of buffers in the last row of the progress table is equal to the number of violating end points, or to the buffer limit.",
+      "workaround": "Read the progress table before you name a cause (openroad adapter, operation parse). At the buffer limit: raise the limit (LibreLane: PL_RESIZER_HOLD_MAX_BUFFER_PCT, at most 100). After one sweep: run the repair again on its own output (librelane adapter, operation replay with state_in of the first replay), or reduce the violating end points before the repair.",
+      "status": "worked_around",
+      "evidence": "examples/shreg-sg13g2 with IHP SG13G2: 11976 end points, 11976 buffers, worst slack -0.40 ns after one sweep; a second sweep ends with no negative slack (evals flow-repair-progress, flow-step-replay)"
+    },
+    {
+      "id": "opensta-verilog-signed",
+      "applies_to": {
+        "operations": [
+          "parse"
+        ]
+      },
+      "gap": "The Verilog reader of OpenSTA does not accept the keyword 'signed' in a port or wire declaration of a gate-level netlist.",
+      "symptom": "read_verilog stops with 'syntax error' at the line of the declaration. A script that does not check the exit code of the timing run then reports old result files.",
+      "workaround": "Remove the keyword from the netlist that the timing tool reads (it has no effect on a gate-level netlist), for example with sed after write_verilog. Check that the report files are newer than the netlist.",
+      "status": "worked_around",
+      "evidence": "a signed FIR filter synthesized with Yosys 0.67 (write_verilog -noattr) for IHP SG13G2: OpenSTA 2.7.0 and 3.1.0 stop at the port declaration (eval flow-no-work)"
+    }
+  ]
+}
