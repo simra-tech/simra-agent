@@ -22,6 +22,10 @@
 // missing, or the last check has runs that did not complete, or the checked design changed after the last check,
 // the session gets one more turn with the missing items named. It happens once per session, and the event is
 // recorded in simra/end_guard.json (see endGuardItems).
+// Inbox: a detached run that ends writes a marker in simra/inbox of the design root. The extension adds the ended
+// runs that nobody has read to the next tool result, gives the session one more turn when the agent ends with such a
+// run, and, while the session is idle, starts a turn with them (SIMRA_INBOX_WAKE=off stops the idle wake;
+// SIMRA_INBOX_POLL_S sets the time between two looks, default 10 s).
 // All logic lives in @simra-tech/kernel, which works without pi.
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
@@ -72,6 +76,8 @@ import {
 	queryAdapter,
 	runExperiment,
 	runJobs,
+	readInbox,
+	formatInbox,
 	runtimeEstimate,
 	waitExperiments,
 	type AdapterManifest,
@@ -461,7 +467,19 @@ export function leanContext<T extends Msg>(messages: T[]): T[] {
 	});
 }
 
+/** The parameter pass_rule of run_experiment and of a job of run_jobs. */
+const PASS_RULE = Type.Object(
+	{
+		text: Type.Optional(Type.String({ description: "The rule as text, for example \"setup slack >= 0 ns at every corner, with extracted wires\"" })),
+		file: Type.Optional(Type.String({ description: "The rule as a file of the design root (give text or file, not both)" })),
+		id: Type.Optional(Type.String({ description: "A name that joins the runs that answer the same question: another rule under the same id after a result is flagged" })),
+	},
+	{ description: "The rule that decides pass or fail, recorded before the run starts" },
+);
+
 export const STATE_NOTE_MAX = 3000;
+/** The custom message type of an inbox note. */
+export const INBOX_TYPE = "simra-inbox";
 
 export default function (pi: ExtensionAPI) {
 	registerAnalytics(pi);
@@ -569,6 +587,50 @@ export default function (pi: ExtensionAPI) {
 		return formatCommandFindings(fresh);
 	}
 
+	// Inbox: the detached runs of the design root that ended and whose result nobody has read. Each run is named one
+	// time in a session; a read of the result (wait_experiments) takes it out of the inbox.
+	const inboxTold = new Set<string>();
+	function inboxNote(cwd: string): string | null {
+		let fresh: ReturnType<typeof readInbox>;
+		try {
+			fresh = readInbox(findRoot(cwd) ?? cwd).filter((m) => !inboxTold.has(m.experiment));
+		} catch {
+			return null;
+		}
+		if (fresh.length === 0) return null;
+		for (const m of fresh) inboxTold.add(m.experiment);
+		return `Simra ${formatInbox(fresh, `wait_experiments with ids ${JSON.stringify(fresh.map((m) => m.experiment))}`)}`;
+	}
+	// The agent ends its work while an ended run is unread: one more turn, with the runs named. The handler is
+	// registered with the end guard below (the end guard goes first).
+	const inboxSettle = (event: { entries: unknown[] }, ctx: { cwd: string }) => {
+		const note = inboxNote(ctx.cwd);
+		if (!note) return;
+		return { entries: [...event.entries, { type: "custom_message" as const, customType: INBOX_TYPE, content: note, display: true }], continue: true };
+	};
+	// The session is idle while a run ends: a look at the inbox every SIMRA_INBOX_POLL_S seconds starts a turn.
+	let inboxTimer: ReturnType<typeof setInterval> | null = null;
+	const stopInboxTimer = () => {
+		if (inboxTimer) clearInterval(inboxTimer);
+		inboxTimer = null;
+	};
+	pi.on("session_start", (_event, ctx) => {
+		stopInboxTimer();
+		if (process.env.SIMRA_INBOX_WAKE === "off" || typeof ctx.isIdle !== "function") return;
+		const seconds = Number(process.env.SIMRA_INBOX_POLL_S ?? 10);
+		inboxTimer = setInterval(() => {
+			try {
+				if (!ctx.isIdle()) return;
+				const note = inboxNote(ctx.cwd);
+				if (note) pi.sendMessage({ customType: INBOX_TYPE, content: note, display: true }, { triggerTurn: true });
+			} catch {
+				// a look that fails is tried again at the next interval
+			}
+		}, Math.max(0.05, Number.isFinite(seconds) ? seconds : 10) * 1000);
+		inboxTimer.unref?.();
+	});
+	pi.on("session_shutdown", () => stopInboxTimer());
+
 	pi.on("before_agent_start", (event) => {
 		chipDesignPrompt(event.systemPromptOptions);
 	});
@@ -629,7 +691,8 @@ export default function (pi: ExtensionAPI) {
 			process.env.SIMRA_COMMAND_CHECK === "on" ? commandNote(event, ctx.cwd, since) : null,
 			process.env.SIMRA_FLOW_CHECK === "off" ? null : await flowNote(event, ctx.cwd, since),
 		];
-		const notes = [await netlistNote(event, ctx.cwd), ...flowNotes, recordNote, outputNote, clock?.(Date.now()) ?? null].filter((n): n is string => n !== null);
+		const inbox = inboxNote(ctx.cwd);
+		const notes = [await netlistNote(event, ctx.cwd), ...flowNotes, recordNote, outputNote, inbox === null ? null : `\n${inbox}`, clock?.(Date.now()) ?? null].filter((n): n is string => n !== null);
 		if (notes.length === 0) return;
 		return { content: [...event.content, ...notes.map((text) => ({ type: "text" as const, text }))], structuredContent: event.structuredContent };
 	});
@@ -658,9 +721,9 @@ export default function (pi: ExtensionAPI) {
 			}
 		};
 		pi.on("agent_before_settle", async (event, ctx) => {
-			if (reentries >= 1) return;
+			if (reentries >= 1) return inboxSettle(event, ctx);
 			const items = endGuardItems(ctx.cwd, deliverables);
-			if (items.length === 0) return;
+			if (items.length === 0) return inboxSettle(event, ctx);
 			reentries++;
 			const left = Number.isFinite(deadline) ? Math.max(0, Math.round((deadline - Date.now()) / 60_000)) : null;
 			record(ctx.cwd, { reentry: { at: new Date().toISOString(), items, minutes_left: left } });
@@ -677,6 +740,8 @@ export default function (pi: ExtensionAPI) {
 			record(ctx.cwd, { settled: { at: new Date().toISOString(), aborted: event.aborted, reentries, items, end_state: state } });
 		});
 	}
+
+	if (!deliverables.length) pi.on("agent_before_settle", async (event, ctx) => inboxSettle(event, ctx));
 
 	const contextMode = (process.env.SIMRA_CONTEXT ?? "lean").toLowerCase();
 	if (contextMode !== "full") {
@@ -774,6 +839,12 @@ export default function (pi: ExtensionAPI) {
 			"then wait for both in one wait_experiments call.",
 			"When earlier runs of the same adapter and operation exist in the design root, the summary gives their shortest and",
 			"longest runtime (line 'estimate:').",
+			"pass_rule records the rule that decides pass or fail (a text, or a file of the design root) in experiment.json before",
+			"the run starts. The summary gives the rule and its hash, and a line 'PASS RULE CHANGED' when the rule file changed",
+			"after the run, or when an earlier run with a result used another rule under the same id or file.",
+			"heavy true marks a heavy job (place and route, a full flow, a large DRC or extraction deck). One heavy job runs at a",
+			"time on a machine: the run waits in a queue with the status queued until the heavy-job lock is free. Start a heavy job",
+			"detached. When it ends, the session gets a note (Simra inbox) with its id.",
 			"Environments are defined in simra.config.json in the design root ('local' always exists).",
 			"Available adapters:",
 			adapterCatalog(),
@@ -786,6 +857,8 @@ export default function (pi: ExtensionAPI) {
 			"To see a region of a layout or a DRC marker, use run_experiment with adapter klayout, operation render (a box, or a drc experiment id and a rule): the picture comes with the result. Use it when the marker boxes and the shapes do not tell which edge to move, not for every marker.",
 			"When you report a simulated number, give the experiment id that produced it.",
 			"For a run that takes minutes, or for independent runs, start them with run_experiment detached and wait_experiments; do not poll with sleep, tail or log reads.",
+			"Write the pass rule of a check before you see its result, and give it to run_experiment as pass_rule. Do not change a pass rule after a result exists; if a rule must change, say so and run again.",
+			"Start a heavy job (place and route, a full flow, a large deck) with heavy true and detached true. While it is queued or runs, do work that does not need its result. Read the result when the Simra inbox note names the run.",
 			"When a task asks for output files (a changed design, an answer file), write them as soon as you have a first result, and update them each time you find a better one. A session can end before you finish.",
 		],
 		parameters: Type.Object({
@@ -798,6 +871,8 @@ export default function (pi: ExtensionAPI) {
 			detached: Type.Optional(
 				Type.Boolean({ description: "Start the run and return at once with its id (default false). Wait for it with wait_experiments." }),
 			),
+			pass_rule: Type.Optional(PASS_RULE),
+			heavy: Type.Optional(Type.Boolean({ description: "A heavy job: it waits for the heavy-job lock of the machine, one heavy job at a time (default: the heavy_operations of simra.config.json)" })),
 		}),
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const root = findRoot(ctx.cwd) ?? ctx.cwd;
@@ -809,11 +884,14 @@ export default function (pi: ExtensionAPI) {
 				purpose: params.purpose,
 				environment: params.environment,
 				timeoutS: params.timeout_s,
+				passRule: params.pass_rule,
+				heavy: params.heavy,
 			};
 			if (params.detached) {
 				const started = await runExperiment({ ...opts, detached: true });
-				const text = `${formatStarted(root, started.experiment, started.estimate)}\nwait: wait_experiments with ids ["${started.id}"]${gapNote(root, [params.adapter], params.environment, params.inputs)}`;
-				return { content: [{ type: "text", text }], details: { id: started.id, status: "running" } };
+				const queued = started.status.status === "queued" ? (started.status.waiting_for ?? "nobody") : null;
+				const text = `${formatStarted(root, started.experiment, started.estimate, queued)}\nwait: wait_experiments with ids ["${started.id}"]${gapNote(root, [params.adapter], params.environment, params.inputs)}`;
+				return { content: [{ type: "text", text }], details: { id: started.id, status: started.status.status } };
 			}
 			const outcome = await runExperiment({ ...opts, signal });
 			return {
@@ -878,6 +956,8 @@ export default function (pi: ExtensionAPI) {
 					purpose: Type.Optional(Type.String()),
 					environment: Type.Optional(Type.String()),
 					timeout_s: Type.Optional(Type.Number({ description: "Watchdog of this job in seconds (default 3600)" })),
+					pass_rule: Type.Optional(PASS_RULE),
+					heavy: Type.Optional(Type.Boolean({ description: "A heavy job: it waits for the heavy-job lock of the machine" })),
 				}),
 				{ minItems: 1 },
 			),

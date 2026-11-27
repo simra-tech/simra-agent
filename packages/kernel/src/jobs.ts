@@ -13,6 +13,8 @@
 
 import { relative } from "node:path";
 import { type ExecutionStatus, experimentDir, type ExperimentRecord, type ResultRecord } from "./records.ts";
+import { ackInbox } from "./inbox.ts";
+import type { PassRuleInput } from "./passrule.ts";
 import { parseCpuList, runExperiment } from "./runner.ts";
 import { pollExperiment } from "./wait.ts";
 
@@ -24,6 +26,10 @@ export interface JobSpec {
 	purpose?: string;
 	/** Wall time of this job in seconds (default 3600). */
 	timeout_s?: number;
+	/** The rule that decides pass or fail, recorded before the job starts (see passrule.ts). */
+	pass_rule?: PassRuleInput;
+	/** A heavy job: it waits for the heavy-job lock of the machine (see heavy.ts). */
+	heavy?: boolean;
 }
 
 export interface JobsOptions {
@@ -127,6 +133,8 @@ export async function runJobs(opts: JobsOptions): Promise<JobsOutcome> {
 		o.duration_s = result.duration_s;
 		o.errors = result.errors;
 		o.logs = { ...result.logs, ...o.logs };
+		// The caller gets the outcome of the job: it leaves the inbox of the design root.
+		if (o.id) ackInbox(root, [o.id]);
 		free.push(running.get(k) as number);
 		running.delete(k);
 		opts.onEvent?.({ kind: "ended", job: o });
@@ -151,6 +159,8 @@ export async function runJobs(opts: JobsOptions): Promise<JobsOutcome> {
 					timeoutS: o.timeout_s,
 					cpus: slots[slot] ?? undefined,
 					detached: true,
+					passRule: j.pass_rule,
+					heavy: j.heavy,
 				});
 				o.id = started.id;
 				o.status = "running";

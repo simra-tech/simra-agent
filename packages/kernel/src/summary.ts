@@ -3,6 +3,7 @@
 
 import { join, relative } from "node:path";
 import type { RuntimeEstimate } from "./estimate.ts";
+import { formatPassRule, passRuleFlags } from "./passrule.ts";
 import { formatStale, staleInputs } from "./record.ts";
 import { type CommandRun, experimentDir, type ExperimentRecord, type ResultRecord } from "./records.ts";
 import { formatTouchstone } from "./touchstone.ts";
@@ -28,9 +29,15 @@ export function formatEstimate(e: RuntimeEstimate): string {
 	return `estimate: earlier runs of ${kind} on this design took ${took}`;
 }
 
-/** The summary of a detached experiment just after its start. */
-export function formatStarted(root: string, experiment: ExperimentRecord, estimate: RuntimeEstimate | null): string {
-	return [`experiment ${experiment.id}: running (detached)`, ...headLines(root, experiment, estimate)].join("\n");
+/** The pass rule of the run and its flags: nothing for a run without a pass rule. */
+function passRuleLines(root: string, experiment: ExperimentRecord, result: ResultRecord | null): string[] {
+	return experiment.pass_rule ? [formatPassRule(experiment.pass_rule), ...passRuleFlags(root, experiment, result)] : [];
+}
+
+/** The summary of a detached experiment just after its start. `queued`: the holder of the heavy-job lock, for a heavy job that waits. */
+export function formatStarted(root: string, experiment: ExperimentRecord, estimate: RuntimeEstimate | null, queued?: string | null): string {
+	const state = queued ? `queued (detached; a heavy job: it starts when the heavy-job lock is free; held by ${queued})` : "running (detached)";
+	return [`experiment ${experiment.id}: ${state}`, ...headLines(root, experiment, estimate), ...passRuleLines(root, experiment, null)].join("\n");
 }
 
 /** One block per outcome of a wait: the summary of an ended run, or one line for a run that still runs. */
@@ -39,7 +46,9 @@ export function formatWait(root: string, outcomes: WaitOutcome[], waitedS: numbe
 		.map((o) =>
 			o.result
 				? formatOutcome(root, o.experiment, o.result, estimate(o.experiment))
-				: `experiment ${o.id}: still running after ${Math.round(waitedS)} s (records: ${relative(root, experimentDir(root, o.id))}/)`,
+				: o.queued_for
+					? `experiment ${o.id}: still queued after ${Math.round(waitedS)} s: a heavy job, it waits for the heavy-job lock, held by ${o.queued_for} (records: ${relative(root, experimentDir(root, o.id))}/)`
+					: `experiment ${o.id}: still running after ${Math.round(waitedS)} s (records: ${relative(root, experimentDir(root, o.id))}/)`,
 		)
 		.join("\n\n");
 }
@@ -48,6 +57,8 @@ export function formatOutcome(root: string, experiment: ExperimentRecord, result
 	const lines: string[] = [];
 	lines.push(`experiment ${experiment.id}: ${result.status} (${result.duration_s.toFixed(1)} s)`);
 	lines.push(...headLines(root, experiment, estimate));
+	if (result.queued_s !== undefined && result.queued_s >= 1) lines.push(`heavy job: waited ${result.queued_s.toFixed(1)} s for the heavy-job lock`);
+	lines.push(...passRuleLines(root, experiment, result));
 	if (result.tool) lines.push(`tool: ${result.tool.name} ${result.tool.version}`);
 	for (const c of result.commands ?? []) lines.push(formatCommand(c));
 	const design = experiment.design;

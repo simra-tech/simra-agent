@@ -4,6 +4,7 @@
 import { existsSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, relative } from "node:path";
+import { ackInbox } from "./inbox.ts";
 import {
 	type ExecutionStatus,
 	experimentDir,
@@ -30,6 +31,8 @@ export interface WaitOutcome {
 	/** The result status, or "running" when the run did not end before the wait returned. */
 	status: ExecutionStatus | "running";
 	result: ResultRecord | null;
+	/** For a heavy job that waits for the heavy-job lock when the wait returns: who holds the lock. */
+	queued_for?: string;
 }
 
 const POLL_MS = 1000;
@@ -125,8 +128,15 @@ export async function waitExperiments(root: string, ids: string[], opts: WaitOpt
 		if (results.size === experiments.size || left <= 0 || opts.signal?.aborted) break;
 		await sleep(Math.min(POLL_MS, left), opts.signal);
 	}
+	// The caller gets these results: they leave the inbox of the design root.
+	ackInbox(root, [...results.keys()]);
 	return ids.map((id) => {
 		const result = results.get(id) ?? null;
-		return { id, experiment: experiments.get(id) as ExperimentRecord, status: result?.status ?? "running", result };
+		const outcome: WaitOutcome = { id, experiment: experiments.get(id) as ExperimentRecord, status: result?.status ?? "running", result };
+		if (!result) {
+			const status = readStatus(root, id);
+			if (status?.status === "queued") outcome.queued_for = status.waiting_for ?? "the heavy-job lock";
+		}
+		return outcome;
 	});
 }

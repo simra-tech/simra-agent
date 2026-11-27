@@ -10,6 +10,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
+import type { PassRuleRecord } from "./passrule.ts";
 import type { TouchstoneSummary } from "./touchstone.ts";
 
 export const EXPERIMENT_SCHEMA = "simra.experiment/0";
@@ -56,6 +57,10 @@ export interface ExperimentRecord {
 	environment: Record<string, unknown>;
 	design: { root: string; git_commit: string | null; git_dirty: boolean | null };
 	simra: { kernel_version: string };
+	/** Optional: the rule that decides pass or fail, recorded before the run starts (see passrule.ts). */
+	pass_rule?: PassRuleRecord;
+	/** Optional: true for a heavy job. It runs only while it holds the heavy-job lock of the machine (see heavy.ts). */
+	heavy?: boolean;
 }
 
 /** One external command that an adapter ran: the command line as it was run, its exit code and its runtime. */
@@ -85,6 +90,10 @@ export interface ResultRecord {
 	diagnostics: Diagnostic[];
 	/** Optional: lines of a short answer that the summary prints as they are (contract field "report"). */
 	report?: string[];
+	/** Optional: the sha256 of the pass rule that the run started with (a copy of experiment.json pass_rule.sha256). */
+	pass_rule_sha256?: string;
+	/** Optional: for a heavy job, the seconds that the run waited for the heavy-job lock before it started. */
+	queued_s?: number;
 	logs: { adapter_stdout: string; adapter_stderr: string };
 }
 
@@ -95,13 +104,16 @@ export interface ResultRecord {
 export interface StatusRecord {
 	schema: typeof STATUS_SCHEMA;
 	experiment: string;
-	status: ExecutionStatus | "running";
+	/** "queued": a heavy job that waits for the heavy-job lock of the machine. */
+	status: ExecutionStatus | "running" | "queued";
 	/** true: a supervisor process runs the experiment; false: the caller of the blocking run. */
 	detached: boolean;
 	pid: number;
 	host: string;
 	started_at: string;
 	finished_at: string | null;
+	/** For the status "queued": who holds the heavy-job lock, as the queue saw it last. */
+	waiting_for?: string;
 }
 
 export function experimentsDir(root: string): string {

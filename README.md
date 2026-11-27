@@ -285,6 +285,62 @@ no `result.json`, the next wait writes `result.json` with the status `error`. Th
 at the timeout of the run (`timeout_s`, default 3600 s). On `SIGTERM`, it stops the adapter and records the run
 as `cancelled`.
 
+### Heavy jobs: one at a time
+
+A heavy job is a run that uses most of a machine: a place and route step, a full flow, a large DRC or extraction
+deck. Two heavy jobs at the same time make both slow, or one stops for lack of memory. The kernel has one heavy-job
+lock for each machine. A heavy job runs only while it holds the lock.
+
+1. Mark the run as heavy: `"heavy": true` in the run specification (`simra run`, `simra jobs`), or `heavy: true` in
+   `run_experiment` or in a job of `run_jobs`. To make an operation heavy for all runs of a design root, add it to
+   `heavy_operations` in `simra.config.json` or `simra.local.json`, for example
+   `"heavy_operations": ["librelane.replay", "klayout.*"]`.
+2. Start the run detached. When the lock is not free, the run has the status `queued` in `status.json`, with the
+   holder of the lock in `waiting_for`. The adapter starts when the lock is free. The waiting runs start in the order
+   of their arrival.
+3. Do other work. Do not wait in a loop. When the run ends, it is in the inbox (see below).
+
+The lock is a directory that is made with `mkdir`: `~/.simra/heavy.lock`, or the path in the variable
+`SIMRA_HEAVY_LOCK`. Set the variable to the lock directory that the other tools of the machine use, so that all of
+them use one lock. The holder writes `owner.json` in the directory (process id, host, experiment, design root). The
+queue is the directory `<lock>.queue`, with one file for each waiting run.
+
+- A lock directory without `owner.json` is the lock of another tool. The queue waits for it and never removes it.
+- A lock whose `owner.json` names a process of this host that is gone is removed by the first run of the queue.
+- The watchdog of a run (`timeout_s`) starts when the adapter starts. The time in the queue has no limit.
+- `SIGTERM` to the supervisor of a queued run records the run as `cancelled`. The adapter does not start.
+- The summary of the run gives the time in the queue (`heavy job: waited 412.0 s for the heavy-job lock`), and
+  `result.json` has it in `queued_s`.
+
+`npx simra inbox` prints the state of the lock and its queue.
+
+### Inbox
+
+A detached run that ends writes a marker file, `simra/inbox/<id>.json`, in the design root. The marker stays until
+the result is read: by a wait (`simra wait`, `wait_experiments`, `simra jobs`, `run_jobs`) or by `simra show <id>`.
+So a session that did other work, or a new session, finds the runs that ended.
+
+From a plain command line, run `npx simra inbox`. The command prints one line for each ended run whose result was
+not read, and the state of the heavy-job lock:
+
+```
+inbox: 1 detached run ended and its result was not read
+  20261127-101530-4be2c1 librelane.replay: completed, ended 2026-11-27T10:22:41.512Z, heavy job (hold repair, second pass)
+read: simra wait <id> [<id>...]
+heavy-job lock /home/user/.simra/heavy.lock: free
+```
+
+In pi, the extension reads the inbox:
+
+1. After each tool call, the result gets a note for each run that ended (`Simra inbox: ...`), one time for each run.
+2. When the agent ends its work and a run is in the inbox, the session gets one more turn with the note.
+3. When the session is idle, the extension looks at the inbox every 10 s (`SIMRA_INBOX_POLL_S`) and starts a turn
+   with the note. `SIMRA_INBOX_WAKE=off` stops this.
+
+The note names the ids for `wait_experiments`, which gives the summaries and takes the runs out of the inbox. The
+idle wake needs a session that stays open (the terminal UI or the RPC mode). A session that ended finds the runs in
+the inbox at its next start.
+
 ### Run N jobs and wait
 
 For many independent runs (corners, sweep points, seeds), one call starts them all and waits for all of them:
@@ -566,6 +622,37 @@ In pi, the prompt rules tell the agent to confirm with `design_record` that a ch
 the check, and to rerun a stale check. When a file of record changed under the agent (another commit, another
 process), the agent reads the new version and applies its change to it. It does not overwrite the file with its own
 earlier copy.
+
+## Pass rule
+
+A pass rule is the rule that decides if a run passes: a limit, a list of corners, a file with acceptance criteria.
+A rule that is written after the result can be fitted to the result. The kernel records the rule before the run
+starts.
+
+1. Give the rule with the run: `"pass_rule": {"text": "setup slack >= 0 ns at every corner, with extracted wires"}`
+   or `"pass_rule": {"file": "signoff/pass.md"}` in the run specification (`simra run`, `simra jobs`), or the
+   parameter `pass_rule` of `run_experiment` and of a job of `run_jobs`. A file must be in the design root.
+2. Optional: give the rule an `id`, for example `"id": "timing"`. The id joins the runs that answer the same
+   question. A file rule without id is joined by its path.
+3. Read the summary. It has one line with the rule and its hash, for example
+   `pass rule: file signoff/pass.md sha256:3f2a9c01b7d4, recorded 2026-11-27T10:15:30.120Z (before the run)`.
+
+The runner writes the rule (the text, or the path and the size of the file) and its sha256 to `pass_rule` in
+`experiment.json`, before the adapter starts. It copies the sha256 to `pass_rule_sha256` in `result.json`. A rule
+that cannot be read stops the run before it starts. The hash of the file is made as the hashes of the input files
+are made, and it is compared with the present file as for a [file of record](#files-of-record).
+
+The summary gives a line `PASS RULE CHANGED:` in these cases:
+
+- An earlier run with a result used another rule under the same id or file path. The record of the new run lists
+  these runs in `pass_rule.changed_after_results`.
+- The rule file changed after the run started.
+- The rule in `experiment.json` does not agree with its recorded hash, or with the hash in `result.json`.
+
+The flag is a statement, not a stop: a rule can change for a good reason. Then the report must say so, and the
+earlier results must be judged again with the new rule or run again. The kernel does not apply the rule. For limits
+that the kernel applies, use [requirements](#check-requirements); a check records the hash of its requirements
+file.
 
 ## System prompt
 
