@@ -301,13 +301,21 @@ lock for each machine. A heavy job runs only while it holds the lock.
    of their arrival.
 3. Do other work. Do not wait in a loop. When the run ends, it is in the inbox (see below).
 
-The lock is a directory that is made with `mkdir`: `~/.simra/heavy.lock`, or the path in the variable
-`SIMRA_HEAVY_LOCK`. Set the variable to the lock directory that the other tools of the machine use, so that all of
-them use one lock. The holder writes `owner.json` in the directory (process id, host, experiment, design root). The
-queue is the directory `<lock>.queue`, with one file for each waiting run.
+The lock is the path `~/.simra/heavy.lock`, or the path in the variable `SIMRA_HEAVY_LOCK`. Set the variable to the
+lock directory that the other tools of the machine use, so that all of them use one lock. A tool that takes the lock
+with `mkdir` and this code exclude each other: each fails when the path exists. This code takes the lock with a
+symbolic link to its owner directory (in `<lock>.owners`), so the lock and its `owner.json` appear in one step. The
+record has the process id, the host, the experiment, the design root and the processes of the job. The queue is the
+directory `<lock>.queue`, with one file for each waiting run. The lock needs symbolic links (Linux, macOS).
 
-- A lock directory without `owner.json` is the lock of another tool. The queue waits for it and never removes it.
-- A lock whose `owner.json` names a process of this host that is gone is removed by the first run of the queue.
+- A lock that is not a link of this code (a directory without `owner.json`) is the lock of another tool. The queue
+  waits for it and never removes it.
+- A lock whose owner is a process of this host that is gone is removed by the first run of the queue, when no
+  process of the job runs: not the adapter, not a process of the process group of the owner, not a container with
+  the label of the experiment. A supervisor that is killed leaves its adapter running; the lock stays until the
+  adapter ends.
+- A process that is killed while it takes or gives back the lock leaves no lock without an owner record.
+- A run that is stopped or that times out keeps the lock until its container is removed.
 - The watchdog of a run (`timeout_s`) starts when the adapter starts. The time in the queue has no limit.
 - `SIGTERM` to the supervisor of a queued run records the run as `cancelled`. The adapter does not start.
 - The summary of the run gives the time in the queue (`heavy job: waited 412.0 s for the heavy-job lock`), and
@@ -638,17 +646,19 @@ starts.
 3. Read the summary. It has one line with the rule and its hash, for example
    `pass rule: file signoff/pass.md sha256:3f2a9c01b7d4, recorded 2026-11-27T10:15:30.120Z (before the run)`.
 
-The runner writes the rule (the text, or the path and the size of the file) and its sha256 to `pass_rule` in
-`experiment.json`, before the adapter starts. It copies the sha256 to `pass_rule_sha256` in `result.json`. A rule
-that cannot be read stops the run before it starts. The hash of the file is made as the hashes of the input files
-are made, and it is compared with the present file as for a [file of record](#files-of-record).
+The runner writes the rule and its sha256 to `pass_rule` in `experiment.json`, before the adapter starts: the text,
+or the path, the size and (for a text file of at most 64 kB) the content of the file. It copies the sha256 to
+`pass_rule_sha256` in `result.json`. A rule file that is not there or cannot be read stops the run before it starts.
+The hash is the hash of the bytes that the runner read.
 
 The summary gives a line `PASS RULE CHANGED:` in these cases:
 
 - An earlier run with a result used another rule under the same id or file path. The record of the new run lists
   these runs in `pass_rule.changed_after_results`.
-- The rule file changed after the run started.
+- The rule file changed after the run started, or it cannot be read now (then the check did not run, and the line
+  says so).
 - The rule in `experiment.json` does not agree with its recorded hash, or with the hash in `result.json`.
+- `experiment.json` has no pass rule, and `result.json` has the hash of one: the rule was removed from the record.
 
 The flag is a statement, not a stop: a rule can change for a good reason. Then the report must say so, and the
 earlier results must be judged again with the new rule or run again. The kernel does not apply the rule. For limits
@@ -1364,7 +1374,8 @@ The pi extension has three checks on a shell command of the agent:
 - Flow check: after a command that runs LibreLane or a call that reads a run directory, the result gets the warnings
   of `read`, each one time. `SIMRA_FLOW_CHECK=off` stops it.
 - Timing step check: after a command with exit code 0 that wrote the log of a timing step and no slack line, the
-  result gets the note `Simra timing check: not run`. Such a step is not passed. `SIMRA_FLOW_CHECK=off` stops it too.
+  result gets the note `Simra timing check: not run`. For a log that the command appended to, only the new part
+  counts. Such a step is not passed. `SIMRA_FLOW_CHECK=off` stops it too.
 - Command check: after a command with exit code 0, the result gets the logs with error lines and the empty result
   files that the command wrote. It is off by default. `SIMRA_COMMAND_CHECK=on` starts it.
 

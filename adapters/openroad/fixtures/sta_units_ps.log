@@ -1,0 +1,73 @@
+ time 1ps
+ capacitance 1pF
+ resistance 1kohm
+ voltage 1v
+ current 1uA
+ power 1pW
+ distance 1um
+Startpoint: _5551_ (rising edge-triggered flip-flop clocked by clk)
+Endpoint: _5610_ (rising edge-triggered flip-flop clocked by clk)
+Path Group: clk
+Path Type: max
+
+ Delay   Time   Description
+-------------------------------------------------------
+   0.0    0.0   clock clk (rise edge)
+   0.0    0.0   clock network delay (ideal)
+   0.0    0.0 ^ _5551_/CLK (sg13g2_dfrbpq_1)
+ 244.0  244.0 ^ _5551_/Q (sg13g2_dfrbpq_1)
+ 142.7  386.7 ^ _5044_/X (sg13g2_buf_4)
+ 233.4  620.1 ^ _5045_/X (sg13g2_xor2_1)
+ 197.3  817.4 ^ _5046_/X (sg13g2_and2_1)
+ 142.4  959.9 ^ _5047_/X (sg13g2_buf_4)
+ 164.8 1124.7 ^ _5048_/X (sg13g2_buf_4)
+ 125.3 1250.0 v _3256_/Y (sg13g2_a221oi_1)
+ 173.7 1423.8 v _3257_/X (sg13g2_buf_2)
+ 115.9 1539.7 v _3278_/X (sg13g2_and2_1)
+ 216.3 1756.0 ^ _3282_/Y (sg13g2_a221oi_1)
+ 190.5 1946.5 ^ _3283_/Y (sg13g2_xnor2_1)
+ 199.4 2145.9 ^ _3284_/X (sg13g2_buf_2)
+ 156.8 2302.7 v _3325_/Y (sg13g2_a221oi_1)
+ 194.1 2496.8 v _3326_/X (sg13g2_a21o_1)
+ 152.8 2649.6 v _3327_/X (sg13g2_buf_2)
+ 182.6 2832.2 v _3491_/X (sg13g2_xor2_1)
+ 338.9 3171.0 ^ _3519_/Y (sg13g2_nor4_1)
+ 252.5 3423.5 ^ _3526_/X (sg13g2_or2_1)
+ 181.3 3604.8 v _3657_/Y (sg13g2_a221oi_1)
+ 207.0 3811.8 ^ _3666_/Y (sg13g2_nor3_1)
+ 113.2 3925.0 v _3668_/Y (sg13g2_o21ai_1)
+ 162.8 4087.8 v _3669_/X (sg13g2_buf_1)
+ 291.8 4379.6 ^ _4113_/Y (sg13g2_a221oi_1)
+ 242.1 4621.7 ^ _4208_/X (sg13g2_or4_1)
+  94.8 4716.5 v _4211_/Y (sg13g2_a22oi_1)
+ 150.5 4867.0 v _4212_/X (sg13g2_buf_4)
+ 117.1 4984.1 ^ _4225_/Y (sg13g2_o21ai_1)
+ 166.5 5150.6 ^ _4226_/X (sg13g2_buf_2)
+ 130.7 5281.3 v _4422_/Y (sg13g2_o21ai_1)
+ 378.4 5659.8 ^ _4447_/Y (sg13g2_a221oi_1)
+ 192.5 5852.3 v _4452_/Y (sg13g2_nand2_1)
+ 241.7 6094.0 ^ _4455_/Y (sg13g2_a221oi_1)
+ 224.5 6318.5 ^ _4456_/X (sg13g2_buf_4)
+ 237.9 6556.4 ^ _4485_/X (sg13g2_and3_2)
+ 152.6 6709.0 ^ _4670_/X (sg13g2_or3_1)
+ 132.0 6841.0 ^ _4671_/Y (sg13g2_xnor2_1)
+ 159.0 7000.0 ^ _4672_/X (sg13g2_mux2_1)
+   0.0 7000.0 ^ _5610_/D (sg13g2_dfrbpq_1)
+       7000.0   data arrival time
+
+7100.0 7100.0   clock clk (rise edge)
+   0.0 7100.0   clock network delay (ideal)
+   0.0 7100.0   clock reconvergence pessimism
+       7100.0 ^ _5610_/CLK (sg13g2_dfrbpq_1)
+-204.2 6895.8   library setup time
+       6895.8   data required time
+-------------------------------------------------------
+       6895.8   data required time
+       -7000.0   data arrival time
+-------------------------------------------------------
+       -104.2   slack (VIOLATED)
+
+
+wns max -104.2
+tns max -165.2
+worst slack max -104.2

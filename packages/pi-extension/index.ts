@@ -73,6 +73,7 @@ import {
 	runCheck,
 	commandFindings,
 	formatCommandFindings,
+	timingLogSizes,
 	timingStepFinding,
 	formatTimingStepFinding,
 	queryAdapter,
@@ -592,7 +593,8 @@ export default function (pi: ExtensionAPI) {
 	// Inbox: the detached runs of the design root that ended and whose result nobody has read. Each run is named one
 	// time in a session; a read of the result (wait_experiments) takes it out of the inbox.
 	const inboxTold = new Set<string>();
-	function inboxNote(cwd: string): string | null {
+	/** The note for the runs that the session was not told about, and the call that marks them as told. */
+	function inboxFresh(cwd: string): { note: string; told: () => void } | null {
 		let fresh: ReturnType<typeof readInbox>;
 		try {
 			fresh = readInbox(findRoot(cwd) ?? cwd).filter((m) => !inboxTold.has(m.experiment));
@@ -600,8 +602,15 @@ export default function (pi: ExtensionAPI) {
 			return null;
 		}
 		if (fresh.length === 0) return null;
-		for (const m of fresh) inboxTold.add(m.experiment);
-		return `Simra ${formatInbox(fresh, `wait_experiments with ids ${JSON.stringify(fresh.map((m) => m.experiment))}`)}`;
+		return {
+			note: `Simra ${formatInbox(fresh, `wait_experiments with ids ${JSON.stringify(fresh.map((m) => m.experiment))}`)}`,
+			told: () => fresh.forEach((m) => inboxTold.add(m.experiment)),
+		};
+	}
+	function inboxNote(cwd: string): string | null {
+		const fresh = inboxFresh(cwd);
+		fresh?.told();
+		return fresh?.note ?? null;
 	}
 	// The agent ends its work while an ended run is unread: one more turn, with the runs named. The handler is
 	// registered with the end guard below (the end guard goes first).
@@ -623,8 +632,11 @@ export default function (pi: ExtensionAPI) {
 		inboxTimer = setInterval(() => {
 			try {
 				if (!ctx.isIdle()) return;
-				const note = inboxNote(ctx.cwd);
-				if (note) pi.sendMessage({ customType: INBOX_TYPE, content: note, display: true }, { triggerTurn: true });
+				const fresh = inboxFresh(ctx.cwd);
+				if (!fresh) return;
+				// A run counts as told after the send: a send that throws is tried again at the next interval.
+				pi.sendMessage({ customType: INBOX_TYPE, content: fresh.note, display: true }, { triggerTurn: true });
+				fresh.told();
 			} catch {
 				// a look that fails is tried again at the next interval
 			}
@@ -636,11 +648,11 @@ export default function (pi: ExtensionAPI) {
 	// A command that ended with exit code 0 and wrote the log of a timing step, but no timing result: the step is
 	// "not run". A finding for the same logs is shown at most two times. It is a part of the flow check.
 	const timingShown = new Map<string, number>();
-	function timingNote(event: ToolResultEvent, cwd: string, sinceMs: number | null): string | null {
+	function timingNote(event: ToolResultEvent, cwd: string, sinceMs: number | null, sizes?: Map<string, number>): string | null {
 		if (event.toolName !== "bash" || event.isError || sinceMs === null) return null;
 		let finding: ReturnType<typeof timingStepFinding>;
 		try {
-			finding = timingStepFinding(cwd, sinceMs);
+			finding = timingStepFinding(cwd, sinceMs, sizes);
 		} catch {
 			return null;
 		}
@@ -655,8 +667,17 @@ export default function (pi: ExtensionAPI) {
 		chipDesignPrompt(event.systemPromptOptions);
 	});
 
-	pi.on("tool_call", (event) => {
-		if (event.toolName === "bash") callStarts.set(event.toolCallId, Date.now() - 5);
+	// The sizes of the logs before a command: the timing step check reads only what the command appended.
+	const callSizes = new Map<string, Map<string, number>>();
+	pi.on("tool_call", (event, ctx) => {
+		if (event.toolName !== "bash") return;
+		callStarts.set(event.toolCallId, Date.now() - 5);
+		if (process.env.SIMRA_FLOW_CHECK === "off" || !ctx?.cwd) return;
+		try {
+			callSizes.set(event.toolCallId, timingLogSizes(ctx.cwd));
+		} catch {
+			// without the sizes the check reads the whole log
+		}
 	});
 
 	// In the terminal UI, a Simra header replaces pi's logo and startup help.
@@ -705,12 +726,14 @@ export default function (pi: ExtensionAPI) {
 		}
 		const since = callStarts.get(event.toolCallId) ?? null;
 		callStarts.delete(event.toolCallId);
+		const sizes = callSizes.get(event.toolCallId);
+		callSizes.delete(event.toolCallId);
 		// The flow check is on by default (SIMRA_FLOW_CHECK=off turns it off). The command check is off by default
 		// (SIMRA_COMMAND_CHECK=on turns it on): in the pilots it did not change a result and it added tokens.
 		const flowNotes = [
 			process.env.SIMRA_COMMAND_CHECK === "on" ? commandNote(event, ctx.cwd, since) : null,
 			process.env.SIMRA_FLOW_CHECK === "off" ? null : await flowNote(event, ctx.cwd, since),
-			process.env.SIMRA_FLOW_CHECK === "off" ? null : timingNote(event, ctx.cwd, since),
+			process.env.SIMRA_FLOW_CHECK === "off" ? null : timingNote(event, ctx.cwd, since, sizes),
 		];
 		const inbox = inboxNote(ctx.cwd);
 		const notes = [await netlistNote(event, ctx.cwd), ...flowNotes, recordNote, outputNote, inbox === null ? null : `\n${inbox}`, clock?.(Date.now()) ?? null].filter((n): n is string => n !== null);

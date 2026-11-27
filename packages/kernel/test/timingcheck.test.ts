@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { formatTimingStepFinding, hasTimingResult, timingStepFinding } from "../src/timingcheck.ts";
+import { formatTimingStepFinding, hasTimingResult, timingLogSizes, timingStepFinding } from "../src/timingcheck.ts";
 
 // The logs of timing runs on public designs (adapters/openroad/fixtures/README.md).
 const FIX = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "adapters", "openroad", "fixtures");
@@ -88,10 +88,58 @@ test("timing check, negative control: other logs, old logs and the step logs of 
 test("timing check: what counts as a timing result", () => {
 	assert.equal(hasTimingResult("                                  2.05   slack (MET)\n"), true);
 	assert.equal(hasTimingResult("                               -158.79   slack (VIOLATED)\n"), true);
-	assert.equal(hasTimingResult("Startpoint: a (rising edge-triggered flip-flop clocked by clk)\n"), true);
+	assert.equal(hasTimingResult("Startpoint: a (rising edge-triggered flip-flop clocked by clk)\n"), false, "a path header alone is not a result");
 	assert.equal(hasTimingResult("wns max -0.25\n"), true);
 	assert.equal(hasTimingResult("worst slack max 1.20\n"), true);
 	assert.equal(hasTimingResult("tns 0.00\n"), true);
 	assert.equal(hasTimingResult("Error: 1390 acc is not a verilog module.\n"), false);
 	assert.equal(hasTimingResult("the slack is fine\n"), false);
+});
+
+test("timing check: a path header without a slack line, and a text that starts like a summary line, are no timing result", () => {
+	assert.equal(hasTimingResult("Startpoint: u0 (rising edge-triggered flip-flop clocked by clk)\n"), false);
+	assert.equal(hasTimingResult("wns max 0 paths reported\n"), false);
+	assert.equal(hasTimingResult("worst slack max 1.2.3\n"), false);
+	assert.equal(hasTimingResult("   1e-3   slack (MET)\n"), true);
+	assert.equal(hasTimingResult("  -2.5E+01   slack (VIOLATED)\n"), true);
+	assert.equal(hasTimingResult("wns max -1.5e-2\n"), true);
+	const dir = workspace({ "sta/sta.log": "Startpoint: u0\nError: cannot read the library\n" });
+	try {
+		assert.deepEqual(timingStepFinding(dir, 0)?.logs, ["sta/sta.log"]);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("timing check: a failed run that is appended to a log with an old slack line is not run", () => {
+	// The fixture is a valid log with the log of a failed run appended (a script that writes with >>).
+	const dir = workspace({}, { "sta/sta.log": "sta_valid_then_not_a_module.log" });
+	try {
+		const found = timingStepFinding(dir, 0);
+		assert.deepEqual(found?.logs, ["sta/sta.log"]);
+		assert.match(found?.problem?.text ?? "", /acc is not a verilog module/);
+		assert.match(formatTimingStepFinding(found!), /slack lines? .* older run/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("timing check: with the sizes from before the command, only the new part of a log counts", () => {
+	const dir = workspace({}, { "sta/sta.log": "sta_valid.log" });
+	try {
+		const before = timingLogSizes(dir);
+		assert.equal(before.get(join(dir, "sta/sta.log")), readFileSync(join(dir, "sta/sta.log")).length);
+		// The command appends a banner and no result: the old slack line does not count.
+		appendFileSync(join(dir, "sta/sta.log"), "OpenSTA 3.2.0\nread_sdc acc.sdc\n");
+		assert.deepEqual(timingStepFinding(dir, 0, before)?.logs, ["sta/sta.log"]);
+		assert.equal(timingStepFinding(dir, 0), null, "without the sizes, the whole file is read");
+		// Negative control: the command appends a new result.
+		appendFileSync(join(dir, "sta/sta.log"), readFileSync(join(FIX, "sta_valid.log")));
+		assert.equal(timingStepFinding(dir, 0, before), null);
+		// A file that the command wrote again from the start is read from the start.
+		writeFileSync(join(dir, "sta/sta.log"), "wns max 0.25\n");
+		assert.equal(timingStepFinding(dir, 0, before), null);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });

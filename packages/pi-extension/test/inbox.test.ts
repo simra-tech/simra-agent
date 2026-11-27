@@ -22,11 +22,15 @@ function session(t: { after: (fn: () => void) => void }) {
 	const tools = new Map<string, any>();
 	const handlers = new Map<string, any[]>();
 	const sent: { message: any; options: any }[] = [];
+	const fail = { sends: 0 };
 	extension({
 		registerTool: (tool: any) => tools.set(tool.name, tool),
 		registerCommand: () => {},
 		on: (name: string, h: any) => handlers.set(name, [...(handlers.get(name) ?? []), h]),
-		sendMessage: (message: any, options: any) => sent.push({ message, options }),
+		sendMessage: (message: any, options: any) => {
+			if (fail.sends-- > 0) throw new Error("the send failed");
+			sent.push({ message, options });
+		},
 	} as any);
 	const emit = async (name: string, event: any, ctx: any) => {
 		let last;
@@ -41,7 +45,7 @@ function session(t: { after: (fn: () => void) => void }) {
 		}
 		rmSync(root, { recursive: true, force: true });
 	});
-	return { root, tools, emit, sent };
+	return { root, tools, emit, sent, fail };
 }
 async function ended(root: string, count: number): Promise<void> {
 	for (let i = 0; i < 300 && readInbox(root).length < count; i++) await sleep(50);
@@ -109,6 +113,20 @@ test("the agent ends with an unread run: one more turn; an idle session: the ext
 	await sleep(300);
 	assert.equal(sent.length, 1, "the run is named one time");
 	await waitExperiments(root, [first, second], { timeoutS: 5 });
+});
+
+test("an idle wake whose send fails is tried again: the run is not lost", async (t) => {
+	const { root, tools, emit, sent, fail } = session(t);
+	const ctx = { cwd: root, isIdle: () => true };
+	fail.sends = 2;
+	await emit("session_start", { reason: "startup" }, { cwd: root, mode: "rpc", isIdle: () => true });
+	const id = (await tools.get("run_experiment").execute("call-1", { adapter: "fake", operation: "run", inputs: { mode: "ok" }, purpose: "retry", detached: true }, undefined, undefined, ctx)).details.id;
+	await ended(root, 1);
+	for (let i = 0; i < 100 && sent.length === 0; i++) await sleep(50);
+	assert.ok(fail.sends <= 0, "the first sends failed");
+	assert.equal(sent.length, 1, "a later interval sends the message");
+	assert.match(sent[0].message.content, new RegExp(`${id} fake\\.run: completed`));
+	await waitExperiments(root, [id], { timeoutS: 5 });
 });
 
 test("SIMRA_INBOX_WAKE=off: no idle wake", async (t) => {

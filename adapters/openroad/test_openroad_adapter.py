@@ -107,9 +107,9 @@ class ParseOperation(unittest.TestCase):
 class TimingCheck(unittest.TestCase):
     """The logs are of public designs (see fixtures/README.md)."""
 
-    def check(self, name, **limits):
-        text = orlog.read_text(os.path.join(FIX, name))
-        report = orlog.timing_report(text)
+    def check(self, name, time_unit=None, text=None, **limits):
+        text = orlog.read_text(os.path.join(FIX, name)) if text is None else text
+        report = orlog.timing_report(text, time_unit)
         return report, orlog.design_violations(text), orlog.check_timing(report, orlog.design_violations(text), **limits)
 
     def test_signed_netlist_is_not_run(self):
@@ -126,8 +126,11 @@ class TimingCheck(unittest.TestCase):
     def test_negative_control_a_timing_log_is_valid(self):
         report, violations, (status, reasons) = self.check("sta_valid.log")
         self.assertEqual((status, reasons), ("valid", []))
-        self.assertAlmostEqual(report["worst_slack"], 0.0)
+        # The worst slack is the slack of the path report. The wns line is 0 for each slack that is not negative.
+        self.assertAlmostEqual(report["worst_slack"], 2.052)
+        self.assertAlmostEqual(report["wns"], 0.0)
         self.assertAlmostEqual(report["slack_lines"][0]["value"], 2.052)
+        self.assertEqual((report["period_source"], report["time_unit"], report["time_unit_source"]), ("path", "ns", "assumed"))
         self.assertAlmostEqual(report["period"], 7.1)
         self.assertEqual(report["worst_path"]["stages"], 21)
         self.assertEqual(report["worst_path"]["logic_depth"], 20)
@@ -152,8 +155,10 @@ class TimingCheck(unittest.TestCase):
         _, _, (status, _) = self.check("prelayout_no_buffers.log", max_slack_periods=20, max_violations=30)
         self.assertEqual(status, "valid")
         # A period given by the caller replaces the period of the path report.
-        _, _, (status, reasons) = self.check("prelayout_no_buffers.log", clock_period=100, max_violations=30)
+        _, _, (status, reasons) = self.check("prelayout_no_buffers.log", time_unit="ns", clock_period=100, max_violations=30)
         self.assertEqual(status, "valid")
+        _, _, (status, reasons) = self.check("prelayout_no_buffers.log", time_unit="ns", clock_period=1, max_slack_periods=100, max_violations=30)
+        self.assertEqual(status, "invalid check")
         _, _, (status, reasons) = self.check("sta_valid.log", clock_period=0.1, max_slack_periods=0)
         self.assertEqual(status, "valid", "a slack that is not negative is never beyond the limit")
 
@@ -175,7 +180,194 @@ class TimingCheck(unittest.TestCase):
         self.assertEqual(orlog.design_violations(text)["remaining"], {})
 
 
+class TimingEvidence(unittest.TestCase):
+    """What counts as a timing result, the clock period, the time unit, the violation tables and the path."""
+
+    check = TimingCheck.check
+
+    def test_a_path_header_without_a_slack_line_is_not_run(self):
+        report, _, (status, reasons) = self.check(None, text="Startpoint: u0 (rising edge-triggered flip-flop clocked by clk)\n")
+        self.assertEqual((report["paths"], report["incomplete_paths"]), (0, 1))
+        self.assertEqual(status, "not run")
+        self.assertIn("1 path header without a slack line", reasons[0])
+        # A header, then an error, then nothing: the path is not complete.
+        report, _, (status, _) = self.check(None, text="Startpoint: u0\nEndpoint: u1\nError: out of memory\n")
+        self.assertEqual(status, "not run")
+        # A text that only starts like a summary line is not one.
+        _, _, (status, _) = self.check(None, text="wns max 0 paths reported\n")
+        self.assertEqual(status, "not run")
+
+    def test_slack_with_an_exponent(self):
+        report, _, (status, _) = self.check(None, text="Startpoint: a\nEndpoint: b\n   1e-3   slack (MET)\n")
+        self.assertEqual(status, "valid")
+        self.assertAlmostEqual(report["worst_slack"], 0.001)
+        report, _, _ = self.check(None, text="  -2.5E+01   slack (VIOLATED)\nworst slack max -2.5e1\n")
+        self.assertAlmostEqual(report["worst_slack"], -25.0)
+
+    def test_a_failed_run_appended_to_a_valid_log_is_not_run(self):
+        # The fixture is sta_valid.log with sta_not_a_module.log appended: a script that writes its log with '>>'.
+        report, _, (status, reasons) = self.check("sta_valid_then_not_a_module.log")
+        self.assertEqual(status, "not run")
+        self.assertEqual(report["stale"]["last_result_line"], 49)
+        self.assertEqual(report["stale"]["problem"]["line"], 50)
+        self.assertIn("acc is not a verilog module", reasons[0])
+        self.assertIn("older run", reasons[0])
+        # Negative control: an error line before the results (a first try, then a good run) does not hide them.
+        good = orlog.read_text(os.path.join(FIX, "sta_valid.log"))
+        _, _, (status, _) = self.check(None, text="Error: 1390 acc is not a verilog module.\n" + good)
+        self.assertEqual(status, "valid")
+
+    def test_a_rise_and_a_fall_edge_do_not_give_the_period(self):
+        # A path from a rising-edge to a falling-edge flip-flop at a period of 10 ns: the edges are 5 ns apart.
+        report, _, (status, _) = self.check("sta_half_cycle.log")
+        self.assertEqual(status, "valid")
+        self.assertAlmostEqual(report["worst_slack"], 4.346)
+        self.assertIsNone(report["period"])
+        self.assertIsNone(report["worst_path"]["period"])
+        # With the create_clock line of the script in the log, the period is the declared one.
+        text = "create_clock -name clk -period 10 [get_ports clk]\n" + orlog.read_text(os.path.join(FIX, "sta_half_cycle.log"))
+        report, _, _ = self.check(None, text=text)
+        self.assertEqual((report["period"], report["period_source"]), (10.0, "create_clock"))
+        # The same edge of one clock two times gives the period; a create_clock line of that clock goes first.
+        report, _, _ = self.check("sta_valid.log")
+        self.assertAlmostEqual(report["period"], 7.1)
+        report, _, _ = self.check(None, text="create_clock -name clk -period 14.2 [get_ports clk]\ncreate_clock -name other -period 3 [get_ports c2]\n"
+                                  + orlog.read_text(os.path.join(FIX, "sta_valid.log")))
+        self.assertEqual((report["period"], report["period_source"]), (14.2, "create_clock"))
+
+    def test_a_negative_slack_without_a_period_leaves_the_limit_unchecked(self):
+        text = orlog.read_text(os.path.join(FIX, "sta_half_cycle.log")).replace("4.346   slack (MET)", "-60.000   slack (VIOLATED)")
+        report, violations, (status, reasons) = self.check(None, text=text)
+        limit = orlog.slack_limit(report)
+        self.assertEqual((limit["evaluated"], limit["beyond"]), (False, False))
+        self.assertIn("no clock period", limit["why"])
+        self.assertEqual(status, "valid", "an unchecked limit is not a reason; the adapter reports it as not run")
+        # With the period from the caller and the unit of the log: -60 ns at 10 ns is 6 periods, inside the limit.
+        _, _, (status, _) = self.check(None, text=text, time_unit="ns", clock_period=10)
+        self.assertEqual(status, "valid")
+        _, _, (status, _) = self.check(None, text=text, time_unit="ns", clock_period=5)
+        self.assertEqual(status, "invalid check")
+
+    def test_report_in_ps(self):
+        # The log has the output of report_units ('time 1ps'): slack -104.2 ps at a period of 7100 ps.
+        report, _, (status, _) = self.check("sta_units_ps.log", clock_period=7.1)
+        self.assertEqual((report["time_unit"], report["time_unit_source"]), ("ps", "log"))
+        self.assertAlmostEqual(report["worst_slack"], -0.1042)
+        self.assertAlmostEqual(report["period"], 7.1)
+        self.assertEqual(status, "valid")
+        limit = orlog.slack_limit(report, 7.1)
+        self.assertTrue(limit["evaluated"])
+        self.assertAlmostEqual(limit["periods"], 0.1042 / 7.1)
+
+    def test_period_from_the_caller_needs_the_unit_of_the_log(self):
+        text = "wns max -200\nworst slack max -200\n"
+        report, _, (status, _) = self.check(None, text=text, clock_period=10)
+        self.assertEqual(report["time_unit_source"], "assumed")
+        limit = orlog.slack_limit(report, 10)
+        self.assertFalse(limit["evaluated"])
+        self.assertIn("time_unit", limit["why"])
+        self.assertEqual(status, "valid")
+        _, _, (status, _) = self.check(None, text=text, time_unit="ps", clock_period=10)
+        self.assertEqual(status, "valid")
+        _, _, (status, reasons) = self.check(None, text=text, time_unit="ns", clock_period=10)
+        self.assertEqual(status, "invalid check")
+        self.assertIn("20.0 clock periods negative", reasons[0])
+        # The boundary: 10 periods negative is inside the limit, more is beyond it.
+        _, _, (status, _) = self.check(None, text="worst slack max -100\n", time_unit="ns", clock_period=10)
+        self.assertEqual(status, "valid")
+        _, _, (status, _) = self.check(None, text="worst slack max -100.001\n", time_unit="ns", clock_period=10)
+        self.assertEqual(status, "invalid check")
+
+    def test_the_table_after_the_repair_replaces_the_table_before_it(self):
+        # The accumulator after the placement: 200 fanout violators before repair_design (25 rows kept), 2 after it.
+        _, violations, (status, reasons) = self.check("placed_repair_before_and_after.log")
+        self.assertEqual(violations["found"], {"fanout": 200})
+        self.assertEqual(violations["buffers"], 201)
+        self.assertEqual(violations["before_repair"], {"fanout": 25})
+        self.assertEqual(violations["remaining"], {"fanout": 2})
+        self.assertEqual(status, "invalid check")
+        self.assertIn("2 max fanout", reasons[0])
+        _, _, (status, _) = self.check("placed_repair_before_and_after.log", max_violations=2)
+        self.assertEqual(status, "valid")
+        # The same log without the table after the repair (a clean report prints no table): no violation remains.
+        text = orlog.read_text(os.path.join(FIX, "placed_repair_before_and_after.log"))
+        head, tail = text.split("report after the repair\n")
+        clean = head + "report after the repair\n" + tail[tail.index("Startpoint:"):]
+        _, violations, (status, _) = self.check(None, text=clean)
+        self.assertEqual((violations["before_repair"], violations["remaining"]), ({"fanout": 25}, {}))
+        self.assertEqual(status, "valid")
+        # Two tables of one kind with no repair between them: the newest one counts.
+        table = "max slew\n\nPin  Limit  Slew  Slack\n-----\n{}\n[INFO] next\n"
+        row = "u{}/A  2.51  3.00  -0.49 (VIOLATED)\n"
+        two = table.format("".join(row.format(k) for k in range(5))) + table.format(row.format(0))
+        self.assertEqual(orlog.design_violations(two)["remaining"], {"slew": 1})
+
+    def test_clock_network_cells_are_not_stages(self):
+        text = orlog.read_text(os.path.join(FIX, "sta_valid.log"))
+        launch = "   0.000    0.000 ^ _910_/CLK (sg13g2_dfrbpq_1)\n"
+        self.assertIn(launch, text)
+        buffered = text.replace(launch, "   0.100    0.100 ^ clkbuf_0_clk/X (sg13g2_buf_8)\n   0.100    0.200 ^ clkbuf_1_0__f_clk/X (sg13g2_buf_8)\n" + launch)
+        report, _, _ = self.check(None, text=buffered)
+        self.assertEqual((report["worst_path"]["stages"], report["worst_path"]["logic_depth"]), (21, 20))
+        self.assertEqual(report["worst_path"]["cells"][0], "sg13g2_dfrbpq_1")
+
+
 class SpefCheck(unittest.TestCase):
+    def test_triplets_are_segments(self):
+        # A hand-written file: 5 segments, 2 of them '0:0:0'. The share of 0 ohm segments is 2/5.
+        counts = orspef.read_spef(os.path.join(FIX, "hand_triplets.spef"))
+        self.assertEqual((counts["nets"], counts["res_segments"], counts["res_zero_segments"], counts["res_bad_rows"]), (2, 5, 2, 0))
+        self.assertAlmostEqual(counts["res_zero_fraction"], 0.4)
+        self.assertAlmostEqual(counts["res_total_ohm"], 1 + 12.0 + 4.0)  # the typical value of each triplet
+        self.assertAlmostEqual(counts["cap_total_pf"], 0.003)
+        status, reason = orspef.check_spef(counts)
+        self.assertEqual(status, "invalid")
+        self.assertIn("2 of 5 resistance segments are 0 ohm", reason)
+        self.assertEqual(orspef.check_spef(counts, 0.5)[0], "valid")
+        self.assertEqual(orspef.spef_value("0.5:0.6:0.7"), [0.5, 0.6, 0.7])
+        self.assertIsNone(orspef.spef_value("0.5:0.6"))
+
+    def test_unknown_unit_is_invalid(self):
+        counts = orspef.read_spef(os.path.join(FIX, "hand_unknown_unit.spef"))
+        self.assertEqual(counts["unit_errors"], ["*R_UNIT 1 BOGUS"])
+        status, reason = orspef.check_spef(counts)
+        self.assertEqual(status, "invalid")
+        self.assertIn("*R_UNIT 1 BOGUS", reason)
+
+    def spef(self, work, body, units="*C_UNIT 1 FF\n*R_UNIT 1 OHM\n"):
+        path = os.path.join(work, "x.spef")
+        with open(path, "w") as f:
+            f.write('*SPEF "ieee 1481-1999"\n*DESIGN "x"\n' + units + "\n" + body)
+        return orspef.read_spef(path)
+
+    def test_negative_values_bad_rows_and_missing_units_are_invalid(self):
+        net = "*D_NET n1 2.0\n*CONN\n*I u1:A I\n*CAP\n1 n1:1 2.0\n*RES\n{}*END\n"
+        with tempfile.TemporaryDirectory() as work:
+            negative = self.spef(work, net.format("1 n1:1 n1:2 -1\n"))
+            self.assertEqual((negative["res_segments"], negative["res_negative_segments"], negative["res_zero_segments"]), (1, 1, 0))
+            self.assertIn("negative", orspef.check_spef(negative)[1])
+            triplet = self.spef(work, net.format("1 n1:1 n1:2 -2:5:8\n2 n1:2 n1:3 5\n"))
+            self.assertEqual(triplet["res_negative_segments"], 1)
+            self.assertEqual(orspef.check_spef(triplet)[0], "invalid")
+            bad = self.spef(work, net.format("1 n1:1 n1:2 12.5\n2 n1:2 n1:3 abc\n3 n1:3\n"))
+            self.assertEqual((bad["res_segments"], bad["res_bad_rows"]), (1, 2))
+            status, reason = orspef.check_spef(bad)
+            self.assertEqual(status, "invalid")
+            self.assertIn("2 rows of the *RES sections are not a resistance", reason)
+            no_unit = self.spef(work, net.format("1 n1:1 n1:2 12.5\n"), units="*C_UNIT 1 FF\n")
+            self.assertEqual(no_unit["unit_errors"], ["no *R_UNIT line"])
+            self.assertEqual(orspef.check_spef(no_unit)[0], "invalid")
+            # Negative control: the same net with a plain value and the units is valid.
+            self.assertEqual(orspef.check_spef(self.spef(work, net.format("1 n1:1 n1:2 12.5\n")))[0], "valid")
+
+    def test_a_gz_file_that_is_not_gzip_data_is_an_error_of_the_read(self):
+        with tempfile.TemporaryDirectory() as work:
+            path = os.path.join(work, "x.spef.gz")
+            with open(path, "w") as f:
+                f.write(orlog.read_text(os.path.join(FIX, "acc_lef_res.spef")))
+            with self.assertRaises(OSError):
+                orspef.read_spef(path)
+
     def test_extraction_with_layer_resistance_is_valid(self):
         counts = orspef.read_spef(os.path.join(FIX, "acc_lef_res.spef"))
         self.assertEqual((counts["design"], counts["nets"], counts["nets_with_res"]), ("acc", 12, 12))
@@ -257,13 +449,84 @@ class TimingAndSpefOperations(unittest.TestCase):
         response = self.run_op("timing", {"log": "sta_valid.log"})
         self.assertEqual(response["status"], "completed")
         self.assertEqual(response["measurements"]["timing_check"]["value"], 1)
-        self.assertEqual(response["measurements"]["worst_slack_ns"]["value"], 0.0)
+        self.assertEqual(response["measurements"]["worst_slack_ns"]["value"], 2.052)
+        self.assertEqual(response["measurements"]["wns_ns"]["value"], 0.0)
+        self.assertEqual(response["measurements"]["slack_limit_check"]["value"], 1)
         self.assertEqual(response["diagnostics"], [])
         self.assertEqual(response["input_files"]["files"][0]["role"], "log")
         relaxed = self.run_op("timing", {"log": "prelayout_no_buffers.log", "max_slack_periods": 20, "max_violations": 30})
         self.assertEqual(relaxed["status"], "completed")
         self.assertAlmostEqual(relaxed["measurements"]["worst_slack_ns"]["value"], -158.792)
         self.assertEqual(self.run_op("timing", {"log": "sta_valid.log", "max_violations": -1})["status"], "failed")
+
+    def test_timing_invalid_report_has_no_slack_number(self):
+        response = self.run_op("timing", {"log": "prelayout_no_buffers.log"})
+        shown = json.dumps([response["report"], response["diagnostics"], response["measurements"]["timing_check"]])
+        self.assertNotIn("158.79", shown)
+        self.assertNotIn("1905506", shown)
+        self.assertIn("15.9 clock periods negative", shown)
+        self.assertIn("2 stages, logic depth 1", shown)
+
+    def test_timing_units_and_unchecked_limit(self):
+        ps = self.run_op("timing", {"log": "sta_units_ps.log", "clock_period_ns": 7.1})
+        self.assertEqual(ps["status"], "completed")
+        self.assertAlmostEqual(ps["measurements"]["worst_slack_ns"]["value"], -0.1042)
+        self.assertAlmostEqual(ps["measurements"]["clock_period_ns"]["value"], 7.1)
+        self.assertEqual(ps["measurements"]["slack_limit_check"]["value"], 1)
+        self.assertIn("time unit of the log: ps (stated in the log)", ps["report"])
+        with tempfile.TemporaryDirectory() as work:
+            with open(os.path.join(work, "summary.log"), "w") as f:
+                f.write("wns max -200\nworst slack max -200\n")
+            request = {"contract": "simra.adapter/0", "experiment": None, "adapter": "openroad", "operation": "timing",
+                       "inputs": {"log": "summary.log", "clock_period_ns": 10}, "root": work, "work_dir": work,
+                       "response_path": os.path.join(work, "response.json")}
+
+            def run(**inputs):
+                request["inputs"] = dict({"log": "summary.log", "clock_period_ns": 10}, **inputs)
+                with open(os.path.join(work, "request.json"), "w") as f:
+                    json.dump(request, f)
+                self.assertEqual(openroad_adapter.main(["openroad_adapter.py", os.path.join(work, "request.json")]), 0)
+                with open(request["response_path"]) as f:
+                    return json.load(f)
+
+            unknown = run()
+            self.assertEqual(unknown["measurements"]["slack_limit_check"]["status"], "missing")
+            self.assertTrue(unknown["measurements"]["slack_limit_check"]["reason"].startswith("not run: "))
+            self.assertIn("slack limit check: not run", " ".join(unknown["report"]))
+            self.assertEqual([d["severity"] for d in unknown["diagnostics"]], ["warning"])
+            self.assertEqual(run(time_unit="ps")["status"], "completed")
+            self.assertAlmostEqual(run(time_unit="ps")["measurements"]["worst_slack_ns"]["value"], -0.2)
+            self.assertEqual(run(time_unit="ns")["status"], "failed")
+            self.assertEqual(run(time_unit="weeks")["status"], "failed")
+
+    def test_timing_appended_failure_is_not_run(self):
+        response = self.run_op("timing", {"log": "sta_valid_then_not_a_module.log"})
+        self.assertEqual(response["status"], "failed")
+        self.assertTrue(response["measurements"]["timing_check"]["reason"].startswith("not run: the last run in the log"))
+        self.assertEqual(response["measurements"]["worst_slack_ns"]["status"], "missing")
+        self.assertNotIn("worst_path_stages", response["measurements"])
+
+    def test_spef_triplets_units_and_unreadable_files(self):
+        triplets = self.run_op("spef", {"spef": "hand_triplets.spef"})
+        self.assertEqual(triplets["status"], "failed")
+        self.assertEqual((triplets["measurements"]["res_segments"]["value"], triplets["measurements"]["res_zero_segments"]["value"]), (5, 2))
+        unit = self.run_op("spef", {"spef": "hand_unknown_unit.spef"})
+        self.assertEqual(unit["status"], "failed")
+        self.assertEqual(unit["measurements"]["res_total_ohm"]["status"], "failed")
+        self.assertEqual(unit["measurements"]["res_segments"]["value"], 2)
+        with tempfile.TemporaryDirectory() as work:
+            with open(os.path.join(work, "x.spef.gz"), "w") as f:
+                f.write("not gzip data")
+            request = {"contract": "simra.adapter/0", "experiment": None, "adapter": "openroad", "operation": "spef",
+                       "inputs": {"spef": "x.spef.gz"}, "root": work, "work_dir": work, "response_path": os.path.join(work, "response.json")}
+            with open(os.path.join(work, "request.json"), "w") as f:
+                json.dump(request, f)
+            self.assertEqual(openroad_adapter.main(["openroad_adapter.py", os.path.join(work, "request.json")]), 0)
+            with open(request["response_path"]) as f:
+                response = json.load(f)
+        self.assertEqual(response["status"], "failed")
+        self.assertEqual(response["report"], ["spef check: not run"])
+        self.assertTrue(response["measurements"]["spef_check"]["reason"].startswith("not run: the file x.spef.gz cannot be read"))
 
     def test_spef(self):
         good = self.run_op("spef", {"spef": "acc_lef_res.spef"})

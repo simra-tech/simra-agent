@@ -6,9 +6,8 @@
 // The check reads the records and hashes files, as the design record does (record.ts). It runs no tool.
 
 import { createHash } from "node:crypto";
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { currentHash } from "./record.ts";
 import { type ExperimentRecord, listExperiments, type ResultRecord } from "./records.ts";
 
 /** What the caller gives: a text, or a file (relative to the design root, or absolute). The id joins runs that answer the same question. */
@@ -32,11 +31,31 @@ export interface PassRuleRecord {
 	/** The rule file, relative to the design root. */
 	file?: string;
 	bytes?: number;
+	/** A rule file of at most 64 kB of text: its content at recorded_at. The record keeps the wording when the file changes. */
+	content?: string;
 	/** The sha256 of the text (UTF-8) or of the file, at recorded_at. */
 	sha256: string;
 	recorded_at: string;
 	/** The earlier runs with a result and another rule under the same key. Empty: the rule did not change after a result. */
 	changed_after_results: PassRuleChange[];
+}
+
+const sha256Bytes = (data: Buffer): string => createHash("sha256").update(data).digest("hex");
+const MAX_CONTENT_BYTES = 64 * 1024;
+
+/** The sha256 of a rule file now, or why it has none: "missing" or "unreadable". */
+function fileHashNow(root: string, file: string): string {
+	const full = join(root, file);
+	try {
+		if (!statSync(full).isFile()) return "missing";
+	} catch (e) {
+		return (e as NodeJS.ErrnoException).code === "ENOENT" || (e as NodeJS.ErrnoException).code === "ENOTDIR" ? "missing" : "unreadable";
+	}
+	try {
+		return sha256Bytes(readFileSync(full));
+	} catch {
+		return "unreadable";
+	}
 }
 
 export const sha256Text = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
@@ -52,15 +71,20 @@ export function recordPassRule(root: string, input: PassRuleInput, now = new Dat
 		const full = resolve(root, input.file as string);
 		const file = relative(resolve(root), full);
 		if (file.startsWith("..") || isAbsolute(file)) throw new Error(`pass_rule: the file ${input.file} is not in the design root`);
-		let bytes: number;
 		try {
-			const st = statSync(full);
-			if (!st.isFile()) throw new Error("not a file");
-			bytes = st.size;
+			if (!statSync(full).isFile()) throw new Error("not a file");
 		} catch {
 			throw new Error(`pass_rule: the file ${input.file} is not there. Write the rule before the run.`);
 		}
-		record = { key: input.id ?? file, file, bytes, sha256: currentHash(root, file), recorded_at: now.toISOString(), changed_after_results: [] };
+		// The hash is of the bytes that this read gives: a file that cannot be read stops the run.
+		let data: Buffer;
+		try {
+			data = readFileSync(full);
+		} catch (e) {
+			throw new Error(`pass_rule: the file ${input.file} cannot be read (${(e as NodeJS.ErrnoException).code ?? "error"}). The run did not start.`);
+		}
+		record = { key: input.id ?? file, file, bytes: data.length, sha256: sha256Bytes(data), recorded_at: now.toISOString(), changed_after_results: [] };
+		if (data.length <= MAX_CONTENT_BYTES && !data.includes(0)) record.content = data.toString("utf8");
 	} else {
 		const text = input.text as string;
 		record = { key: input.id ?? null, text, sha256: sha256Text(text), recorded_at: now.toISOString(), changed_after_results: [] };
@@ -98,14 +122,19 @@ export function formatPassRule(rule: PassRuleRecord): string {
  */
 export function passRuleFlags(root: string, experiment: ExperimentRecord, result: ResultRecord | null): string[] {
 	const rule = experiment.pass_rule;
-	if (!rule) return [];
+	if (!rule) {
+		// The run started with a rule (the runner copied its hash into result.json), and the record has none now.
+		return result?.pass_rule_sha256 ? [`PASS RULE CHANGED: experiment.json has no pass rule; the run started with sha256:${result.pass_rule_sha256.slice(0, 12)} (result.json). The rule was removed from the record after the run started.`] : [];
+	}
 	const out: string[] = [];
 	for (const c of rule.changed_after_results) {
 		out.push(`PASS RULE CHANGED: experiment ${c.experiment} (ended ${c.finished_at}) used sha256:${c.sha256.slice(0, 12)} for the rule ${rule.key}; this run uses sha256:${rule.sha256.slice(0, 12)}. The rule changed after a result existed.`);
 	}
 	if (rule.file) {
-		const now = currentHash(root, rule.file);
-		if (now !== rule.sha256) out.push(`PASS RULE CHANGED: file ${rule.file} changed after this run started (${now === "missing" ? "now missing" : `now sha256:${now.slice(0, 12)}`}). Judge this run with the recorded rule, or run again.`);
+		const now = fileHashNow(root, rule.file);
+		if (now === "unreadable") out.push(`PASS RULE CHANGED: file ${rule.file} cannot be read now, so the check that it did not change did not run. Judge this run with the recorded rule (sha256:${rule.sha256.slice(0, 12)}).`);
+		else if (now !== rule.sha256) out.push(`PASS RULE CHANGED: file ${rule.file} changed after this run started (${now === "missing" ? "now missing" : `now sha256:${now.slice(0, 12)}`}). Judge this run with the recorded rule, or run again.`);
+		if (rule.content !== undefined && sha256Text(rule.content) !== rule.sha256) out.push("PASS RULE CHANGED: the rule content in experiment.json does not have the recorded sha256. The record was changed after the run started.");
 	} else if (rule.text !== undefined && sha256Text(rule.text) !== rule.sha256) {
 		out.push("PASS RULE CHANGED: the rule text in experiment.json does not have the recorded sha256. The record was changed after the run started.");
 	}

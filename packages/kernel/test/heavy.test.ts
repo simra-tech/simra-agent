@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { hostname, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
@@ -105,9 +105,12 @@ test("a lock directory of another tool (mkdir, no owner.json) is waited for and 
 
 test("a lock of a process of this host that is gone is taken over; an abort ends the wait", async (t) => {
 	const { lock } = setup(t);
-	const dead = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }).stdout;
-	mkdirSync(lock, { recursive: true });
-	writeFileSync(join(lock, "owner.json"), JSON.stringify({ schema: "simra.heavy_lock/0", pid: Number(dead), host: hostname(), experiment: "gone", root: null, since: "2026-01-01T00:00:00.000Z" }));
+	// A process takes the lock and ends without a release.
+	const source = new URL("../src/heavy.ts", import.meta.url).href;
+	const dead = spawnSync(process.execPath, ["--input-type=module", "-e", `import { acquireHeavyLock } from ${JSON.stringify(source)}; await acquireHeavyLock({ lock: ${JSON.stringify(lock)}, experiment: "gone" }); process.exit(0);`], { encoding: "utf8" });
+	assert.equal(dead.status, 0, dead.stderr);
+	const left = heavyQueue(lock).holder;
+	assert.equal(left !== null && left !== "foreign" && left.experiment, "gone");
 	const mine = await acquireHeavyLock({ lock, experiment: "next", pollMs: 20 });
 	assert.ok(mine);
 	const holder = heavyQueue(lock).holder;

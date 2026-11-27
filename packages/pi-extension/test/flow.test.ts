@@ -130,6 +130,26 @@ test("tool_result: a timing step that wrote a log and no slack line is reported 
 	}
 });
 
+test("tool_result: a command that appends a failed timing run to a log with an old slack line is reported as not run", async () => {
+	const design = mkdtempSync(join(tmpdir(), "simra-flow-"));
+	try {
+		const emit = hooks();
+		const ctx = { cwd: design };
+		const old = "Startpoint: a\n   2.05   slack (MET)\nwns max 0.00\n";
+		put(join(design, "sta", "sta.log"), old);
+		const call = { toolName: "bash", toolCallId: "c1", input: { command: "./run_sta.sh >> sta/sta.log" } };
+		await emit("tool_call", call, ctx);
+		// The new part has no error line that the check knows: only the sizes from before the command show that it has no result.
+		put(join(design, "sta", "sta.log"), `${old}OpenSTA 3.2.0\nWarning: the library has no cells\n`);
+		const result = await emit("tool_result", { ...call, content: [{ type: "text", text: "sta done" }], isError: false }, ctx);
+		const text = result.content.map((c: any) => c.text).join("\n");
+		assert.match(text, /Simra timing check: not run/);
+		assert.match(text, /from an older run/);
+	} finally {
+		rmSync(design, { recursive: true, force: true });
+	}
+});
+
 test("tool_result: SIMRA_FLOW_CHECK=off turns the timing step check off", async () => {
 	const design = mkdtempSync(join(tmpdir(), "simra-flow-"));
 	process.env.SIMRA_FLOW_CHECK = "off";

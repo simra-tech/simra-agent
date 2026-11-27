@@ -14,8 +14,8 @@ It reads the files of the run and runs no tool. Measurements: for each corner th
 (setup_ws_ns@<corner>, hold_ws_ns@<corner>), each from the last step that computed it, with the evidence level of
 that step in "level" (no_wires, placement_estimate, global_route, extracted) and the step in "source"; steps,
 steps_not_done, instances, utilization, clock_buffers, timing_repair_buffers, route_usage_pct (die-wide),
-core_route_usage_pct_estimate, route_overflow; spef_files and spef_files_invalid when the run has extracted SPEF
-files. Diagnostics (warnings): an extracted SPEF file without wire resistance (no resistance segment, only segments
+core_route_usage_pct_estimate, route_overflow; spef_files, spef_files_invalid and spef_files_not_checked (a file
+that is too large or cannot be read) when the run has extracted SPEF files. Diagnostics (warnings): an extracted SPEF file without wire resistance (no resistance segment, only segments
 of 0 ohm, or too many of them; see the openroad adapter, operation spef); a corner whose newest slack has a lower
 level than the newest level of the run; a corner name that does not agree with the header of the library that the
 corner loaded; a step that did not end; a repair table with a known pattern; a design input that is newer than
@@ -196,6 +196,7 @@ def read(request):
     if extracted:
         measurements["spef_files"] = measured(len(extracted), "", display(run, root))
         measurements["spef_files_invalid"] = measured(sum(1 for e in extracted if e["status"] == "invalid"), "", display(run, root))
+        measurements["spef_files_not_checked"] = measured(sum(1 for e in extracted if e["status"] == "not run"), "", display(run, root))
         for entry in extracted:
             if entry["message"]:
                 diagnostics.append(warning(entry["message"], entry["file"]))

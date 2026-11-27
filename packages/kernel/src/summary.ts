@@ -31,7 +31,7 @@ export function formatEstimate(e: RuntimeEstimate): string {
 
 /** The pass rule of the run and its flags: nothing for a run without a pass rule. */
 function passRuleLines(root: string, experiment: ExperimentRecord, result: ResultRecord | null): string[] {
-	return experiment.pass_rule ? [formatPassRule(experiment.pass_rule), ...passRuleFlags(root, experiment, result)] : [];
+	return [...(experiment.pass_rule ? [formatPassRule(experiment.pass_rule)] : []), ...passRuleFlags(root, experiment, result)];
 }
 
 /** The summary of a detached experiment just after its start. `queued`: the holder of the heavy-job lock, for a heavy job that waits. */

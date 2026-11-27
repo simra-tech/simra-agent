@@ -277,7 +277,11 @@ def spef_findings(steps, max_zero_fraction=None):
             continue
         try:
             counts = orspef.read_spef(path)
-        except OSError:
+        except (OSError, EOFError, ValueError) as e:
+            # A file that cannot be read stays in the list: its check did not run.
+            out.append({"step": step["name"], "file": name, "status": "not run", "message": (
+                "the resistance check of {} did not run: the file cannot be read ({}: {}). A .gz file must be gzip data, "
+                "and complete.").format(name, type(e).__name__, e)})
             continue
         status, reason = orspef.check_spef(counts, limit)
         message = None

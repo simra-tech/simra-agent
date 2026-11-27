@@ -182,6 +182,26 @@ class Reader(unittest.TestCase):
         self.assertEqual([f["status"] for f in found], ["not run", "not run"])
         self.assertIn("did not run", found[0]["message"])
 
+    def test_spef_file_that_cannot_be_read_is_reported_as_not_run(self):
+        import gzip
+        run = make_run(self.design, "r1", mid_corners=CORNERS)
+        self.add_rcx(run, "acc_lef_res.spef")
+        step = os.path.join(run, "45-openroad-rcx")
+        # A file with the name .gz that is plain text, and a gzip file that is cut in the middle.
+        shutil.copy(os.path.join(FIX, "acc_lef_res.spef"), os.path.join(step, "nom", "plain.spef.gz"))
+        with open(os.path.join(FIX, "acc_lef_res.spef"), "rb") as f:
+            packed = gzip.compress(f.read())
+        with open(os.path.join(step, "max", "cut.spef.gz"), "wb") as f:
+            f.write(packed[:len(packed) // 2])
+        response = self.call("read", {"run": "runs/r1"})
+        self.assertEqual(response["measurements"]["spef_files"]["value"], 4)
+        self.assertEqual(response["measurements"]["spef_files_invalid"]["value"], 0)
+        self.assertEqual(response["measurements"]["spef_files_not_checked"]["value"], 2)
+        found = sorted(w for w in self.warnings(response) if "did not run" in w)
+        self.assertEqual(len(found), 2)
+        self.assertIn("max/cut.spef.gz did not run: the file cannot be read", found[0])
+        self.assertIn("nom/plain.spef.gz did not run: the file cannot be read", found[1])
+
     def test_newer_source(self):
         make_run(self.design, "r1", mid_corners=CORNERS)
         os.utime(os.path.join(self.design, "src", "a.v"), None)

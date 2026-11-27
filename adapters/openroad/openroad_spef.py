@@ -16,15 +16,35 @@ C_SCALE = {"FF": 1e-3, "PF": 1.0, "NF": 1e3}
 MAX_ZERO_FRACTION = 0.25
 # A segment below this value counts as 0 ohm. An extraction without layer resistance can write values such as 1e-17.
 ZERO_OHM = 1e-6
+# A value of a SPEF file is one number, or three numbers for the best, typical and worst case ('0.5:0.6:0.7').
+SPEF_NUMBER = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
+SPEF_VALUE = re.compile(r"^(" + SPEF_NUMBER + r")(?::(" + SPEF_NUMBER + r"):(" + SPEF_NUMBER + r"))?$")
+
+
+def spef_value(word):
+    """The numbers of a SPEF value: [x] or [best, typical, worst]. None when the word is not a value."""
+    m = SPEF_VALUE.match(word)
+    if not m:
+        return None
+    return [float(g) for g in m.groups() if g is not None]
 
 
 def read_spef(path, examples=5):
-    """The counts of a SPEF file: {design, r_unit, c_unit, nets, nets_with_res, res_segments, res_zero_segments,
-    res_total_ohm, cap_total_pf, zero_nets (the first nets whose segments are all 0 ohm), nets_without_res (the
-    first nets with no segment)}. It reads the file line by line."""
-    out = {"design": None, "r_unit": None, "c_unit": None, "nets": 0, "nets_with_res": 0, "res_segments": 0,
-           "res_zero_segments": 0, "res_total_ohm": 0.0, "cap_total_pf": 0.0, "zero_nets": [], "nets_without_res": [],
-           "nets_all_zero": 0}
+    """The counts of a SPEF file: {design, r_unit, c_unit, unit_errors, nets, nets_with_res, res_segments,
+    res_zero_segments, res_negative_segments, res_bad_rows, res_total_ohm, cap_total_pf, zero_nets (the first nets
+    whose segments are all 0 ohm), nets_without_res (the first nets with no segment), nets_all_zero, bad_rows (the
+    first rows of a *RES section that are not a resistance), res_zero_fraction}.
+
+    A resistance is one number or a triplet (best:typical:worst). A triplet is one segment: its typical value goes
+    into the sum, it is 0 ohm when its three values are (below 1e-6 ohm, with either sign), and it is negative when one value is
+    -1e-6 ohm or lower. A row of a *RES
+    section that cannot be read is counted in res_bad_rows: it is never left out without a count. unit_errors: a
+    *R_UNIT or *C_UNIT that is missing or not known (the sums are then in the numbers of the file, without a scale).
+    The function reads the file line by line. It raises OSError or EOFError for a file that cannot be read (also a
+    .gz file that is not gzip data)."""
+    out = {"design": None, "r_unit": None, "c_unit": None, "unit_errors": [], "nets": 0, "nets_with_res": 0, "res_segments": 0,
+           "res_zero_segments": 0, "res_negative_segments": 0, "res_bad_rows": 0, "res_total_ohm": 0.0, "cap_total_pf": 0.0,
+           "zero_nets": [], "nets_without_res": [], "nets_all_zero": 0, "bad_rows": []}
     r_scale, c_scale = 1.0, 1.0
     names = {}
     section = None
@@ -46,7 +66,7 @@ def read_spef(path, examples=5):
 
     opener = gzip.open if str(path).endswith(".gz") else open
     with opener(path, "rt", errors="replace") as f:
-        for raw in f:
+        for number, raw in enumerate(f, 1):
             line = raw.strip()
             if not line or line.startswith("//"):
                 continue
@@ -55,13 +75,12 @@ def read_spef(path, examples=5):
                 if word == "*D_NET" or word == "*R_NET":
                     close()
                     parts = line.split()
-                    net, net_segments, net_zero = parts[1], 0, 0
+                    net, net_segments, net_zero = parts[1] if len(parts) > 1 else "?", 0, 0
                     section = "net"
                     out["nets"] += 1
-                    try:
-                        out["cap_total_pf"] += float(parts[2]) * c_scale
-                    except (IndexError, ValueError):
-                        pass
+                    total = spef_value(parts[2]) if len(parts) > 2 else None
+                    if total:
+                        out["cap_total_pf"] += total[len(total) // 2] * c_scale
                     continue
                 if word in ("*CONN", "*CAP", "*RES", "*INDUC", "*NAME_MAP", "*PORTS"):
                     section = word[1:].lower()
@@ -78,11 +97,17 @@ def read_spef(path, examples=5):
                 if m:
                     kind, factor, unit = m.group(1), float(m.group(2)), m.group(3).upper()
                     if kind == "R":
-                        r_scale = factor * R_SCALE.get(unit, 1.0)
                         out["r_unit"] = "{:g} {}".format(factor, unit)
+                        if unit in R_SCALE and factor > 0:
+                            r_scale = factor * R_SCALE[unit]
+                        else:
+                            out["unit_errors"].append("*R_UNIT {:g} {}".format(factor, unit))
                     elif kind == "C":
-                        c_scale = factor * C_SCALE.get(unit, 1.0)
                         out["c_unit"] = "{:g} {}".format(factor, unit)
+                        if unit in C_SCALE and factor > 0:
+                            c_scale = factor * C_SCALE[unit]
+                        else:
+                            out["unit_errors"].append("*C_UNIT {:g} {}".format(factor, unit))
                     continue
                 if section == "name_map":
                     parts = line.split(None, 1)
@@ -93,19 +118,27 @@ def read_spef(path, examples=5):
                     continue
             if section == "res" and net is not None:
                 parts = line.split()
-                if len(parts) < 4:
+                values = spef_value(parts[3]) if len(parts) >= 4 else None
+                if values is None:
+                    out["res_bad_rows"] += 1
+                    if len(out["bad_rows"]) < examples:
+                        out["bad_rows"].append("line {}: {}".format(number, line[:80]))
                     continue
-                try:
-                    value = float(parts[3]) * r_scale
-                except ValueError:
-                    continue
+                values = [v * r_scale for v in values]
                 net_segments += 1
                 out["res_segments"] += 1
-                out["res_total_ohm"] += value
-                if abs(value) < ZERO_OHM:
+                out["res_total_ohm"] += values[len(values) // 2]
+                # A real extraction without layer resistance writes values such as -5e-16: they count as 0 ohm.
+                if min(values) <= -ZERO_OHM:
+                    out["res_negative_segments"] += 1
+                elif max(abs(v) for v in values) < ZERO_OHM:
                     net_zero += 1
                     out["res_zero_segments"] += 1
     close()
+    if out["r_unit"] is None:
+        out["unit_errors"].append("no *R_UNIT line")
+    if out["c_unit"] is None:
+        out["unit_errors"].append("no *C_UNIT line")
     out["res_zero_fraction"] = (out["res_zero_segments"] / out["res_segments"]) if out["res_segments"] else None
     return out
 
@@ -114,9 +147,19 @@ def check_spef(counts, max_zero_fraction=MAX_ZERO_FRACTION):
     """The verdict of the resistance check: ("valid", None) or ("invalid", reason)."""
     if counts["nets"] == 0:
         return "invalid", "the file has no net (*D_NET): nothing was extracted"
+    if counts["unit_errors"]:
+        return "invalid", ("the units of the file are not supported: {}. The check knows OHM, KOHM and MOHM, and FF, PF and "
+                           "NF. Without the unit, the resistance values cannot be checked.").format("; ".join(counts["unit_errors"]))
+    if counts["res_bad_rows"]:
+        return "invalid", ("{} rows of the *RES sections are not a resistance (first: {}). The file is damaged, or it has a "
+                           "form that this check does not read; its segments cannot be counted.").format(
+                               counts["res_bad_rows"], "; ".join(counts["bad_rows"][:2]))
     if counts["res_segments"] == 0:
         return "invalid", ("{} nets and no resistance segment (*RES): the file has capacitance only. The wire delay of a "
                            "timing run with this file has no resistance.").format(counts["nets"])
+    if counts["res_negative_segments"]:
+        return "invalid", ("{} of {} resistance segments are negative: a wire resistance cannot be negative. The "
+                           "extraction is wrong.").format(counts["res_negative_segments"], counts["res_segments"])
     if counts["res_zero_segments"] == counts["res_segments"]:
         return "invalid", ("all {} resistance segments of {} nets are 0 ohm (below {:g} ohm; the sum is {:.3g} ohm): the "
                            "extraction had no wire resistance. A timing run with this file is a run without wire "

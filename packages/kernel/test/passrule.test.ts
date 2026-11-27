@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -104,4 +104,43 @@ test("simra run and simra jobs take pass_rule from the spec", async (t) => {
 	assert.match(out.stdout, /^pass rule: file pass\.md sha256:[0-9a-f]{12}/m);
 	const jobs = await runJobs({ root, jobs: [{ adapter: "fake", operation: "run", inputs: { mode: "ok" }, pass_rule: { id: "x", text: "x >= 1 V" } }] });
 	assert.equal(json<ExperimentRecord>(root, jobs.jobs[0].id as string, "experiment.json").pass_rule?.key, "x");
+});
+
+test("a rule file that cannot be read stops the run; one that cannot be read after the run is flagged", async (t) => {
+	const root = designRoot(t);
+	writeFileSync(join(root, "rule.md"), "gain >= 40 dB\n");
+	chmodSync(join(root, "rule.md"), 0o000);
+	t.after(() => {
+		try {
+			chmodSync(join(root, "rule.md"), 0o644);
+		} catch {}
+	});
+	await assert.rejects(run(root, { file: "rule.md" }), /pass_rule: the file rule\.md cannot be read/);
+	chmodSync(join(root, "rule.md"), 0o644);
+	const done = await run(root, { file: "rule.md" });
+	assert.match(done.experiment.pass_rule?.sha256 ?? "", /^[0-9a-f]{64}$/);
+	assert.deepEqual(passRuleFlags(root, done.experiment, done.result), []);
+	chmodSync(join(root, "rule.md"), 0o000);
+	assert.match(passRuleFlags(root, done.experiment, done.result).join("\n"), /PASS RULE CHANGED: file rule\.md cannot be read now/);
+});
+
+test("a pass rule that is removed from experiment.json after the run is flagged, also in the summary", async (t) => {
+	const root = designRoot(t);
+	const done = await run(root, { text: "gain >= 40 dB" });
+	const edited = JSON.parse(JSON.stringify(done.experiment)) as ExperimentRecord;
+	delete edited.pass_rule;
+	const flags = passRuleFlags(root, edited, done.result).join("\n");
+	assert.match(flags, /PASS RULE CHANGED: experiment\.json has no pass rule; the run started with sha256:[0-9a-f]{12} \(result\.json\)/);
+	assert.match(formatOutcome(root, edited, done.result), /PASS RULE CHANGED: experiment\.json has no pass rule/);
+	// Negative control: a run that never had a pass rule has no flag.
+	const plain = await run(root);
+	assert.deepEqual(passRuleFlags(root, plain.experiment, plain.result), []);
+});
+
+test("a rule file: the record keeps the wording, so a later change of the file does not lose it", async (t) => {
+	const root = designRoot(t);
+	writeFileSync(join(root, "rule.md"), "gain >= 40 dB\n");
+	const done = await run(root, { file: "rule.md" });
+	writeFileSync(join(root, "rule.md"), "gain >= 30 dB\n");
+	assert.equal(json<ExperimentRecord>(root, done.id, "experiment.json").pass_rule?.content, "gain >= 40 dB\n");
 });

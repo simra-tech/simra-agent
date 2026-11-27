@@ -17,6 +17,11 @@ fixtures (`hold_*.log`, `global_route.log`) are from OpenROAD 26Q1-1024.
 | `prelayout_fanout_left.log` | `examples/acc-sg13g2/src/acc.v`, `make/prelayout_acc.tcl`: the same check on a small block | 25 of 134 rows of the max fanout table kept |
 | `acc_lef_res.spef` | `examples/acc-sg13g2` routed with LibreLane, then `make/rcx.tcl` with the technology LEF of the PDK and `LEF_RES=1` | the first 12 nets of 3482 |
 | `acc_lef_res_no_resistance.spef` | the same, with a copy of the technology LEF without the `RESISTANCE` statements | the first 12 nets of 3482 |
+| `sta_valid_then_not_a_module.log` | `sta_valid.log` with `sta_not_a_module.log` appended: a script that writes its log with `>>` | two tool outputs in one file |
+| `sta_half_cycle.log` | `make/halfcycle.v` (a rising-edge flip-flop to a falling-edge flip-flop), `make/halfcycle_synth.ys`, then `make/halfcycle_sta.tcl` at a period of 10 ns. The clock edges of the path are 5 ns apart. | none |
+| `sta_units_ps.log` | `examples/acc-sg13g2/src/acc.v` with `make/units_ps_sta.tcl`: `set_cmd_units -time ps`, `report_units`, then the timing reports in ps | none |
+| `placed_repair_before_and_after.log` | `examples/acc-sg13g2/src/acc.v` with `make/placed_repair.tcl`: floorplan, placement, a violation report, `repair_design`, the same report again (200 max fanout violators before, 2 after) | 25 of 200 rows of the table before the repair kept |
+| `hand_triplets.spef`, `hand_unknown_unit.spef` | written by hand, not tool output: OpenROAD writes single values and known units. Triplets (`best:typical:worst`) are part of the SPEF format. | - |
 | `slow.lib`, `typ_named_slow.lib` | test headers, not PDK files | - |
 
 Results of the full runs:

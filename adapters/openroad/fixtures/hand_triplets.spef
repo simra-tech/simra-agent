@@ -1,0 +1,41 @@
+*SPEF "ieee 1481-1999"
+*DESIGN "hand_triplets"
+*DATE "hand-written test file"
+*VENDOR "none"
+*PROGRAM "none"
+*VERSION "1"
+*DESIGN_FLOW "NAME_SCOPE LOCAL" "PIN_CAP NONE"
+*DIVIDER /
+*DELIMITER :
+*BUS_DELIMITER []
+*T_UNIT 1 NS
+*C_UNIT 1 FF
+*R_UNIT 1 OHM
+*L_UNIT 1 HENRY
+
+*NAME_MAP
+*1 n1
+*2 n2
+
+*D_NET *1 1.5:2.0:2.5
+*CONN
+*I u1:Y O
+*I u2:A I
+*CAP
+1 *1:1 1.5:2.0:2.5
+*RES
+1 u1:Y *1:1 1
+2 *1:1 *1:2 0:0:0
+3 *1:2 u2:A 0:0:0
+*END
+
+*D_NET *2 1.0:1.0:1.0
+*CONN
+*I u2:Y O
+*I u3:A I
+*CAP
+1 *2:1 1.0:1.0:1.0
+*RES
+1 u2:Y *2:1 10.5:12.0:14.5
+2 *2:1 u3:A 3.0:4.0:5.0
+*END

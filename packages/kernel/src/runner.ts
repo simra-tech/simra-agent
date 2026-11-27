@@ -275,12 +275,13 @@ async function executeJob(job: Job, env: NodeJS.ProcessEnv, signal?: AbortSignal
 	try {
 		exit = cancelledInQueue
 			? { code: null, signal: null, timedOut: false, cancelled: true, spawnError: null }
-			: await spawnAndWait(job.command, job.args, { cwd: root, env, stdoutPath, stderrPath, timeoutS: job.timeout_s, signal });
+			: await spawnAndWait(job.command, job.args, { cwd: root, env, stdoutPath, stderrPath, timeoutS: job.timeout_s, signal, onSpawn: (pid) => lock?.track({ pid, engine: job.engine ?? undefined }) });
+		// A stopped engine client can leave its container running: remove the container of this experiment by its label.
+		// A heavy job keeps the lock until this is done.
+		if ((exit.timedOut || exit.cancelled) && job.engine) removeContainers(job.engine, id);
 	} finally {
 		lock?.release();
 	}
-	// A stopped engine client can leave its container running: remove the container of this experiment by its label.
-	if ((exit.timedOut || exit.cancelled) && job.engine) removeContainers(job.engine, id);
 	const finished = new Date();
 
 	const result: ResultRecord = {
@@ -559,7 +560,7 @@ interface SpawnResult {
 function spawnAndWait(
 	command: string,
 	args: string[],
-	o: { cwd: string; env: NodeJS.ProcessEnv; stdoutPath: string; stderrPath: string; timeoutS: number; signal?: AbortSignal },
+	o: { cwd: string; env: NodeJS.ProcessEnv; stdoutPath: string; stderrPath: string; timeoutS: number; signal?: AbortSignal; onSpawn?: (pid: number) => void },
 ): Promise<SpawnResult> {
 	return new Promise((resolvePromise) => {
 		const out = createWriteStream(o.stdoutPath);
@@ -568,6 +569,7 @@ function spawnAndWait(
 		const child = spawn(command, args, { cwd: o.cwd, env: o.env, stdio: ["ignore", "pipe", "pipe"] });
 		child.stdout.pipe(out);
 		child.stderr.pipe(err);
+		if (child.pid !== undefined) o.onSpawn?.(child.pid);
 
 		const stop = () => {
 			child.kill("SIGTERM");

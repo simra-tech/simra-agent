@@ -173,31 +173,42 @@ def timing(request):
         period_in = number(inputs, "clock_period_ns", 0) or None
     except ValueError as e:
         return failure(str(e))
+    unit_in = inputs.get("time_unit")
+    if unit_in is not None and unit_in not in orlog.TIME_SCALE_NS:
+        return failure("input 'time_unit' must be one of: {}".format(", ".join(orlog.TIME_SCALE_NS)))
     text = orlog.read_text(path)
-    report = orlog.timing_report(text)
+    report = orlog.timing_report(text, unit_in)
     violations = orlog.design_violations(text)
     status, reasons = orlog.check_timing(report, violations, period_in, limit, allowed)
-    period = period_in or report["period"]
+    slack_limit = orlog.slack_limit(report, period_in, limit)
     measurements, diagnostics, lines = {}, [], []
     reason = "{}: {}".format(status, "; ".join(reasons))
     measurements["timing_check"] = measured(1, "", shown) if status == "valid" else not_measured("failed", "", reason)
     worst = report["worst_slack"]
     if status == "valid" and worst is not None:
-        measurements["worst_slack_ns"] = measured(worst, "ns", shown)
+        measurements["worst_slack_ns"] = measured(round(worst, 9), "ns", shown)
     else:
         measurements["worst_slack_ns"] = not_measured("missing" if status == "not run" else "failed", "ns",
-                                                      reason if status != "valid" else "the log has path reports but no slack value")
+                                                      reason if status != "valid" else "the log has a wns of 0 and no slack value: the slack is not negative, its value is not in the log")
+    if status == "valid" and report["wns"] is not None:
+        measurements["wns_ns"] = measured(round(report["wns"], 9), "ns", shown)
     measurements["paths"] = measured(report["paths"], "", shown)
     measurements["slack_lines"] = measured(len(report["slack_lines"]), "", shown)
-    if period:
-        measurements["clock_period_ns"] = measured(period, "ns", "input" if period_in else shown)
-    path_report = report["worst_path"]
+    if slack_limit["period"]:
+        measurements["clock_period_ns"] = measured(round(slack_limit["period"], 9), "ns", "input" if period_in else "{} ({})".format(shown, report["period_source"]))
+    # The check against the multiple of the clock period: 1 when it ran, "not run" with the reason when it could not.
+    if status != "not run":
+        measurements["slack_limit_check"] = measured(1, "", shown) if slack_limit["evaluated"] else not_measured(
+            "missing", "", "not run: " + slack_limit["why"])
+    path_report = report["worst_path"] if status != "not run" else None
     if path_report and path_report["stages"] is not None:
         source = "{}:{}".format(shown, path_report["line"])
         measurements["worst_path_stages"] = measured(path_report["stages"], "", source)
         measurements["worst_path_logic_depth"] = measured(path_report["logic_depth"], "", source)
-        lines.append("worst path at line {}: {} -> {}, slack {:+.3f} ns, {} stages, logic depth {}".format(
-            path_report["line"], path_report["startpoint"], path_report["endpoint"], path_report["slack"],
+        # The slack of an invalid check is not a result: the report does not have it.
+        lines.append("worst path at line {}: {} -> {}, {}{} stages, logic depth {}".format(
+            path_report["line"], path_report["startpoint"], path_report["endpoint"],
+            "slack {:+.3f} ns, ".format(path_report["slack"]) if status == "valid" else "",
             path_report["stages"], path_report["logic_depth"]))
         lines.append("cells of the worst path: {}".format(" ".join(path_report["cells"][:60])))
     if violations["buffers"] is not None:
@@ -206,11 +217,25 @@ def timing(request):
         measurements["max_{}_violations".format(kind)] = measured(count, "", shown)
     for kind, count in sorted(violations["found"].items()):
         lines.append("repair_design found {} {} violations".format(count, kind))
-    for entry in report["summaries"]:
-        lines.append("{}{} {:+.3f} (line {})".format(entry["kind"], " " + entry["check"] if entry["check"] else "", entry["value"], entry["line"]))
+    for kind, count in sorted(violations["before_repair"].items()):
+        lines.append("before the repair the report had {} max {} violations".format(count, kind))
+    if status == "valid":
+        for entry in report["summaries"]:
+            lines.append("{}{} {:+.3f} ns (line {})".format(entry["kind"], " " + entry["check"] if entry["check"] else "", entry["value"], entry["line"]))
+    if status != "not run":
+        lines.append("time unit of the log: {} ({})".format(report["time_unit"], {
+            "input": "input time_unit", "log": "stated in the log", "assumed": "assumed: the log does not state it"}[report["time_unit_source"]]))
+        if not slack_limit["evaluated"]:
+            lines.append("slack limit check: not run. {}".format(slack_limit["why"]))
+        if report["incomplete_paths"]:
+            lines.append("{} path headers without a slack line (not counted as paths)".format(report["incomplete_paths"]))
     lines.insert(0, "timing check: {}".format(status))
     if status != "valid":
         diagnostics.append({"severity": "error", "source": shown, "message": reason})
+    if status != "not run" and not slack_limit["evaluated"]:
+        diagnostics.append({"severity": "warning", "source": shown, "message": (
+            "the check of the worst slack against {:g} clock periods did not run: {} The verdict does not include this "
+            "check.").format(limit, slack_limit["why"])})
     if status == "invalid check" and path_report and path_report["stages"] is not None:
         diagnostics.append({"severity": "warning", "source": "{}:{}".format(shown, path_report["line"]), "message": (
             "do not report the slack of this check. What it shows is the logic of the worst path: {} stages, logic depth "
@@ -230,12 +255,25 @@ def spef(request):
         limit = number(inputs, "max_zero_fraction", orspef.MAX_ZERO_FRACTION)
     except ValueError as e:
         return failure(str(e))
-    counts = orspef.read_spef(path)
+    try:
+        counts = orspef.read_spef(path)
+    except (OSError, EOFError, ValueError) as e:
+        # A file that cannot be read (for example a .gz file that is not gzip data): the check did not run.
+        message = "not run: the file {} cannot be read ({}: {})".format(shown, type(e).__name__, e)
+        return {"contract": CONTRACT, "status": "failed", "tool": {"name": "openroad", "version": None},
+                "input_files": hashed(path, shown, "spef"), "outputs": [],
+                "measurements": {"spef_check": not_measured("missing", "", message)},
+                "diagnostics": [{"severity": "error", "source": shown, "message": message}], "report": ["spef check: not run"]}
     status, reason = orspef.check_spef(counts, limit)
     measurements = {"spef_check": measured(1, "", shown) if status == "valid" else not_measured("failed", "", "invalid: " + reason)}
+    scaled = not counts["unit_errors"]
     for name, key, unit in (("nets", "nets", ""), ("res_segments", "res_segments", ""), ("res_zero_segments", "res_zero_segments", ""),
+                            ("res_negative_segments", "res_negative_segments", ""), ("res_bad_rows", "res_bad_rows", ""),
                             ("res_total_ohm", "res_total_ohm", "ohm"), ("cap_total_pf", "cap_total_pf", "pF")):
-        measurements[name] = measured(round(counts[key], 6), unit, shown)
+        if unit and not scaled:
+            measurements[name] = not_measured("failed", unit, "the unit of the file is not supported: " + "; ".join(counts["unit_errors"]))
+        else:
+            measurements[name] = measured(round(counts[key], 6), unit, shown)
     fraction = counts["res_zero_fraction"]
     measurements["res_zero_fraction"] = measured(round(fraction, 6), "", shown) if fraction is not None else not_measured(
         "missing", "", "the file has no resistance segment")
