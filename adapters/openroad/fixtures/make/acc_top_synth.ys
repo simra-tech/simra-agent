@@ -1,0 +1,6 @@
+read_verilog acc.v acc_top.v
+synth -top acc_top
+dfflibmap -liberty /work/lib/sg13g2_stdcell_typ_1p20V_25C.lib
+abc -liberty /work/lib/sg13g2_stdcell_typ_1p20V_25C.lib
+opt_clean
+write_verilog -noattr acc_top.nl.v

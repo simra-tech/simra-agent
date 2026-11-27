@@ -1,0 +1,51 @@
+Startpoint: _910_ (rising edge-triggered flip-flop clocked by clk)
+Endpoint: _909_ (rising edge-triggered flip-flop clocked by clk)
+Path Group: clk
+Path Type: max
+
+   Delay     Time   Description
+-----------------------------------------------------------
+   0.000    0.000   clock clk (rise edge)
+   0.000    0.000   clock network delay (ideal)
+   0.000    0.000 ^ _910_/CLK (sg13g2_dfrbpq_1)
+   0.523    0.523 ^ _910_/Q (sg13g2_dfrbpq_1)
+   0.262    0.785 v _591_/Y (sg13g2_a21oi_1)
+   0.231    1.017 ^ _632_/Y (sg13g2_o21ai_1)
+   0.196    1.213 v _642_/Y (sg13g2_a21oi_1)
+   0.219    1.432 ^ _683_/Y (sg13g2_o21ai_1)
+   0.199    1.631 v _686_/Y (sg13g2_a21oi_1)
+   0.192    1.823 ^ _708_/Y (sg13g2_o21ai_1)
+   0.173    1.996 v _709_/Y (sg13g2_nand2b_1)
+   0.363    2.359 ^ _721_/Y (sg13g2_nor4_1)
+   0.247    2.606 v _725_/Y (sg13g2_a21oi_1)
+   0.250    2.856 ^ _728_/Y (sg13g2_o21ai_1)
+   0.197    3.053 v _730_/Y (sg13g2_a21oi_1)
+   0.232    3.285 ^ _732_/Y (sg13g2_o21ai_1)
+   0.194    3.479 v _736_/Y (sg13g2_a21oi_1)
+   0.239    3.718 ^ _739_/Y (sg13g2_o21ai_1)
+   0.196    3.914 v _742_/Y (sg13g2_a21oi_1)
+   0.239    4.152 ^ _745_/Y (sg13g2_o21ai_1)
+   0.197    4.349 v _747_/Y (sg13g2_a21oi_1)
+   0.206    4.555 ^ _751_/Y (sg13g2_o21ai_1)
+   0.183    4.738 ^ _757_/Y (sg13g2_xnor2_1)
+   0.108    4.846 v _759_/Y (sg13g2_a21oi_1)
+   0.000    4.846 v _909_/D (sg13g2_dfrbpq_1)
+            4.846   data arrival time
+
+   7.100    7.100   clock clk (rise edge)
+   0.000    7.100   clock network delay (ideal)
+   0.000    7.100   clock reconvergence pessimism
+            7.100 ^ _909_/CLK (sg13g2_dfrbpq_1)
+  -0.202    6.898   library setup time
+            6.898   data required time
+-----------------------------------------------------------
+            6.898   data required time
+           -4.846   data arrival time
+-----------------------------------------------------------
+            2.052   slack (MET)
+
+
+wns max 0.000
+tns max 0.000
+Error: 1390 acc is not a verilog module.
+

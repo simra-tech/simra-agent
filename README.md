@@ -53,8 +53,9 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
   layout cell as a Touchstone file: one openEMS job per port, then the merge (see [EM S-parameters](#em-s-parameters)).
 - The tool `em_sparameters` (pi) runs `simra em` and lists S at given frequencies. `simra snp-diff` compares two
   Touchstone files per entry in dB, degrees and |dS|.
-- The openroad adapter has one operation, `parse`: the typed record of an OpenROAD log (repair tables with the pattern
-  that a table shows, the congestion report, messages). The librelane adapter has three operations: `read` (the typed
+- The openroad adapter has three operations: `parse` (the typed record of an OpenROAD log: repair tables with the
+  pattern that a table shows, the congestion report, messages), `timing` (is the log of a timing step a timing
+  result: not run, invalid check or valid) and `spef` (does an extracted SPEF file have wire resistance). The librelane adapter has three operations: `read` (the typed
   record of a LibreLane run: the slack of each corner with its evidence level, and warnings for carried-over numbers,
   a corner name that does not agree with its library, and a step that did not end), `compare` (two runs: did a changed
   setting change a result) and `replay` (one step again on its saved state, with changed variables). After a shell
@@ -82,7 +83,7 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
   lists the rows of an assumption.
 - The commands `simra pack init` and `simra pack check` add a PDK to a site: an adapter proposes a technology pack
   from the kit, the user confirms it, and the adapter checks it (see "Add a PDK").
-- The openroad adapter has one operation, `parse`. The librelane adapter has four operations: `read`, `compare`,
+- The openroad adapter has three operations: `parse`, `timing` and `spef`. The librelane adapter has four operations: `read`, `compare`,
   `replay` and `preflight`. The pi extension adds the findings of `read` to the result of a shell command that runs
   LibreLane or reads a run directory (see [Digital flow](#digital-flow)).
 - Three example designs exist for the open IHP SG13G2 PDK: a two-stage OTA, and two digital blocks
@@ -105,7 +106,7 @@ What the harness has now, and what a task needs that it does not have yet.
 | Antenna | `em_sparameters` (S11) | far-field gain and pattern |
 | Baseband amplifier, filter, regulator | ngspice ac, noise, transient, `monte_carlo` | loop gain at an internal node (a loop-probe operation) |
 | Bias reference with trim | ngspice, `monte_carlo` | a trim search per Monte Carlo seed |
-| Digital control | `librelane` (`read`, `compare`, `replay`, `preflight`), `openroad` (`parse`), flow check (see [Digital flow](#digital-flow)) | an operation that starts a complete flow; adapters for synthesis (Yosys) and for RTL simulation (Verilator, Icarus Verilog) |
+| Digital control | `librelane` (`read`, `compare`, `replay`, `preflight`), `openroad` (`parse`, `timing`, `spef`), flow check (see [Digital flow](#digital-flow)) | an operation that starts a complete flow; adapters for synthesis (Yosys) and for RTL simulation (Verilator, Icarus Verilog) |
 | Whole chip | `assemble_dc` | a whole-chip transient or harmonic-balance check |
 
 ## Install
@@ -285,6 +286,76 @@ no `result.json`, the next wait writes `result.json` with the status `error`. Th
 at the timeout of the run (`timeout_s`, default 3600 s). On `SIGTERM`, it stops the adapter and records the run
 as `cancelled`.
 
+### Heavy jobs: one at a time
+
+A heavy job is a run that uses most of a machine: a place and route step, a full flow, a large DRC or extraction
+deck. Two heavy jobs at the same time make both slow, or one stops for lack of memory. The kernel has one heavy-job
+lock for each machine. A heavy job runs only while it holds the lock.
+
+1. Mark the run as heavy: `"heavy": true` in the run specification (`simra run`, `simra jobs`), or `heavy: true` in
+   `run_experiment` or in a job of `run_jobs`. To make an operation heavy for all runs of a design root, add it to
+   `heavy_operations` in `simra.config.json` or `simra.local.json`, for example
+   `"heavy_operations": ["librelane.replay", "klayout.*"]`.
+2. Start the run detached. When the lock is not free, the run has the status `queued` in `status.json`, with the
+   holder of the lock in `waiting_for`. The adapter starts when the lock is free. The waiting runs start in the order
+   of their arrival.
+3. Do other work. Do not wait in a loop. When the run ends, it is in the inbox (see below).
+
+The lock is the path `~/.simra/heavy.lock`, or the path in the variable `SIMRA_HEAVY_LOCK`. Set the variable to the
+lock directory that the other tools of the machine use, so that all of them use one lock. A tool that takes the lock
+with `mkdir` and this code exclude each other: each fails when the path exists. This code takes the lock with a
+symbolic link to its owner directory (in `<lock>.owners`), so the lock and its `owner.json` appear in one step. The
+record has the process id, the host, the experiment, the design root and the processes of the job. The queue is the
+directory `<lock>.queue`, with one file for each waiting run. The lock needs symbolic links (Linux, macOS).
+
+- A lock that is not a link of this code (a directory without `owner.json`) is the lock of another tool. The queue
+  waits for it and never removes it.
+- A lock whose owner is a process of this host that is gone is removed by the first run of the queue, when no
+  process of the job runs: not the adapter, not a process of the process group of the owner, not a container with
+  the label of the experiment. A supervisor that is killed leaves its adapter running; the lock stays until the
+  adapter ends.
+- A container engine that does not answer leaves the state of the container not known: the lock stays, and the next
+  try asks again. When the lock stays for this reason and no container can run, remove the lock by hand.
+- A process that is killed while it takes or gives back the lock leaves no lock without an owner record.
+- A run that is stopped or that times out keeps the lock until its container is removed. When the removal fails, the
+  lock stays (marked in `owner.json`) until the engine reports no container of the experiment, and `result.json` has
+  an error line that says so.
+- A lock directory of the earlier format of this code (a directory with an `owner.json` of this code) of a process
+  that is gone is taken over in the same way.
+- The watchdog of a run (`timeout_s`) starts when the adapter starts. The time in the queue has no limit.
+- `SIGTERM` to the supervisor of a queued run records the run as `cancelled`. The adapter does not start.
+- The summary of the run gives the time in the queue (`heavy job: waited 412.0 s for the heavy-job lock`), and
+  `result.json` has it in `queued_s`.
+
+`npx simra inbox` prints the state of the lock and its queue.
+
+### Inbox
+
+A detached run that ends writes a marker file, `simra/inbox/<id>.json`, in the design root. The marker stays until
+the result is read: by a wait (`simra wait`, `wait_experiments`, `simra jobs`, `run_jobs`) or by `simra show <id>`.
+So a session that did other work, or a new session, finds the runs that ended.
+
+From a plain command line, run `npx simra inbox`. The command prints one line for each ended run whose result was
+not read, and the state of the heavy-job lock:
+
+```
+inbox: 1 detached run ended and its result was not read
+  20261127-101530-4be2c1 librelane.replay: completed, ended 2026-11-27T10:22:41.512Z, heavy job (hold repair, second pass)
+read: simra wait <id> [<id>...]
+heavy-job lock /home/user/.simra/heavy.lock: free
+```
+
+In pi, the extension reads the inbox:
+
+1. After each tool call, the result gets a note for each run that ended (`Simra inbox: ...`), one time for each run.
+2. When the agent ends its work and a run is in the inbox, the session gets one more turn with the note.
+3. When the session is idle, the extension looks at the inbox every 10 s (`SIMRA_INBOX_POLL_S`) and starts a turn
+   with the note. `SIMRA_INBOX_WAKE=off` stops this.
+
+The note names the ids for `wait_experiments`, which gives the summaries and takes the runs out of the inbox. The
+idle wake needs a session that stays open (the terminal UI or the RPC mode). A session that ended finds the runs in
+the inbox at its next start.
+
 ### Run N jobs and wait
 
 For many independent runs (corners, sweep points, seeds), one call starts them all and waits for all of them:
@@ -442,9 +513,9 @@ simulator fails in the stored device-class probe has an entry.
 | Xyce 7.10 | any | no autonomous HB or HB noise, .step with HB, YLIN outside HB, .temp ignored |
 | ngspice 46 | IHP SG13G2 | KLU on a large mixed deck, Monte Carlo DC with reltol 1e-4, HBT self-heating, antenna diode step |
 | ngspice 46 | any | pulse with PW = 0, trnoise with a round step, trnoise current source, threads in a container, .pss |
-| LibreLane 3.1.0.dev2 | any | timing steps in the layout analyse one corner, integer clock tree derate (open), empty step log, two OpenROAD builds |
-| OpenROAD 26Q1-1024, OpenSTA 2.7.0 and 3.1.0 | any | hold repair stops after one pass, `signed` in a netlist |
-| Yosys 0.67 | any | `abc -D` without `-constr` has no effect (open) |
+| LibreLane 3.1.0.dev2 and 3.1.0.dev6 | any | timing steps in the layout analyse one corner, integer clock tree derate (open), empty step log, two OpenROAD builds, extraction with layer resistance from the technology LEF |
+| OpenROAD 26Q1-1024 and 26Q4, OpenSTA 2.7.0, 3.1.0 and 3.2.0 | any | hold repair stops after one pass, `signed` in a netlist, `link_design` with a name that the netlist does not have, timing before the placement is not a result, `extract_parasitics -lef_res` |
+| Yosys 0.67 and 0.71 | any | `abc -D` without `-constr` has no effect (open), `signed` in the written netlist, `$paramod` module names |
 | Verilator 5.050 | any | no trace of names that start with an underscore |
 | openEMS 0.37 | any | MUR energy plateau, thin dielectric time step, headless runs |
 
@@ -566,6 +637,39 @@ In pi, the prompt rules tell the agent to confirm with `design_record` that a ch
 the check, and to rerun a stale check. When a file of record changed under the agent (another commit, another
 process), the agent reads the new version and applies its change to it. It does not overwrite the file with its own
 earlier copy.
+
+## Pass rule
+
+A pass rule is the rule that decides if a run passes: a limit, a list of corners, a file with acceptance criteria.
+A rule that is written after the result can be fitted to the result. The kernel records the rule before the run
+starts.
+
+1. Give the rule with the run: `"pass_rule": {"text": "setup slack >= 0 ns at every corner, with extracted wires"}`
+   or `"pass_rule": {"file": "signoff/pass.md"}` in the run specification (`simra run`, `simra jobs`), or the
+   parameter `pass_rule` of `run_experiment` and of a job of `run_jobs`. A file must be in the design root.
+2. Optional: give the rule an `id`, for example `"id": "timing"`. The id joins the runs that answer the same
+   question. A file rule without id is joined by its path.
+3. Read the summary. It has one line with the rule and its hash, for example
+   `pass rule: file signoff/pass.md sha256:3f2a9c01b7d4, recorded 2026-11-27T10:15:30.120Z (before the run)`.
+
+The runner writes the rule and its sha256 to `pass_rule` in `experiment.json`, before the adapter starts: the text,
+or the path, the size and (for a text file of at most 64 kB) the content of the file. It copies the sha256 to
+`pass_rule_sha256` in `result.json`. A rule file that is not there or cannot be read stops the run before it starts.
+The hash is the hash of the bytes that the runner read.
+
+The summary gives a line `PASS RULE CHANGED:` in these cases:
+
+- An earlier run with a result used another rule under the same id or file path. The record of the new run lists
+  these runs in `pass_rule.changed_after_results`.
+- The rule file changed after the run started, or it cannot be read now (then the check did not run, and the line
+  says so).
+- The rule in `experiment.json` does not agree with its recorded hash, or with the hash in `result.json`.
+- `experiment.json` has no pass rule, and `result.json` has the hash of one: the rule was removed from the record.
+
+The flag is a statement, not a stop: a rule can change for a good reason. Then the report must say so, and the
+earlier results must be judged again with the new rule or run again. The kernel does not apply the rule. For limits
+that the kernel applies, use [requirements](#check-requirements); a check records the hash of its requirements
+file.
 
 ## System prompt
 
@@ -1266,17 +1370,22 @@ LibreLane with a shell command. Two adapters exist:
 | librelane | `replay` | runs one step of a run again on its saved state, with changed variables. It does not change the run directory. |
 | librelane | `preflight` | starts the version command of each flow tool, lists the PDK views, checks the free disk space |
 | openroad | `parse` | reads an OpenROAD log: messages, repair tables with a known pattern (for example the buffer limit), global route congestion |
+| openroad | `timing` | checks the log of a timing step: `not run` when the log has no slack line and no path report, `invalid check` when the worst slack is more than 10 clock periods negative or design rule violations remain after a repair (both limits are inputs), else `valid` |
+| openroad | `spef` | checks an extracted SPEF file: `invalid` when it has no resistance segment, only segments of 0 ohm, or too many of them |
 
 Only `replay` and `preflight` start a tool. See [adapters/librelane/README.md](adapters/librelane/README.md).
 
-The pi extension has two checks on a shell command of the agent:
+The pi extension has three checks on a shell command of the agent:
 
 - Flow check: after a command that runs LibreLane or a call that reads a run directory, the result gets the warnings
   of `read`, each one time. `SIMRA_FLOW_CHECK=off` stops it.
+- Timing step check: after a command with exit code 0 that wrote the log of a timing step and no slack line, the
+  result gets the note `Simra timing check: not run`. For a log that the command appended to, only the new part
+  counts. Such a step is not passed. `SIMRA_FLOW_CHECK=off` stops it too.
 - Command check: after a command with exit code 0, the result gets the logs with error lines and the empty result
   files that the command wrote. It is off by default. `SIMRA_COMMAND_CHECK=on` starts it.
 
-Yosys and Verilator have no adapter. Each has one entry in the [workaround registry](#workaround-registry).
+Yosys and Verilator have no adapter. Each has entries in the [workaround registry](#workaround-registry).
 `preflight` reads their versions.
 
 Eight demo tasks are in `evals/flow-*`: `flow-setting-effect`, `flow-evidence-level`, `flow-no-work`,

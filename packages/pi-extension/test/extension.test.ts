@@ -484,7 +484,9 @@ test("end guard: one re-entry with the missing items, recorded; none when the de
 	delete process.env.SIMRA_DELIVERABLES;
 	const off = new Map<string, any>();
 	extension({ registerTool: () => {}, registerCommand: () => {}, on: (name: string, h: any) => off.set(name, h) } as any);
-	assert.equal(off.has("agent_before_settle"), false);
+	// The handler that is left is the inbox handler: with an empty inbox it adds nothing.
+	assert.equal(off.has("agent_settled"), false);
+	assert.equal(await off.get("agent_before_settle")({ type: "agent_before_settle", entries: [], continue: false }, { cwd: root }), undefined);
 });
 
 test("end guard: the answer must belong to the final design and its check, else the session ends as inconsistent answer", async (t) => {

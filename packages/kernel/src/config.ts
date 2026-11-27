@@ -27,6 +27,11 @@ export interface SimraConfig {
 	adapter_dirs?: string[];
 	/** Extra directories that contain technology packs (each pack is a subdirectory with technology.json). */
 	technology_dirs?: string[];
+	/**
+	 * The heavy operations of this site: entries "adapter.operation" or "adapter.*". A run of such an operation waits for
+	 * the heavy-job lock of the machine (see heavy.ts). The entries of simra.local.json are added to those of simra.config.json.
+	 */
+	heavy_operations?: string[];
 }
 
 export const CONFIG_FILE = "simra.config.json";
@@ -55,6 +60,7 @@ export function loadConfig(root: string): SimraConfig {
 		if (part.adapter_dirs) {
 			config.adapter_dirs = [...(config.adapter_dirs ?? []), ...part.adapter_dirs.map((d) => resolve(root, d))];
 		}
+		if (part.heavy_operations) config.heavy_operations = [...(config.heavy_operations ?? []), ...part.heavy_operations];
 		if (part.technology_dirs) {
 			config.technology_dirs = [...(config.technology_dirs ?? []), ...part.technology_dirs.map((d) => resolve(root, d))];
 		}

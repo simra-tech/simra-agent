@@ -1,0 +1,137 @@
+[INFO ODB-0227] LEF file: /foss/pdks/ihp-sg13g2/libs.ref/sg13g2_stdcell/lef/sg13g2_tech.lef, created 19 layers, 70 vias
+[INFO ODB-0227] LEF file: /foss/pdks/ihp-sg13g2/libs.ref/sg13g2_stdcell/lef/sg13g2_stdcell.lef, created 84 library cells
+[WARNING EST-0027] no estimated parasitics. Using wire load models.
+Iteration |   Area    | Resized | Buffers | Nets repaired | Remaining
+---------------------------------------------------------------------
+        0 |     +0.0% |       0 |       0 |             0 |      2873
+    final |     +1.5% |       0 |      66 |           200 |         0
+---------------------------------------------------------------------
+[INFO RSZ-0035] Found 200 fanout violations.
+[INFO RSZ-0038] Inserted 66 buffers in 200 nets.
+[INFO RSZ-0504] Runtime: 0.18s
+Startpoint: rst_n (input port clocked by clk)
+Endpoint: _5548_ (recovery check against rising-edge clock clk)
+Path Group: asynchronous
+Path Type: max
+
+   Delay     Time   Description
+-----------------------------------------------------------
+   0.000    0.000   clock clk (rise edge)
+   0.000    0.000   clock network delay (ideal)
+   1.420    1.420 ^ input external delay
+   0.000    1.420 ^ rst_n (in)
+   0.000    1.420 ^ _5548_/RESET_B (sg13g2_dfrbpq_1)
+            1.420   data arrival time
+
+   7.100    7.100   clock clk (rise edge)
+   0.000    7.100   clock network delay (ideal)
+   0.000    7.100   clock reconvergence pessimism
+            7.100 ^ _5548_/CLK (sg13g2_dfrbpq_1)
+  -0.199    6.901   library recovery time
+            6.901   data required time
+-----------------------------------------------------------
+            6.901   data required time
+           -1.420   data arrival time
+-----------------------------------------------------------
+            5.481   slack (MET)
+
+
+Startpoint: _5551_ (rising edge-triggered flip-flop clocked by clk)
+Endpoint: _5610_ (rising edge-triggered flip-flop clocked by clk)
+Path Group: clk
+Path Type: max
+
+   Delay     Time   Description
+-----------------------------------------------------------
+   0.000    0.000   clock clk (rise edge)
+   0.000    0.000   clock network delay (ideal)
+   0.000    0.000 ^ _5551_/CLK (sg13g2_dfrbpq_1)
+   0.244    0.244 ^ _5551_/Q (sg13g2_dfrbpq_1)
+   0.143    0.387 ^ _5044_/X (sg13g2_buf_4)
+   0.108    0.494 ^ _5056_/X (sg13g2_buf_8)
+   0.250    0.744 ^ fanout46/X (sg13g2_buf_1)
+   0.193    0.937 ^ _5057_/X (sg13g2_buf_8)
+   0.212    1.149 ^ fanout29/X (sg13g2_buf_1)
+   0.172    1.322 ^ _5058_/X (sg13g2_buf_8)
+   0.211    1.533 ^ fanout15/X (sg13g2_buf_1)
+   0.173    1.706 ^ _5059_/X (sg13g2_buf_8)
+   0.187    1.893 ^ fanout6/X (sg13g2_buf_1)
+   0.205    2.098 ^ _2805_/X (sg13g2_a21o_1)
+   0.116    2.214 v _2807_/Y (sg13g2_nand3_1)
+   0.328    2.542 ^ _2809_/Y (sg13g2_a221oi_1)
+   0.323    2.864 ^ _2933_/X (sg13g2_xor2_1)
+   0.303    3.167 ^ _4008_/X (sg13g2_xor2_1)
+   0.333    3.501 ^ _4012_/Y (sg13g2_xnor2_1)
+   0.229    3.730 v _4078_/Y (sg13g2_a21oi_1)
+   0.156    3.886 ^ _4122_/Y (sg13g2_o21ai_1)
+   0.185    4.071 ^ _4124_/X (sg13g2_a21o_1)
+   0.223    4.294 ^ _4125_/X (sg13g2_buf_1)
+   0.196    4.490 ^ _4150_/Y (sg13g2_xnor2_1)
+   0.250    4.740 ^ _4151_/X (sg13g2_buf_1)
+   0.293    5.033 ^ _4175_/X (sg13g2_xor2_1)
+   0.301    5.334 v _4177_/X (sg13g2_mux2_1)
+   0.078    5.413 ^ _4178_/Y (sg13g2_o21ai_1)
+   0.107    5.519 v _4184_/Y (sg13g2_nor4_1)
+   0.076    5.595 ^ _4185_/Y (sg13g2_nand2b_1)
+   0.102    5.697 v _4211_/Y (sg13g2_a22oi_1)
+   0.151    5.848 v _4212_/X (sg13g2_buf_4)
+   0.117    5.965 ^ _4225_/Y (sg13g2_o21ai_1)
+   0.166    6.131 ^ _4226_/X (sg13g2_buf_2)
+   0.131    6.262 v _4422_/Y (sg13g2_o21ai_1)
+   0.378    6.640 ^ _4447_/Y (sg13g2_a221oi_1)
+   0.193    6.833 v _4452_/Y (sg13g2_nand2_1)
+   0.242    7.075 ^ _4455_/Y (sg13g2_a221oi_1)
+   0.224    7.299 ^ _4456_/X (sg13g2_buf_4)
+   0.238    7.537 ^ _4485_/X (sg13g2_and3_2)
+   0.153    7.690 ^ _4670_/X (sg13g2_or3_1)
+   0.132    7.822 ^ _4671_/Y (sg13g2_xnor2_1)
+   0.159    7.981 ^ _4672_/X (sg13g2_mux2_1)
+   0.000    7.981 ^ _5610_/D (sg13g2_dfrbpq_1)
+            7.981   data arrival time
+
+   7.100    7.100   clock clk (rise edge)
+   0.000    7.100   clock network delay (ideal)
+   0.000    7.100   clock reconvergence pessimism
+            7.100 ^ _5610_/CLK (sg13g2_dfrbpq_1)
+  -0.204    6.896   library setup time
+            6.896   data required time
+-----------------------------------------------------------
+            6.896   data required time
+           -7.981   data arrival time
+-----------------------------------------------------------
+           -1.085   slack (VIOLATED)
+
+
+wns max -1.085
+tns max -3.805
+worst slack max -1.085
+max fanout
+
+Pin                                   Limit Fanout  Slack
+---------------------------------------------------------
+rst_n                                    20     64    -44 (VIOLATED)
+_2775_/X                                  8     10     -2 (VIOLATED)
+_2810_/X                                  8     10     -2 (VIOLATED)
+_2821_/X                                  8     10     -2 (VIOLATED)
+_2832_/X                                  8     10     -2 (VIOLATED)
+_2843_/X                                  8     10     -2 (VIOLATED)
+_2872_/X                                  8     10     -2 (VIOLATED)
+_2924_/X                                  8     10     -2 (VIOLATED)
+_3087_/X                                  8     10     -2 (VIOLATED)
+_3109_/X                                  8     10     -2 (VIOLATED)
+_3130_/X                                  8     10     -2 (VIOLATED)
+_3138_/X                                  8     10     -2 (VIOLATED)
+_3220_/X                                  8     10     -2 (VIOLATED)
+_3409_/X                                  8     10     -2 (VIOLATED)
+_3476_/X                                  8     10     -2 (VIOLATED)
+_3498_/X                                  8     10     -2 (VIOLATED)
+_3509_/X                                  8     10     -2 (VIOLATED)
+_3542_/X                                  8     10     -2 (VIOLATED)
+_3554_/X                                  8     10     -2 (VIOLATED)
+_3886_/X                                  8     10     -2 (VIOLATED)
+_4151_/X                                  8      9        (VIOLATED)
+_4755_/Y                                  8      9        (VIOLATED)
+_4794_/X                                  8      9        (VIOLATED)
+_4920_/Y                                  8      9        (VIOLATED)
+_5074_/X                                  8      9        (VIOLATED)
+

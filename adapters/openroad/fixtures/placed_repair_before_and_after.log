@@ -1,0 +1,265 @@
+[INFO ODB-0227] LEF file: /foss/pdks/ihp-sg13g2/libs.ref/sg13g2_stdcell/lef/sg13g2_tech.lef, created 19 layers, 70 vias
+[INFO ODB-0227] LEF file: /foss/pdks/ihp-sg13g2/libs.ref/sg13g2_stdcell/lef/sg13g2_stdcell.lef, created 84 library cells
+[INFO IFP-0107] Defining die area using utilization: 40.00% and aspect ratio: 1.
+[WARNING IFP-0028] Core area lower left (5.000, 5.000) snapped to (5.280, 7.560).
+[INFO IFP-0001] Added 73 rows of 584 site CoreSite.
+[INFO IFP-0100] Die BBox:  (  0.000  0.000 ) ( 290.750 290.750 ) um
+[INFO IFP-0101] Core BBox: (  5.280  7.560 ) ( 285.600 283.500 ) um
+[INFO IFP-0102] Core area:                        77351.501 um^2
+[INFO IFP-0103] Total instances area:             31528.829 um^2
+[INFO IFP-0104] Effective utilization:                0.408
+[INFO IFP-0105] Number of instances:                   2838
+Found 0 macro blocks.
+Using 2 tracks default min distance between IO pins.
+[INFO PPL-0001] Number of available slots 1282
+[INFO PPL-0002] Number of I/O             67
+[INFO PPL-0003] Number of I/O w/sink      67
+[INFO PPL-0004] Number of I/O w/o sink    0
+[INFO PPL-0005] Slots per section         200
+[INFO PPL-0008] Successfully assigned pins to sections.
+[INFO PPL-0012] I/O nets HPWL: 10817.31 um.
+[INFO GPL-0001] ---- Initialize GPL Main Data Structures
+[INFO GPL-0002] DBU: 1000
+[INFO GPL-0003] SiteSize: (  0.480  3.780 ) um
+[INFO GPL-0004] CoreBBox: (  5.280  7.560 ) ( 285.600 283.500 ) um
+[INFO GPL-0016] Core area:                   77351.501 um^2
+[INFO GPL-0036] Movable instances area:      31528.829 um^2
+[INFO GPL-0037] Total instances area:        31528.829 um^2
+[INFO GPL-0035] Pin density area adjust:      4391.499 um^2
+[INFO GPL-0032] ---- Initialize Region: Top-level
+[INFO GPL-0006] Number of instances:              2838
+[INFO GPL-0007] Movable instances:                2838
+[INFO GPL-0008] Fixed instances:                     0
+[INFO GPL-0009] Dummy instances:                     0
+[INFO GPL-0010] Number of nets:                   2873
+[INFO GPL-0011] Number of pins:                   9827
+[INFO GPL-0012] Die BBox:       (  0.000  0.000 ) ( 290.750 290.750 ) um
+[INFO GPL-0013] Placement BBox: (  5.280  7.560 ) ( 285.600 283.500 ) um
+[INFO GPL-0014] Region name: top-level.
+[INFO GPL-0015] Region area:                 77351.501 um^2
+[INFO GPL-0017] Fixed instances area:            0.000 um^2
+[INFO GPL-0018] Movable instances area:      35920.328 um^2
+[INFO GPL-0019] Utilization:                    46.438 %
+[INFO GPL-0020] Standard cells area:         35920.328 um^2
+[INFO GPL-0021] Large instances area:            0.000 um^2
+[INFO GPL-0005] ---- Execute Conjugate Gradient Initial Placement.
+[INFO GPL-0051] Source of initial instance position counters:
+	Odb location = 0	Core center = 2838	Region center = 0
+[InitialPlace]  Iter: 1 conjugate gradient residual: 0.00000064 HPWL: 31003600
+[InitialPlace]  Iter: 2 conjugate gradient residual: 0.00000010 HPWL: 24526678
+[InitialPlace]  Iter: 3 conjugate gradient residual: 0.00000010 HPWL: 24484022
+[InitialPlace]  Iter: 4 conjugate gradient residual: 0.00000010 HPWL: 24603913
+[InitialPlace]  Iter: 5 conjugate gradient residual: 0.00000010 HPWL: 24533123
+[INFO GPL-0033] ---- Initialize Nesterov Region: Top-level
+[INFO GPL-0023] Placement target density:       0.6000
+[INFO GPL-0024] Movable insts average area:     12.657 um^2
+[INFO GPL-0025] Ideal bin area:                 21.095 um^2
+[INFO GPL-0026] Ideal bin count:                  3666
+[INFO GPL-0027] Total bin area:              77351.501 um^2
+[INFO GPL-0028] Bin count (X, Y):          32 ,     32
+[INFO GPL-0029] Bin size (W * H):       8.760 *  8.623 um
+[INFO GPL-0030] Number of bins:                   1024
+[INFO GPL-0084] ---- Execute Nesterov Global Placement.
+[INFO GPL-0031] HPWL: Half-Perimeter Wirelength
+Iteration | Overflow |     HPWL (um) |  HPWL(%) |   Penalty | Group
+---------------------------------------------------------------
+        0 |   0.9903 |  5.789212e+03 |   +0.00% |  2.26e-16 |      
+       10 |   0.9882 |  6.047582e+03 |   +4.46% |  3.68e-16 |      
+       20 |   0.9882 |  6.072028e+03 |   +0.40% |  5.99e-16 |      
+       30 |   0.9881 |  6.102426e+03 |   +0.50% |  9.76e-16 |      
+       40 |   0.9882 |  6.107964e+03 |   +0.09% |  1.59e-15 |      
+       50 |   0.9882 |  6.100381e+03 |   -0.12% |  2.59e-15 |      
+       60 |   0.9882 |  6.093241e+03 |   -0.12% |  4.22e-15 |      
+       70 |   0.9882 |  6.092759e+03 |   -0.01% |  6.87e-15 |      
+       80 |   0.9882 |  6.096812e+03 |   +0.07% |  1.12e-14 |      
+       90 |   0.9882 |  6.102242e+03 |   +0.09% |  1.82e-14 |      
+      100 |   0.9882 |  6.107781e+03 |   +0.09% |  2.97e-14 |      
+      110 |   0.9882 |  6.116628e+03 |   +0.14% |  4.84e-14 |      
+      120 |   0.9882 |  6.141474e+03 |   +0.41% |  7.88e-14 |      
+      130 |   0.9881 |  6.210962e+03 |   +1.13% |  1.28e-13 |      
+      140 |   0.9880 |  6.363727e+03 |   +2.46% |  2.09e-13 |      
+      150 |   0.9879 |  6.636991e+03 |   +4.29% |  3.40e-13 |      
+      160 |   0.9851 |  7.084978e+03 |   +6.75% |  5.54e-13 |      
+      170 |   0.9834 |  7.806270e+03 |  +10.18% |  9.03e-13 |      
+      180 |   0.9798 |  8.937884e+03 |  +14.50% |  1.47e-12 |      
+      190 |   0.9757 |  1.073177e+04 |  +20.07% |  2.40e-12 |      
+      200 |   0.9652 |  1.337787e+04 |  +24.66% |  3.90e-12 |      
+      210 |   0.9498 |  1.673626e+04 |  +25.10% |  6.35e-12 |      
+      220 |   0.9270 |  1.999842e+04 |  +19.49% |  1.03e-11 |      
+      230 |   0.9052 |  2.300015e+04 |  +15.01% |  1.68e-11 |      
+      240 |   0.8808 |  2.625469e+04 |  +14.15% |  2.74e-11 |      
+      250 |   0.8514 |  3.023296e+04 |  +15.15% |  4.46e-11 |      
+      260 |   0.8184 |  3.462100e+04 |  +14.51% |  7.27e-11 |      
+      270 |   0.7778 |  3.840377e+04 |  +10.93% |  1.18e-10 |      
+      280 |   0.7376 |  4.209183e+04 |   +9.60% |  1.93e-10 |      
+      290 |   0.6925 |  4.582678e+04 |   +8.87% |  3.14e-10 |      
+      300 |   0.6466 |  4.919986e+04 |   +7.36% |  5.11e-10 |      
+      310 |   0.5965 |  5.264982e+04 |   +7.01% |  8.32e-10 |      
+      320 |   0.5486 |  5.592969e+04 |   +6.23% |  1.35e-09 |      
+      330 |   0.4951 |  5.907823e+04 |   +5.63% |  2.21e-09 |      
+      340 |   0.4356 |  6.124071e+04 |   +3.66% |  3.59e-09 |      
+      350 |   0.3766 |  6.369693e+04 |   +4.01% |  5.85e-09 |      
+      360 |   0.3268 |  6.571494e+04 |   +3.17% |  9.24e-09 |      
+      370 |   0.3002 |  6.689477e+04 |   +1.80% |  1.36e-08 |      
+      380 |   0.2749 |  6.762799e+04 |   +1.10% |  2.01e-08 |      
+      390 |   0.2468 |  6.857772e+04 |   +1.40% |  2.95e-08 |      
+      400 |   0.2249 |  6.897637e+04 |   +0.58% |  4.35e-08 |      
+      410 |   0.2000 |  6.942802e+04 |   +0.65% |  6.41e-08 |      
+      420 |   0.1792 |  6.981428e+04 |   +0.56% |  9.44e-08 |      
+      430 |   0.1560 |  7.008347e+04 |   +0.39% |  1.39e-07 |      
+      440 |   0.1350 |  7.036285e+04 |   +0.40% |  2.05e-07 |      
+      450 |   0.1150 |  7.057530e+04 |   +0.30% |  3.02e-07 |      
+      459 |   0.0994 |  7.078261e+04 |          |  4.45e-07 |      
+---------------------------------------------------------------
+[INFO GPL-1001] Global placement finished at iteration 459
+[INFO GPL-1002] Placed Cell Area            35920.3280
+[INFO GPL-1003] Available Free Area         77351.5008
+[INFO GPL-1004] Minimum Feasible Density        0.4700 (cell_area / free_area)
+[INFO GPL-1006]   Suggested Target Densities:
+[INFO GPL-1007]     - For 90% usage of free space: 0.5160
+[INFO GPL-1008]     - For 80% usage of free space: 0.5805
+[INFO GPL-1009]     - For 50% usage of free space: 0.9288
+[INFO GPL-1014] Final placement area: 35920.33 (+0.00%)
+[INFO GPL-1018] Final HPWL (um): 70763.87
+report before the repair
+max fanout
+
+Pin                                   Limit Fanout  Slack
+---------------------------------------------------------
+_2775_/X                                  8     10     -2 (VIOLATED)
+_2776_/X                                  8     10     -2 (VIOLATED)
+_2810_/X                                  8     10     -2 (VIOLATED)
+_2821_/X                                  8     10     -2 (VIOLATED)
+_2832_/X                                  8     10     -2 (VIOLATED)
+_2843_/X                                  8     10     -2 (VIOLATED)
+_2872_/X                                  8     10     -2 (VIOLATED)
+_2887_/X                                  8     10     -2 (VIOLATED)
+_2924_/X                                  8     10     -2 (VIOLATED)
+_2998_/X                                  8     10     -2 (VIOLATED)
+_3087_/X                                  8     10     -2 (VIOLATED)
+_3097_/X                                  8     10     -2 (VIOLATED)
+_3109_/X                                  8     10     -2 (VIOLATED)
+_3112_/X                                  8     10     -2 (VIOLATED)
+_3116_/X                                  8     10     -2 (VIOLATED)
+_3129_/X                                  8     10     -2 (VIOLATED)
+_3130_/X                                  8     10     -2 (VIOLATED)
+_3138_/X                                  8     10     -2 (VIOLATED)
+_3220_/X                                  8     10     -2 (VIOLATED)
+_3376_/X                                  8     10     -2 (VIOLATED)
+_3387_/X                                  8     10     -2 (VIOLATED)
+_3398_/X                                  8     10     -2 (VIOLATED)
+_3409_/X                                  8     10     -2 (VIOLATED)
+_3442_/X                                  8     10     -2 (VIOLATED)
+_3476_/X                                  8     10     -2 (VIOLATED)
+
+Iteration |   Area    | Resized | Buffers | Nets repaired | Remaining
+---------------------------------------------------------------------
+        0 |     +0.0% |       0 |       0 |             0 |      2873
+    final |     +4.7% |       0 |     201 |           200 |         0
+---------------------------------------------------------------------
+[INFO RSZ-0035] Found 200 fanout violations.
+[INFO RSZ-0038] Inserted 201 buffers in 200 nets.
+[INFO RSZ-0504] Runtime: 0.43s
+report after the repair
+max fanout
+
+Pin                                   Limit Fanout  Slack
+---------------------------------------------------------
+max_cap201/X                              8     39    -31 (VIOLATED)
+fanout200/X                               8     12     -4 (VIOLATED)
+
+Startpoint: rst_n (input port clocked by clk)
+Endpoint: _5568_ (recovery check against rising-edge clock clk)
+Path Group: asynchronous
+Path Type: max
+
+   Delay     Time   Description
+-----------------------------------------------------------
+   0.000    0.000   clock clk (rise edge)
+   0.000    0.000   clock network delay (ideal)
+   1.420    1.420 ^ input external delay
+   0.000    1.420 ^ rst_n (in)
+   0.420    1.840 ^ fanout200/X (sg13g2_buf_1)
+   0.410    2.250 ^ max_cap201/X (sg13g2_buf_8)
+   0.009    2.259 ^ _5568_/RESET_B (sg13g2_dfrbpq_1)
+            2.259   data arrival time
+
+   7.100    7.100   clock clk (rise edge)
+   0.000    7.100   clock network delay (ideal)
+   0.000    7.100   clock reconvergence pessimism
+            7.100 ^ _5568_/CLK (sg13g2_dfrbpq_1)
+  -0.282    6.818   library recovery time
+            6.818   data required time
+-----------------------------------------------------------
+            6.818   data required time
+           -2.259   data arrival time
+-----------------------------------------------------------
+            4.559   slack (MET)
+
+
+Startpoint: _5551_ (rising edge-triggered flip-flop clocked by clk)
+Endpoint: _5610_ (rising edge-triggered flip-flop clocked by clk)
+Path Group: clk
+Path Type: max
+
+   Delay     Time   Description
+-----------------------------------------------------------
+   0.000    0.000   clock clk (rise edge)
+   0.000    0.000   clock network delay (ideal)
+   0.000    0.000 ^ _5551_/CLK (sg13g2_dfrbpq_1)
+   0.248    0.248 ^ _5551_/Q (sg13g2_dfrbpq_1)
+   0.148    0.396 ^ _5044_/X (sg13g2_buf_4)
+   0.115    0.511 ^ _5056_/X (sg13g2_buf_8)
+   0.254    0.765 ^ fanout143/X (sg13g2_buf_1)
+   0.194    0.959 ^ _5057_/X (sg13g2_buf_8)
+   0.236    1.196 ^ fanout103/X (sg13g2_buf_1)
+   0.185    1.381 ^ _5058_/X (sg13g2_buf_8)
+   0.270    1.651 ^ fanout48/X (sg13g2_buf_1)
+   0.201    1.852 ^ _5059_/X (sg13g2_buf_8)
+   0.218    2.071 ^ fanout23/X (sg13g2_buf_1)
+   0.219    2.289 ^ _2805_/X (sg13g2_a21o_1)
+   0.125    2.414 v _2807_/Y (sg13g2_nand3_1)
+   0.429    2.843 ^ _2809_/Y (sg13g2_a221oi_1)
+   0.354    3.197 ^ _2933_/X (sg13g2_xor2_1)
+   0.323    3.519 ^ _4008_/X (sg13g2_xor2_1)
+   0.401    3.921 ^ _4012_/Y (sg13g2_xnor2_1)
+   0.488    4.408 ^ _4037_/Y (sg13g2_xnor2_1)
+   0.273    4.681 ^ _4061_/Y (sg13g2_xnor2_1)
+   0.266    4.947 v _4062_/Y (sg13g2_xnor2_1)
+   0.248    5.195 ^ _4063_/Y (sg13g2_o21ai_1)
+   0.280    5.475 v _4101_/Y (sg13g2_a21oi_1)
+   0.374    5.849 v _4112_/X (sg13g2_or4_1)
+   0.265    6.114 ^ _4113_/Y (sg13g2_a221oi_1)
+   0.306    6.421 ^ _4208_/X (sg13g2_or4_1)
+   0.189    6.610 v _4211_/Y (sg13g2_a22oi_1)
+   0.198    6.807 v _4212_/X (sg13g2_buf_4)
+   0.125    6.933 ^ _4225_/Y (sg13g2_o21ai_1)
+   0.178    7.111 ^ _4226_/X (sg13g2_buf_2)
+   0.147    7.258 v _4422_/Y (sg13g2_o21ai_1)
+   0.426    7.684 ^ _4447_/Y (sg13g2_a221oi_1)
+   0.209    7.892 v _4452_/Y (sg13g2_nand2_1)
+   0.264    8.156 ^ _4455_/Y (sg13g2_a221oi_1)
+   0.238    8.394 ^ _4456_/X (sg13g2_buf_4)
+   0.245    8.639 ^ _4485_/X (sg13g2_and3_2)
+   0.157    8.796 ^ _4670_/X (sg13g2_or3_1)
+   0.136    8.932 ^ _4671_/Y (sg13g2_xnor2_1)
+   0.163    9.095 ^ _4672_/X (sg13g2_mux2_1)
+   0.000    9.095 ^ _5610_/D (sg13g2_dfrbpq_1)
+            9.095   data arrival time
+
+   7.100    7.100   clock clk (rise edge)
+   0.000    7.100   clock network delay (ideal)
+   0.000    7.100   clock reconvergence pessimism
+            7.100 ^ _5610_/CLK (sg13g2_dfrbpq_1)
+  -0.205    6.895   library setup time
+            6.895   data required time
+-----------------------------------------------------------
+            6.895   data required time
+           -9.095   data arrival time
+-----------------------------------------------------------
+           -2.200   slack (VIOLATED)
+
+
+wns max -2.200
+tns max -15.820
+worst slack max -2.200

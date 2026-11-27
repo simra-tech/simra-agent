@@ -138,6 +138,78 @@ class Reader(unittest.TestCase):
         self.assertTrue(any("one pass for each violating end point" in w for w in found))
         self.assertTrue(any("has no state_out.json" in w for w in found))
 
+    def add_rcx(self, run, spef):
+        """An extraction step with one SPEF file for each corner directory, as the flow writes it."""
+        for corner in ("nom", "max"):
+            target = os.path.join(run, "45-openroad-rcx", corner, "a.{}.spef".format(corner))
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            shutil.copy(os.path.join(FIX, spef), target)
+        write(os.path.join(run, "45-openroad-rcx", "config.json"), {"meta": {"step": "OpenROAD.RCX"}})
+        write(os.path.join(run, "45-openroad-rcx", "state_in.json"), {"metrics": {}})
+        write(os.path.join(run, "45-openroad-rcx", "state_out.json"), {"metrics": {}})
+
+    def test_extracted_spef_without_resistance(self):
+        run = make_run(self.design, "r1", mid_corners=CORNERS)
+        self.add_rcx(run, "acc_lef_res_no_resistance.spef")
+        response = self.call("read", {"run": "runs/r1"})
+        self.assertEqual(response["measurements"]["spef_files"]["value"], 2)
+        self.assertEqual(response["measurements"]["spef_files_invalid"]["value"], 2)
+        found = [w for w in self.warnings(response) if "is invalid" in w]
+        self.assertEqual(len(found), 2)
+        self.assertIn("45-openroad-rcx/max/a.max.spef is invalid: all ", found[0])
+        self.assertIn("are 0 ohm", found[0])
+        self.assertIn("technology LEF", found[0])
+
+    def test_negative_control_extracted_spef_with_resistance_is_silent(self):
+        run = make_run(self.design, "r1", mid_corners=CORNERS)
+        self.add_rcx(run, "acc_lef_res.spef")
+        response = self.call("read", {"run": "runs/r1"})
+        self.assertEqual(response["measurements"]["spef_files"]["value"], 2)
+        self.assertEqual(response["measurements"]["spef_files_invalid"]["value"], 0)
+        self.assertEqual(self.warnings(response), [])
+        make_run(self.design, "r2", mid_corners=CORNERS)
+        self.assertNotIn("spef_files", self.call("read", {"run": "runs/r2"})["measurements"])
+
+    def test_large_spef_is_reported_as_not_run(self):
+        run = make_run(self.design, "r1", mid_corners=CORNERS)
+        self.add_rcx(run, "acc_lef_res.spef")
+        limit = reader.MAX_SPEF_BYTES
+        reader.MAX_SPEF_BYTES = 100
+        try:
+            found = reader.spef_findings(reader.steps_of(run))
+        finally:
+            reader.MAX_SPEF_BYTES = limit
+        self.assertEqual([f["status"] for f in found], ["not run", "not run"])
+        self.assertIn("did not run", found[0]["message"])
+
+    def test_spef_file_that_cannot_be_read_is_reported_as_not_run(self):
+        import gzip
+        run = make_run(self.design, "r1", mid_corners=CORNERS)
+        self.add_rcx(run, "acc_lef_res.spef")
+        step = os.path.join(run, "45-openroad-rcx")
+        # A file with the name .gz that is plain text, and a gzip file that is cut in the middle.
+        shutil.copy(os.path.join(FIX, "acc_lef_res.spef"), os.path.join(step, "nom", "plain.spef.gz"))
+        with open(os.path.join(FIX, "acc_lef_res.spef"), "rb") as f:
+            packed = gzip.compress(f.read())
+        with open(os.path.join(step, "max", "cut.spef.gz"), "wb") as f:
+            f.write(packed[:len(packed) // 2])
+        # A gzip file with a valid header and a damaged block.
+        damaged = bytearray(packed)
+        for k in range(40, 400):
+            damaged[k] ^= 0xFF
+        with open(os.path.join(step, "max", "damaged.spef.gz"), "wb") as f:
+            f.write(bytes(damaged))
+        response = self.call("read", {"run": "runs/r1"})
+        self.assertEqual(response["measurements"]["spef_files"]["value"], 5)
+        self.assertEqual(response["measurements"]["spef_files_invalid"]["value"], 0)
+        self.assertEqual(response["measurements"]["spef_files_not_checked"]["value"], 3)
+        found = sorted(w for w in self.warnings(response) if "did not run" in w)
+        self.assertEqual(len(found), 3)
+        self.assertIn("max/damaged.spef.gz did not run", found[1])
+        found = [found[0], found[2]]
+        self.assertIn("max/cut.spef.gz did not run: the file cannot be read", found[0])
+        self.assertIn("nom/plain.spef.gz did not run: the file cannot be read", found[1])
+
     def test_newer_source(self):
         make_run(self.design, "r1", mid_corners=CORNERS)
         os.utime(os.path.join(self.design, "src", "a.v"), None)

@@ -1,0 +1,86 @@
+[INFO ODB-0227] LEF file: /foss/pdks/ihp-sg13g2/libs.ref/sg13g2_stdcell/lef/sg13g2_tech.lef, created 19 layers, 70 vias
+[INFO ODB-0227] LEF file: /foss/pdks/ihp-sg13g2/libs.ref/sg13g2_stdcell/lef/sg13g2_stdcell.lef, created 84 library cells
+[WARNING EST-0027] no estimated parasitics. Using wire load models.
+Iteration |   Area    | Resized | Buffers | Nets repaired | Remaining
+---------------------------------------------------------------------
+        0 |     +0.0% |       0 |       0 |             0 |     24027
+    final |     +0.0% |       1 |       0 |             1 |         0
+---------------------------------------------------------------------
+[INFO RSZ-0034] Found 1 slew violations.
+[INFO RSZ-0035] Found 1 fanout violations.
+[INFO RSZ-0036] Found 1 capacitance violations.
+[INFO RSZ-0039] Resized 1 instances.
+[INFO RSZ-0504] Runtime: 1.41s
+Startpoint: _26336_ (rising edge-triggered flip-flop clocked by clk)
+Endpoint: _24000_ (rising edge-triggered flip-flop clocked by clk)
+Path Group: clk
+Path Type: max
+
+   Delay     Time   Description
+-----------------------------------------------------------
+   0.000    0.000   clock clk (rise edge)
+   0.000    0.000   clock network delay (ideal)
+   0.000    0.000 ^ _26336_/CLK (sg13g2_dfrbpq_2)
+ 145.451  145.451 ^ _26336_/Q (sg13g2_dfrbpq_2)
+  22.389  167.839 ^ _22891_/X (sg13g2_mux2_1)
+   0.000  167.839 ^ _24000_/D (sg13g2_dfrbpq_1)
+          167.839   data arrival time
+
+  10.000   10.000   clock clk (rise edge)
+   0.000   10.000   clock network delay (ideal)
+   0.000   10.000   clock reconvergence pessimism
+           10.000 ^ _24000_/CLK (sg13g2_dfrbpq_1)
+  -0.953    9.047   library setup time
+            9.047   data required time
+-----------------------------------------------------------
+            9.047   data required time
+         -167.839   data arrival time
+-----------------------------------------------------------
+         -158.792   slack (VIOLATED)
+
+
+wns max -158.792
+tns max -1905506.000
+worst slack max -158.792
+max slew
+
+Pin                                    Limit    Slew   Slack
+------------------------------------------------------------
+_12000_/S                               2.51  208.02 -205.51 (VIOLATED)
+_12001_/S                               2.51  208.02 -205.51 (VIOLATED)
+_12002_/S                               2.51  208.02 -205.51 (VIOLATED)
+_12003_/S                               2.51  208.02 -205.51 (VIOLATED)
+_12004_/S                               2.51  208.02 -205.51 (VIOLATED)
+_12005_/S                               2.51  208.02 -205.51 (VIOLATED)
+_12006_/S                               2.51  208.02 -205.51 (VIOLATED)
+_12007_/S                               2.51  208.02 -205.51 (VIOLATED)
+_12008_/S                               2.51  208.02 -205.51 (VIOLATED)
+_12009_/S                               2.51  208.02 -205.51 (VIOLATED)
+_12010_/S                               2.51  208.02 -205.51 (VIOLATED)
+_12011_/S                               2.51  208.02 -205.51 (VIOLATED)
+_12012_/S                               2.51  208.02 -205.51 (VIOLATED)
+_12013_/S                               2.51  208.02 -205.51 (VIOLATED)
+_12014_/S                               2.51  208.02 -205.51 (VIOLATED)
+_12015_/S                               2.51  208.02 -205.51 (VIOLATED)
+_12016_/S                               2.51  208.02 -205.51 (VIOLATED)
+_12017_/S                               2.51  208.02 -205.51 (VIOLATED)
+_12018_/S                               2.51  208.02 -205.51 (VIOLATED)
+_12019_/S                               2.51  208.02 -205.51 (VIOLATED)
+_35996_/D                               2.51    4.00   -1.49 (VIOLATED)
+_35997_/D                               2.51    4.00   -1.49 (VIOLATED)
+_35998_/D                               2.51    4.00   -1.49 (VIOLATED)
+_35999_/D                               2.51    4.00   -1.49 (VIOLATED)
+_36000_/D                               2.51    4.00   -1.49 (VIOLATED)
+
+max fanout
+
+Pin                                   Limit Fanout  Slack
+---------------------------------------------------------
+_26336_/Q                                 8  12000 -11992 (VIOLATED)
+
+max capacitance
+
+Pin                                    Limit     Cap   Slack
+------------------------------------------------------------
+_26336_/Q                               0.60   67.04  -66.44 (VIOLATED)
+

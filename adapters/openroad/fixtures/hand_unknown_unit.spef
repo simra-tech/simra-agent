@@ -1,0 +1,25 @@
+*SPEF "ieee 1481-1999"
+*DESIGN "hand_unknown_unit"
+*DATE "hand-written test file"
+*VENDOR "none"
+*PROGRAM "none"
+*VERSION "1"
+*DESIGN_FLOW "NAME_SCOPE LOCAL" "PIN_CAP NONE"
+*DIVIDER /
+*DELIMITER :
+*BUS_DELIMITER []
+*T_UNIT 1 NS
+*C_UNIT 1 FF
+*R_UNIT 1 BOGUS
+*L_UNIT 1 HENRY
+
+*D_NET n1 2.0
+*CONN
+*I u1:Y O
+*I u2:A I
+*CAP
+1 n1:1 2.0
+*RES
+1 u1:Y n1:1 12.5
+2 n1:1 u2:A 7.5
+*END

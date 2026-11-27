@@ -35,6 +35,9 @@ import {
 	writeJsonAtomic,
 } from "./records.ts";
 import { runtimeEstimate, type RuntimeEstimate } from "./estimate.ts";
+import { acquireHeavyLock, formatHolder, type HeavyLock, heavyQueue, isHeavyOperation } from "./heavy.ts";
+import { writeInboxMarker } from "./inbox.ts";
+import { type PassRuleInput, recordPassRule } from "./passrule.ts";
 import { describeTouchstone, isTouchstoneEntry } from "./touchstone.ts";
 
 export const CONTRACT = "simra.adapter/0";
@@ -72,6 +75,13 @@ export interface RunOptions {
 	signal?: AbortSignal;
 	/** Run the experiment in a supervisor process and return at once (status "running"). */
 	detached?: boolean;
+	/** The rule that decides pass or fail (a text or a file). It is recorded in experiment.json before the run starts. */
+	passRule?: PassRuleInput;
+	/**
+	 * A heavy job: it runs only while it holds the heavy-job lock of the machine, and it waits in the queue of the lock
+	 * with the status "queued". Default: true when heavy_operations of the configuration names the operation.
+	 */
+	heavy?: boolean;
 }
 
 export interface RunOutcome {
@@ -143,6 +153,12 @@ interface Job {
 	timeout_s: number;
 	/** The container engine, for a container environment: a stopped run also removes its container (by label). */
 	engine?: string | null;
+	/** true: the run waits for the heavy-job lock of the machine before the adapter starts. */
+	heavy?: boolean;
+	/** true: a supervisor runs the job. When it ends, the supervisor writes a marker in the inbox of the design root. */
+	detached?: boolean;
+	/** The sha256 of the pass rule of experiment.json, copied into result.json. */
+	pass_rule_sha256?: string;
 }
 
 const JOB_FILE = "job.json";
@@ -184,6 +200,9 @@ function prepareExperiment(opts: RunOptions): { job: Job; env: NodeJS.ProcessEnv
 		);
 	}
 
+	const heavy = opts.heavy ?? isHeavyOperation(config.heavy_operations, opts.adapter, opts.operation);
+	// The pass rule is checked and hashed before the experiment directory exists: a rule that cannot be read stops the run.
+	const passRule = opts.passRule === undefined ? undefined : recordPassRule(root, opts.passRule);
 	const id = newExperimentId();
 	const dir = experimentDir(root, id);
 	const requestPath = join(dir, "request.json");
@@ -206,6 +225,8 @@ function prepareExperiment(opts: RunOptions): { job: Job; env: NodeJS.ProcessEnv
 		environment: invocation.record,
 		design: gitState(root),
 		simra: { kernel_version: KERNEL_VERSION },
+		...(passRule ? { pass_rule: passRule } : {}),
+		...(heavy ? { heavy: true } : {}),
 	};
 	writeJsonAtomic(join(dir, "experiment.json"), experiment);
 	writeJsonAtomic(requestPath, {
@@ -219,7 +240,10 @@ function prepareExperiment(opts: RunOptions): { job: Job; env: NodeJS.ProcessEnv
 		response_path: responsePath,
 	});
 	const engine = invocation.record.kind === "container" ? (invocation.record as { engine: string }).engine : null;
-	const job = { root, id, command: invocation.command, args: invocation.args, timeout_s: opts.timeoutS ?? 3600, engine };
+	const job: Job = { root, id, command: invocation.command, args: invocation.args, timeout_s: opts.timeoutS ?? 3600, engine };
+	if (heavy) job.heavy = true;
+	if (opts.detached) job.detached = true;
+	if (passRule) job.pass_rule_sha256 = passRule.sha256;
 	return { job, env: invocation.env, dir, experiment };
 }
 
@@ -228,19 +252,38 @@ async function executeJob(job: Job, env: NodeJS.ProcessEnv, signal?: AbortSignal
 	const { root, id } = job;
 	const dir = experimentDir(root, id);
 	const responsePath = join(dir, "response.json");
-	const started = new Date();
 	const stdoutPath = join(dir, "adapter.stdout.log");
 	const stderrPath = join(dir, "adapter.stderr.log");
-	const exit = await spawnAndWait(job.command, job.args, {
-		cwd: root,
-		env,
-		stdoutPath,
-		stderrPath,
-		timeoutS: job.timeout_s,
-		signal,
-	});
-	// A stopped engine client can leave its container running: remove the container of this experiment by its label.
-	if ((exit.timedOut || exit.cancelled) && job.engine) removeContainers(job.engine, id);
+	// A heavy job waits for the heavy-job lock of the machine, with the status "queued". The watchdog of the run
+	// (timeout_s) starts when the adapter starts.
+	let lock: HeavyLock | null = null;
+	let cancelledInQueue = false;
+	if (job.heavy) {
+		const queuedAt = new Date().toISOString();
+		const queued = (holder: string) => {
+			const old = readStatus(root, id);
+			writeStatus(root, id, { status: "queued", detached: old?.detached ?? job.detached === true, pid: process.pid, started_at: old?.started_at ?? queuedAt, waiting_for: holder });
+		};
+		lock = await acquireHeavyLock({ experiment: id, root, signal, onWait: queued });
+		if (lock) {
+			const old = readStatus(root, id);
+			writeStatus(root, id, { status: "running", detached: old?.detached ?? job.detached === true, pid: process.pid, started_at: old?.started_at ?? queuedAt });
+		} else cancelledInQueue = true;
+	}
+	const started = new Date();
+	let exit: SpawnResult;
+	let containerLeft = false;
+	try {
+		exit = cancelledInQueue
+			? { code: null, signal: null, timedOut: false, cancelled: true, spawnError: null }
+			: await spawnAndWait(job.command, job.args, { cwd: root, env, stdoutPath, stderrPath, timeoutS: job.timeout_s, signal, onSpawn: (pid) => lock?.track({ pid, engine: job.engine ?? undefined }) });
+		// A stopped engine client can leave its container running: remove the container of this experiment by its label.
+		// A heavy job keeps the lock until this is done.
+		// When the removal fails, the state of the container is not known: the lock is not given back (see heavy.ts).
+		if ((exit.timedOut || exit.cancelled) && job.engine) containerLeft = !removeContainers(job.engine, id);
+	} finally {
+		lock?.release({ jobMayRun: containerLeft });
+	}
 	const finished = new Date();
 
 	const result: ResultRecord = {
@@ -260,6 +303,8 @@ async function executeJob(job: Job, env: NodeJS.ProcessEnv, signal?: AbortSignal
 		diagnostics: [],
 		logs: { adapter_stdout: relative(root, stdoutPath), adapter_stderr: relative(root, stderrPath) },
 	};
+	if (job.pass_rule_sha256) result.pass_rule_sha256 = job.pass_rule_sha256;
+	if (lock) result.queued_s = lock.waited_s;
 
 	if (exit.spawnError) result.errors.push(`could not start the adapter: ${exit.spawnError}`);
 	if (exit.timedOut) {
@@ -267,7 +312,13 @@ async function executeJob(job: Job, env: NodeJS.ProcessEnv, signal?: AbortSignal
 		result.errors.push(`the adapter did not finish in ${job.timeout_s} s and was stopped`);
 	} else if (exit.cancelled) {
 		result.status = "cancelled";
-		result.errors.push("the run was cancelled");
+		result.errors.push(cancelledInQueue ? "the run was cancelled while it waited for the heavy-job lock: the adapter did not start" : "the run was cancelled");
+	}
+	if (containerLeft) {
+		result.errors.push(`the container engine ${job.engine} did not answer: the check that the container of this run is gone did not run${lock ? "; the heavy-job lock stays until the engine reports no container with the label of this experiment" : ""}`);
+	}
+	if (exit.timedOut || exit.cancelled) {
+		// the status and its message are set above
 	} else if (!existsSync(responsePath)) {
 		result.errors.push(`the adapter wrote no response (exit code ${exit.code}); see ${result.logs.adapter_stderr}`);
 	} else {
@@ -275,6 +326,18 @@ async function executeJob(job: Job, env: NodeJS.ProcessEnv, signal?: AbortSignal
 		annotateTouchstone(root, result);
 	}
 
+	// The inbox marker of a detached run is written before result.json: a wait that reads the result removes it.
+	if (job.detached) {
+		try {
+			let experiment: ExperimentRecord | null = null;
+			try {
+				experiment = loadExperiment(root, id).experiment;
+			} catch {}
+			writeInboxMarker(root, id, result, experiment);
+		} catch {
+			// The marker is a notice; a write error must not lose the result.
+		}
+	}
 	writeJsonAtomic(join(dir, "result.json"), result);
 	finishStatus(root, id, result);
 	return result;
@@ -322,7 +385,8 @@ async function runExperimentImpl(opts: RunOptions): Promise<RunOutcome | Detache
 			child.on("error", () => {});
 			if (child.pid === undefined) throw new Error("could not start the supervisor process");
 			child.unref();
-			const status = writeStatus(root, id, { status: "running", detached: true, pid: child.pid, started_at: new Date().toISOString() });
+			// A heavy job starts as "queued": its supervisor sets "running" when it holds the heavy-job lock.
+			const status = writeStatus(root, id, { status: job.heavy ? "queued" : "running", detached: true, pid: child.pid, started_at: new Date().toISOString(), ...(job.heavy ? { waiting_for: formatHolder(heavyQueue().holder) } : {}) });
 			return { id, dir, experiment, status, estimate };
 		} finally {
 			closeSync(out);
@@ -341,7 +405,7 @@ async function runExperimentImpl(opts: RunOptions): Promise<RunOutcome | Detache
 export async function runDetachedWorker(dir: string): Promise<ResultRecord> {
 	const job = readJson<Job>(join(resolve(dir), JOB_FILE));
 	const status = readStatus(job.root, job.id);
-	writeStatus(job.root, job.id, { status: "running", detached: true, pid: process.pid, started_at: status?.started_at ?? new Date().toISOString() });
+	writeStatus(job.root, job.id, { status: job.heavy ? "queued" : "running", detached: true, pid: process.pid, started_at: status?.started_at ?? new Date().toISOString(), ...(job.heavy && status?.waiting_for ? { waiting_for: status.waiting_for } : {}) });
 	const controller = new AbortController();
 	const stop = () => controller.abort();
 	process.once("SIGTERM", stop);
@@ -470,14 +534,20 @@ export function annotateTouchstone(root: string, result: Pick<ResultRecord, "inp
 	}
 }
 
-/** Remove the containers with the label simra.experiment=<id>. It never throws. */
-export function removeContainers(engine: string, id: string): void {
+/**
+ * Remove the containers with the label simra.experiment=<id>. It never throws. It returns true when the engine
+ * answered and no such container is left, false when a command of the engine failed (the state is not known).
+ */
+export function removeContainers(engine: string, id: string): boolean {
 	try {
 		const ids = execFileSync(engine, ["ps", "-q", "--filter", `label=simra.experiment=${id}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 30_000 })
 			.split("\n")
 			.filter(Boolean);
 		if (ids.length) execFileSync(engine, ["rm", "-f", ...ids], { stdio: "ignore", timeout: 60_000 });
-	} catch {}
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 /** The CPUs of a list such as "4-7,9", in order, without repeats. An invalid list is an error. */
@@ -504,7 +574,7 @@ interface SpawnResult {
 function spawnAndWait(
 	command: string,
 	args: string[],
-	o: { cwd: string; env: NodeJS.ProcessEnv; stdoutPath: string; stderrPath: string; timeoutS: number; signal?: AbortSignal },
+	o: { cwd: string; env: NodeJS.ProcessEnv; stdoutPath: string; stderrPath: string; timeoutS: number; signal?: AbortSignal; onSpawn?: (pid: number) => void },
 ): Promise<SpawnResult> {
 	return new Promise((resolvePromise) => {
 		const out = createWriteStream(o.stdoutPath);
@@ -513,6 +583,7 @@ function spawnAndWait(
 		const child = spawn(command, args, { cwd: o.cwd, env: o.env, stdio: ["ignore", "pipe", "pipe"] });
 		child.stdout.pipe(out);
 		child.stderr.pipe(err);
+		if (child.pid !== undefined) o.onSpawn?.(child.pid);
 
 		const stop = () => {
 			child.kill("SIGTERM");

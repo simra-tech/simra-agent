@@ -93,11 +93,74 @@ test("tool_result: the command check is off by default", async () => {
 	const design = mkdtempSync(join(tmpdir(), "simra-flow-"));
 	try {
 		const emit = hooks();
-		const call = { toolName: "bash", toolCallId: "c1", input: { command: "./run_sta.sh" } };
+		const call = { toolName: "bash", toolCallId: "c1", input: { command: "./run_sim.sh" } };
 		await emit("tool_call", call, { cwd: design });
-		put(join(design, "sta", "sta.log"), "Error: 171 fir.nl.v line 8, syntax error\n");
+		put(join(design, "out", "sim.log"), "Error: 171 tb.v line 8, syntax error\n");
 		assert.equal(await emit("tool_result", { ...call, content: [{ type: "text", text: "done" }], isError: false }, { cwd: design }), undefined);
 	} finally {
+		rmSync(design, { recursive: true, force: true });
+	}
+});
+
+test("tool_result: a timing step that wrote a log and no slack line is reported as not run", async () => {
+	const design = mkdtempSync(join(tmpdir(), "simra-flow-"));
+	try {
+		const emit = hooks();
+		const ctx = { cwd: design };
+		const call = { toolName: "bash", toolCallId: "c1", input: { command: "./run_sta.sh" } };
+		await emit("tool_call", call, ctx);
+		put(join(design, "sta", "sta.log"), "Error: 1390 acc is not a verilog module.\n");
+		const first = await emit("tool_result", { ...call, content: [{ type: "text", text: "sta done" }], isError: false }, ctx);
+		const text = first.content.map((c: any) => c.text).join("\n");
+		assert.match(text, /Simra timing check: not run/);
+		assert.match(text, /sta\/sta\.log:1: Error: 1390 acc is not a verilog module/);
+		assert.doesNotMatch(text, /Simra command check/, "the command check is off by default");
+		// A command that failed has its own error: no note.
+		const failed = { ...call, toolCallId: "c2" };
+		await emit("tool_call", failed, ctx);
+		put(join(design, "sta", "sta.log"), "Error: 1390 acc is not a verilog module.\n");
+		assert.equal(await emit("tool_result", { ...failed, content: [{ type: "text", text: "exit 1" }], isError: true }, ctx), undefined);
+		// With slack lines in the new log: no note.
+		const good = { ...call, toolCallId: "c3" };
+		await emit("tool_call", good, ctx);
+		put(join(design, "sta", "sta.log"), "Startpoint: a\n   2.05   slack (MET)\n");
+		assert.equal(await emit("tool_result", { ...good, content: [{ type: "text", text: "sta done" }], isError: false }, ctx), undefined);
+	} finally {
+		rmSync(design, { recursive: true, force: true });
+	}
+});
+
+test("tool_result: a command that appends a failed timing run to a log with an old slack line is reported as not run", async () => {
+	const design = mkdtempSync(join(tmpdir(), "simra-flow-"));
+	try {
+		const emit = hooks();
+		const ctx = { cwd: design };
+		const old = "Startpoint: a\n   2.05   slack (MET)\nwns max 0.00\n";
+		put(join(design, "sta", "sta.log"), old);
+		const call = { toolName: "bash", toolCallId: "c1", input: { command: "./run_sta.sh >> sta/sta.log" } };
+		await emit("tool_call", call, ctx);
+		// The new part has no error line that the check knows: only the sizes from before the command show that it has no result.
+		put(join(design, "sta", "sta.log"), `${old}OpenSTA 3.2.0\nWarning: the library has no cells\n`);
+		const result = await emit("tool_result", { ...call, content: [{ type: "text", text: "sta done" }], isError: false }, ctx);
+		const text = result.content.map((c: any) => c.text).join("\n");
+		assert.match(text, /Simra timing check: not run/);
+		assert.match(text, /from an older run/);
+	} finally {
+		rmSync(design, { recursive: true, force: true });
+	}
+});
+
+test("tool_result: SIMRA_FLOW_CHECK=off turns the timing step check off", async () => {
+	const design = mkdtempSync(join(tmpdir(), "simra-flow-"));
+	process.env.SIMRA_FLOW_CHECK = "off";
+	try {
+		const emit = hooks();
+		const call = { toolName: "bash", toolCallId: "c1", input: { command: "./run_sta.sh" } };
+		await emit("tool_call", call, { cwd: design });
+		put(join(design, "sta", "sta.log"), "Error: 1390 acc is not a verilog module.\n");
+		assert.equal(await emit("tool_result", { ...call, content: [{ type: "text", text: "sta done" }], isError: false }, { cwd: design }), undefined);
+	} finally {
+		delete process.env.SIMRA_FLOW_CHECK;
 		rmSync(design, { recursive: true, force: true });
 	}
 });

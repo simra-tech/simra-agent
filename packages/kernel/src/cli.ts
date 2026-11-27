@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // simra: plain command line for the kernel. It does not need pi.
 //
-//   simra run <spec.json>     run one experiment; spec = { adapter, operation, inputs, environment?, purpose?, timeout_s? }
+//   simra run <spec.json>     run one experiment; spec = { adapter, operation, inputs, environment?, purpose?, timeout_s?,
+//                             pass_rule?, heavy? }. pass_rule = { text | file, id? }: the rule that decides pass or fail,
+//                             recorded before the run. heavy: true makes the run wait for the heavy-job lock of the machine.
 //   simra run --detach <spec.json>
 //                             start the experiment in a supervisor process, print its id and return at once
 //   simra wait <id> [<id>...] [--timeout-s <n>]
@@ -11,6 +13,8 @@
 //                             run N jobs and wait: jobs.json is a list of run specs (each may have timeout_s, the
 //                             watchdog of the job). The CPU pool is split into one slot per job at a time. Print one
 //                             line per job (status, exit code, runtime, logs). Exit code 0 only when every job completed.
+//   simra inbox               the detached runs that ended and whose result nobody has read, and the heavy-job lock with
+//                             its queue. A wait or a show of a run takes it out of the inbox.
 //   simra show <id> [--json]  print the summary of the experiment (with a STALE line for each input file that changed
 //                             after the run); with --json, the experiment and result records
 //   simra record [<path>...]  print the design record: each file of record, its hash, and the checks that ran on it
@@ -58,6 +62,8 @@ import { compareTouchstone, emSParameters, formatSnpDiff } from "./em.ts";
 import { formatWorkarounds, workaroundsFor } from "./workarounds.ts";
 import { checkTable, connectionGate, formatConnectionRows, loadConnectionTable } from "./connections.ts";
 import { formatJobs, runJobs } from "./jobs.ts";
+import { formatHeavyQueue, formatHolder, heavyQueue } from "./heavy.ts";
+import { ackInbox, formatInbox, readInbox } from "./inbox.ts";
 import { assumptionUses, latestVerdict, loadRequirements, runCheck } from "./requirements.ts";
 import { runtimeEstimate } from "./estimate.ts";
 import { designRecord, formatDesignRecord } from "./record.ts";
@@ -71,7 +77,7 @@ class CliUsageError extends Error {}
 
 function usage(): never {
 	console.error(
-		"usage: simra run [--detach] <spec.json> | simra jobs <jobs.json> [--cpus <list>] [--parallel <n>] [--timeout-s <n>] | simra wait <id> [<id>...] [--timeout-s <n>] | simra show <id> [--json] | simra record [<path>...] | simra probe --pdk <name> [--environment <env>] [--cpus <list>] [--json] | simra em <inputs.json> [--environment <env>] [--cpus <list>] [--parallel <n>] [--timeout-s <n>] | simra workarounds [--simulator <name>] [--pdk <name>] | simra query [--source experiments|checks] [--check <id|latest>] [--experiment <id or text>] [--condition <name>] [--measurement <text or /re/>] [--requirement <text>] [--status <s>] [--operation <op>] [--limit <n>] | simra snp-diff <a.sNp> <b.sNp> [--band <lo,hi>] | simra connections --table <file> [--block <name> --interface <file>] | simra list | simra assumptions [<id>] [--file <path>] | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>] | simra pdf <file> [--pages <a-b> | --render <N>] | simra pack init --pdk <name> [--adapter <name>] [--pdk-root <dir>] [--dir <dir>] [--inputs <json>] [--write] | simra pack check --pdk <name> [--adapter <name>] [--inputs <json>] | simra analytics <on|off|status>   [--root <dir>]",
+		"usage: simra run [--detach] <spec.json> | simra jobs <jobs.json> [--cpus <list>] [--parallel <n>] [--timeout-s <n>] | simra wait <id> [<id>...] [--timeout-s <n>] | simra inbox | simra show <id> [--json] | simra record [<path>...] | simra probe --pdk <name> [--environment <env>] [--cpus <list>] [--json] | simra em <inputs.json> [--environment <env>] [--cpus <list>] [--parallel <n>] [--timeout-s <n>] | simra workarounds [--simulator <name>] [--pdk <name>] | simra query [--source experiments|checks] [--check <id|latest>] [--experiment <id or text>] [--condition <name>] [--measurement <text or /re/>] [--requirement <text>] [--status <s>] [--operation <op>] [--limit <n>] | simra snp-diff <a.sNp> <b.sNp> [--band <lo,hi>] | simra connections --table <file> [--block <name> --interface <file>] | simra list | simra assumptions [<id>] [--file <path>] | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>] | simra pdf <file> [--pages <a-b> | --render <N>] | simra pack init --pdk <name> [--adapter <name>] [--pdk-root <dir>] [--dir <dir>] [--inputs <json>] [--write] | simra pack check --pdk <name> [--adapter <name>] [--inputs <json>] | simra analytics <on|off|status>   [--root <dir>]",
 	);
 	throw new CliUsageError();
 }
@@ -120,10 +126,12 @@ async function main(argv: string[]): Promise<number> {
 			environment: spec.environment,
 			purpose: spec.purpose,
 			timeoutS: spec.timeout_s,
+			passRule: spec.pass_rule,
+			heavy: spec.heavy,
 		};
 		if (detach) {
 			const started = await runExperiment({ ...opts, detached: true });
-			console.log(`${formatStarted(root, started.experiment, started.estimate)}\nwait: simra wait ${started.id}`);
+			console.log(`${formatStarted(root, started.experiment, started.estimate, started.status.status === "queued" ? (started.status.waiting_for ?? "nobody") : null)}\nwait: simra wait ${started.id}`);
 			return 0;
 		}
 		const outcome = await runExperiment(opts);
@@ -153,11 +161,20 @@ async function main(argv: string[]): Promise<number> {
 		console.log(formatJobs(outcome));
 		return outcome.jobs.every((o) => o.status === "completed") ? 0 : 1;
 	}
+	if (command === "inbox") {
+		console.log(`${formatInbox(readInbox(root))}\n${formatHeavyQueue(heavyQueue())}`);
+		return 0;
+	}
 	if (command === "show" && arg) {
 		const { experiment, result } = loadExperiment(root, arg);
+		if (result) ackInbox(root, [arg]);
 		if (json) console.log(JSON.stringify({ experiment, result }, null, 2));
 		else if (result) console.log(formatOutcome(root, experiment, result, runtimeEstimate(root, experiment)));
-		else console.log(formatStarted(root, experiment, runtimeEstimate(root, experiment)).replace(": running (detached)", `: ${readStatus(root, arg)?.status ?? "no result"}`));
+		else {
+			const status = readStatus(root, arg);
+			const state = status?.status === "queued" ? `queued (a heavy job: it waits for the heavy-job lock, held by ${status.waiting_for ?? formatHolder(heavyQueue().holder)})` : (status?.status ?? "no result");
+			console.log(formatStarted(root, experiment, runtimeEstimate(root, experiment)).replace(": running (detached)", `: ${state}`));
+		}
 		return 0;
 	}
 	if (command === "record") {

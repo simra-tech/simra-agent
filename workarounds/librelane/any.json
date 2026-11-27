@@ -2,7 +2,7 @@
   "schema": "simra.workarounds/0",
   "simulator": "librelane",
   "pdk": "*",
-  "versions": "LibreLane 3.1.0.dev2",
+  "versions": "LibreLane 3.1.0.dev2 and 3.1.0.dev6",
   "entries": [
     {
       "id": "librelane-midpnr-sta-one-corner",
@@ -57,6 +57,19 @@
       "workaround": "Run one step with python3 -m librelane.steps run -c <step>/config.json -i <step>/state_in.json -o <dir> and the PATH of the launcher (the librelane adapter, operation replay, does both). Record the OpenROAD version of the flow from the step log or `openroad -version` with that PATH.",
       "status": "worked_around",
       "evidence": "an IIC-OSIC-TOOLS based image with LibreLane 3.1.0.dev2: OpenROAD 26Q1-1024 (OpenSTA 2.7.0) for the flow, 26Q3-850 (OpenSTA 3.1.0) on the default PATH"
+    },
+    {
+      "id": "librelane-rcx-layer-resistance-from-lef",
+      "applies_to": {
+        "operations": [
+          "read"
+        ]
+      },
+      "gap": "The extraction step (OpenROAD.RCX) calls extract_parasitics with the option -lef_res: the wire resistance comes from the RESISTANCE values of the routing layers in the technology LEF, not from the rule file of the extractor. With a technology LEF that has no RESISTANCE values, the step ends without an error and writes SPEF files in which each resistance segment is 0 ohm.",
+      "symptom": "The timing with extracted wires is better than the timing after global routing, or almost the same as the timing without wires. The SPEF files have *RES sections, and each value is 0 or a number such as 1e-17. No warning in the step log.",
+      "workaround": "Check each extracted SPEF file before you use a slack that depends on it (openroad adapter, operation spef; the librelane adapter, operation read, checks the SPEF files of a run). An invalid file: find where the layer resistance comes from. Use a technology LEF with RESISTANCE RPERSQ values for each routing layer, or extract without -lef_res when the rule file has the resistance. Then run the extraction and the timing steps after it again.",
+      "status": "worked_around",
+      "evidence": "examples/acc-sg13g2 with IHP SG13G2, routed with LibreLane 3.1.0.dev6: the extraction with the technology LEF of the PDK gives 15382 segments, none at 0 ohm; the same step with a copy of the technology LEF without the RESISTANCE statements gives 11573 segments with a sum below 1e-12 ohm, exit code 0 and no warning; without -lef_res the same LEF copy gives resistance from the rule file (adapters/openroad/fixtures/README.md)"
     }
   ]
 }
