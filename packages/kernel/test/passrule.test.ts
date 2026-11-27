@@ -144,3 +144,13 @@ test("a rule file: the record keeps the wording, so a later change of the file d
 	writeFileSync(join(root, "rule.md"), "gain >= 30 dB\n");
 	assert.equal(json<ExperimentRecord>(root, done.id, "experiment.json").pass_rule?.content, "gain >= 40 dB\n");
 });
+
+test("a rule file that is not UTF-8 gives no flag when it did not change", async (t) => {
+	const root = designRoot(t);
+	// "T <= 85°C" in Latin-1: the byte 0xB0 is not valid UTF-8.
+	writeFileSync(join(root, "rule.txt"), Buffer.from([0x54, 0x20, 0x3c, 0x3d, 0x20, 0x38, 0x35, 0xb0, 0x43, 0x0a]));
+	const done = await run(root, { file: "rule.txt" });
+	assert.deepEqual(passRuleFlags(root, done.experiment, done.result), []);
+	assert.equal(done.experiment.pass_rule?.content, undefined, "a text that does not give the bytes back is not stored");
+	assert.equal(done.experiment.pass_rule?.bytes, 10);
+});

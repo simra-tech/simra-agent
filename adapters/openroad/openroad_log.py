@@ -293,8 +293,10 @@ def time_unit_of(text):
 
 
 def _declared_period(text, clock):
-    """The -period of the last create_clock line of the log for this clock name (or of the only create_clock line
-    when the name is not known), in the unit of the log, or None."""
+    """The -period of a create_clock line of the log, in the unit of the log, or None. clock is the clock of the worst
+    path: then only the last declaration of that clock counts (its -name, or the port of a declaration without
+    -name); a declaration of another clock is never the period of the path. Without a path report (clock None), the
+    period is the one value that all declarations of the log have, or None when they differ."""
     found = []
     for m in CREATE_CLOCK.finditer(text):
         args = m.group(1)
@@ -302,11 +304,12 @@ def _declared_period(text, clock):
         if not period:
             continue
         name = re.search(r"-name\s+(\S+)", args)
-        found.append((name.group(1) if name else None, float(period.group(1))))
+        port = re.search(r"get_ports\s+\{?\s*([^\s\]}]+)", args)
+        found.append((name.group(1) if name else (port.group(1) if port else None), float(period.group(1))))
     if clock is not None:
-        named = [value for name, value in found if name == clock]
-        if named:
-            return named[-1]
+        # An inverted clock is shown as clk' in a path report.
+        named = [value for name, value in found if name == clock.rstrip("'")]
+        return named[-1] if named else None
     values = {value for _, value in found}
     return values.pop() if len(values) == 1 else None
 
@@ -444,13 +447,16 @@ def design_violations(text):
     buffers, repair_line = None, None
     heading = None
     rows = 0
+    ruled = False
     in_repair = False
 
     def close():
         nonlocal heading
-        if heading is not None:
-            remaining[heading] = rows  # the newest table of a kind replaces an older one
-            heading = None
+        # The newest table of a kind replaces an older one. A heading without the rule line of its table (a log
+        # that ends there) is not a table: the older count stays.
+        if heading is not None and (ruled or rows):
+            remaining[heading] = rows
+        heading = None
 
     for number, line in enumerate(lines, 1):
         if "repair_design" in line and repair_line is None:
@@ -480,10 +486,12 @@ def design_violations(text):
         if m:
             close()
             in_repair = False
-            heading, rows = m.group(1), 0
+            heading, rows, ruled = m.group(1), 0, False
             continue
         if heading is not None:
-            if VIOLATOR_ROW.search(line):
+            if re.match(r"^-{5,}\s*$", line):
+                ruled = True
+            elif VIOLATOR_ROW.search(line):
                 rows += 1
             elif line.startswith("[") or line.startswith("Startpoint:") or SUMMARY_LINE.match(line):
                 close()

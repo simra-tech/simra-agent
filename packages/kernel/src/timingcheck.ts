@@ -5,7 +5,8 @@
 // A finding means: the command wrote the log of a timing step, and no file that the command wrote has a slack line of
 // this run (a complete slack line of a path report, or a wns, tns or worst slack line). Such a step is "not run". The openroad adapter (operation timing) makes the record of one log.
 
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { closeSync, openSync, readFileSync, readSync } from "node:fs";
 import { basename, relative } from "node:path";
 import { errorLines, filesChangedSince } from "./commandcheck.ts";
 
@@ -55,18 +56,40 @@ const checked = (path: string) => TEXT_FILE.test(path) && !FLOW_STEP_DIR.test(pa
  * The sizes of the text files of root, for a call before a command. timingStepFinding then reads only the part
  * that the command appended to a file.
  */
-export function timingLogSizes(root: string): Map<string, number> {
-	const out = new Map<string, number>();
-	for (const file of filesChangedSince(root, 0)) if (checked(relative(root, file.path))) out.set(file.path, file.size);
+export function timingLogSizes(root: string): Map<string, LogMark> {
+	const out = new Map<string, LogMark>();
+	for (const file of filesChangedSince(root, 0)) {
+		if (!checked(relative(root, file.path)) || file.size === 0 || file.size > MAX_BYTES) continue;
+		try {
+			const fd = openSync(file.path, "r");
+			try {
+				const tail = Buffer.alloc(Math.min(TAIL_BYTES, file.size));
+				const got = readSync(fd, tail, 0, tail.length, file.size - tail.length);
+				out.set(file.path, { size: file.size, tail: tailHash(tail.subarray(0, got)) });
+			} finally {
+				closeSync(fd);
+			}
+		} catch {
+			// a file that cannot be read has no mark: the check reads it from the start
+		}
+	}
 	return out;
 }
+
+/** The state of a log before a command: its size and the hash of its last bytes. */
+export interface LogMark {
+	size: number;
+	tail: string;
+}
+const TAIL_BYTES = 256;
+const tailHash = (data: Buffer) => createHash("sha256").update(data).digest("hex");
 
 /**
  * The finding for a command that started at sinceMs in root and ended with exit code 0, or null: null when the command
  * wrote no log of a timing step, or when a file that it wrote has a timing result of this command. `before` has the
- * file sizes from before the command (timingLogSizes): for a file that grew, only the new part counts.
+ * state of the logs from before the command (timingLogSizes): for a file that the command appended to, only the new part counts.
  */
-export function timingStepFinding(root: string, sinceMs: number, before?: Map<string, number>): TimingStepFinding | null {
+export function timingStepFinding(root: string, sinceMs: number, before?: Map<string, LogMark>): TimingStepFinding | null {
 	const logs: string[] = [];
 	let problem: TimingStepFinding["problem"] = null;
 	let stale = false;
@@ -81,8 +104,11 @@ export function timingStepFinding(root: string, sinceMs: number, before?: Map<st
 			continue;
 		}
 		if (data.includes(0)) continue;
-		const old = before?.get(file.path) ?? 0;
-		const appended = old > 0 && data.length > old;
+		// The command appended to the log only when the old bytes are still there: a log that was written again, also a
+		// longer one, is read from the start.
+		const mark = before?.get(file.path);
+		const old = mark?.size ?? 0;
+		const appended = mark !== undefined && data.length > old && tailHash(data.subarray(Math.max(0, old - TAIL_BYTES), old)) === mark.tail;
 		const whole = data.toString("utf8");
 		const head = appended ? data.subarray(0, old).toString("utf8") : "";
 		const text = appended ? data.subarray(old).toString("utf8") : whole;

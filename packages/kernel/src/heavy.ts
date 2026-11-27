@@ -40,6 +40,11 @@ export interface HeavyOwner {
 	job_pids?: number[];
 	/** Owner: the container engine of the job. The lock is not taken over while a container with the label of the experiment runs. */
 	engine?: string;
+	/**
+	 * Owner: true when the owner gave the lock up but could not confirm that the container of the job is gone. The lock
+	 * is then taken over as the lock of a dead owner: when the job processes and the container are gone.
+	 */
+	job_may_run?: boolean;
 }
 
 export interface HeavyTicket extends HeavyOwner {
@@ -77,16 +82,19 @@ function alive(pid: number): boolean {
 /** A process of another host cannot be checked from here: it counts as alive. */
 const gone = (o: Pick<HeavyOwner, "pid" | "host">) => o.host === hostname() && !alive(o.pid);
 
-/** The containers that run with the label of the experiment. An engine that does not answer has none. */
-function containersOf(engine: string, experiment: string): string[] {
+/** The containers that run with the label of the experiment, or null when the engine does not answer (the state is not known). */
+function containersOf(engine: string, experiment: string): string[] | null {
 	try {
 		return execFileSync(engine, ["ps", "-q", "--filter", `label=simra.experiment=${experiment}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 30_000 })
 			.split("\n")
 			.filter(Boolean);
 	} catch {
-		return [];
+		return null;
 	}
 }
+
+/** true when the owner cannot hold the lock for itself: its process is gone, or it gave the lock up with job_may_run. */
+const ownerGone = (o: HeavyOwner) => o.job_may_run === true || gone(o);
 
 /**
  * What still runs of the job of an owner whose process is gone: null when nothing runs (the lock can be taken over),
@@ -95,9 +103,14 @@ function containersOf(engine: string, experiment: string): string[] {
 function leftOf(owner: HeavyOwner): string | null {
 	const pids = (owner.job_pids ?? []).filter((p) => Number.isInteger(p) && p > 1 && alive(p));
 	if (pids.length) return `its adapter (pid ${pids.join(", ")})`;
-	// The adapter of a supervisor is in the process group of the supervisor.
-	if (owner.pid > 1 && alive(-owner.pid)) return `a process of its process group ${owner.pid}`;
-	if (owner.engine && owner.experiment && containersOf(owner.engine, owner.experiment).length) return `its container (${owner.engine}, label simra.experiment=${owner.experiment})`;
+	// The adapter of a supervisor is in the process group of the supervisor. (Not for an owner that still runs.)
+	if (!owner.job_may_run && owner.pid > 1 && alive(-owner.pid)) return `a process of its process group ${owner.pid}`;
+	if (owner.engine && owner.experiment) {
+		// An engine that does not answer: the state of the container is not known, so the lock stays. The next try asks again.
+		const containers = containersOf(owner.engine, owner.experiment);
+		if (containers === null) return `maybe its container (${owner.engine} does not answer; the state of the container with the label simra.experiment=${owner.experiment} is not known)`;
+		if (containers.length) return `its container (${owner.engine}, label simra.experiment=${owner.experiment})`;
+	}
 	return null;
 }
 
@@ -153,7 +166,8 @@ function tickets(lock: string, clean: boolean): HeavyTicket[] {
 }
 
 /** The state of the lock and its queue. It changes nothing. */
-export function heavyQueue(lock: string = heavyLockDir()): HeavyQueue {
+export function heavyQueue(lockPath: string = heavyLockDir()): HeavyQueue {
+	const lock = resolve(lockPath);
 	const holder = kind(lock) === "free" ? null : (readOwner(lock) ?? "foreign");
 	return { lock, holder, waiting: tickets(lock, false) };
 }
@@ -163,8 +177,8 @@ export function formatHolder(holder: HeavyQueue["holder"]): string {
 	if (holder === null) return "nobody";
 	if (holder === "foreign") return "another tool (the lock has no owner.json)";
 	const what = holder.experiment ? `experiment ${holder.experiment}${holder.root ? ` of ${holder.root}` : ""}` : "a job";
-	const left = gone(holder) ? leftOf(holder) : null;
-	return `${what} (pid ${holder.pid} on ${holder.host}, since ${holder.since})${left ? `; its supervisor is gone, ${left} still runs` : ""}`;
+	const left = ownerGone(holder) ? leftOf(holder) : null;
+	return `${what} (pid ${holder.pid} on ${holder.host}, since ${holder.since})${left ? `; its supervisor is gone or gave the lock up, and the lock stays for ${left}` : ""}`;
 }
 
 /** One line for the lock, then one line per waiting job. */
@@ -206,19 +220,31 @@ function takeTakeover(lock: string): boolean {
  * Only the first ticket of the queue calls it, and it holds the short takeover lock while it looks again and removes.
  */
 function removeDeadLock(lock: string): void {
+	// The key of a dead lock: the target of a link, or "dir:<pid>:<since>" for a lock directory of the earlier format
+	// of this code (a directory with an owner.json that has the schema of this code). null: the lock is not dead.
 	const dead = (): string | null => {
-		if (kind(lock) !== "link") return null;
-		const target = linkTarget(lock);
+		const what = kind(lock);
 		const owner = readOwner(lock);
+		if (what === "other") {
+			// A directory of another tool has no owner record of this code: it is never removed.
+			if (!owner || owner.schema !== HEAVY_LOCK_SCHEMA || typeof owner.since !== "string") return null;
+			return ownerGone(owner) && leftOf(owner) === null ? `dir:${owner.pid}:${owner.since}` : null;
+		}
+		if (what !== "link") return null;
+		const target = linkTarget(lock);
 		// A link without an owner record: its owner directory was removed by hand. Nobody can hold it.
 		if (target !== null && owner === null) return kind(target) === "free" ? target : null;
-		return target !== null && owner !== null && gone(owner) && leftOf(owner) === null ? target : null;
+		return target !== null && owner !== null && ownerGone(owner) && leftOf(owner) === null ? target : null;
 	};
 	const target = dead();
 	if (target === null || !takeTakeover(lock)) return;
 	try {
-		// The owner is gone, so only a takeover can change the link, and this process holds the takeover lock.
-		if (dead() === target) {
+		// The owner is gone, so only a takeover can change the lock, and this process holds the takeover lock.
+		if (dead() !== target) return;
+		if (target.startsWith("dir:")) {
+			rmSync(join(lock, "owner.json"), { force: true });
+			rmSync(lock, { recursive: true, force: true });
+		} else {
 			unlinkSync(lock);
 			rmSync(target, { recursive: true, force: true });
 		}
@@ -281,8 +307,12 @@ export interface HeavyLock {
 	 * lock is not taken over while that process, or a container with the label of the experiment, runs.
 	 */
 	track: (job: { pid?: number; engine?: string }) => void;
-	/** Give the lock back. A second call does nothing. */
-	release: () => void;
+	/**
+	 * Give the lock back. A second call does nothing. With jobMayRun, the owner could not confirm that the container of
+	 * the job is gone: the lock stays, marked, and the queue takes it over when the job processes and the container
+	 * are gone.
+	 */
+	release: (opts?: { jobMayRun?: boolean }) => void;
 }
 
 /**
@@ -290,7 +320,8 @@ export interface HeavyLock {
  * null when the signal aborts. The caller must call release() when the job ends.
  */
 export async function acquireHeavyLock(opts: HeavyLockOptions = {}): Promise<HeavyLock | null> {
-	const lock = opts.lock ?? heavyLockDir();
+	// An absolute path: the link of the lock names the owner directory, and a relative target would start at the link.
+	const lock = resolve(opts.lock ?? heavyLockDir());
 	const start = Date.now();
 	const me: HeavyOwner = { schema: HEAVY_LOCK_SCHEMA, pid: process.pid, host: hostname(), experiment: opts.experiment ?? null, root: opts.root ?? null, since: new Date(start).toISOString() };
 	mkdirSync(dirname(lock), { recursive: true });
@@ -336,9 +367,18 @@ export async function acquireHeavyLock(opts: HeavyLockOptions = {}): Promise<Hea
 									// the record is a help for a takeover; the job goes on
 								}
 							},
-							release: () => {
+							release: (how) => {
 								if (released) return;
 								released = true;
+								if (how?.jobMayRun) {
+									owner.job_may_run = true;
+									try {
+										writeJsonAtomic(join(mine, "owner.json"), owner);
+										return;
+									} catch {
+										// without the mark the lock is given back
+									}
+								}
 								// The link goes first (one step): a process that is killed here leaves a free lock.
 								if (linkTarget(lock) === mine) rmSync(lock, { force: true });
 								rmSync(mine, { recursive: true, force: true });

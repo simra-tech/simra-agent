@@ -314,8 +314,14 @@ directory `<lock>.queue`, with one file for each waiting run. The lock needs sym
   process of the job runs: not the adapter, not a process of the process group of the owner, not a container with
   the label of the experiment. A supervisor that is killed leaves its adapter running; the lock stays until the
   adapter ends.
+- A container engine that does not answer leaves the state of the container not known: the lock stays, and the next
+  try asks again. When the lock stays for this reason and no container can run, remove the lock by hand.
 - A process that is killed while it takes or gives back the lock leaves no lock without an owner record.
-- A run that is stopped or that times out keeps the lock until its container is removed.
+- A run that is stopped or that times out keeps the lock until its container is removed. When the removal fails, the
+  lock stays (marked in `owner.json`) until the engine reports no container of the experiment, and `result.json` has
+  an error line that says so.
+- A lock directory of the earlier format of this code (a directory with an `owner.json` of this code) of a process
+  that is gone is taken over in the same way.
 - The watchdog of a run (`timeout_s`) starts when the adapter starts. The time in the queue has no limit.
 - `SIGTERM` to the supervisor of a queued run records the run as `cancelled`. The adapter does not start.
 - The summary of the run gives the time in the queue (`heavy job: waited 412.0 s for the heavy-job lock`), and

@@ -30,14 +30,15 @@ no tool. It has three operations:
      separate measurement).
   3. The clock period comes from the input `clock_period_ns`, else from a `create_clock` line of the log for the
      clock of the worst path, else from the two clock edge rows of that path when they are the same edge of one clock.
-     A rise edge and a fall edge do not give the period.
+     A rise edge and a fall edge do not give the period. A `create_clock` line of another clock is never used for
+     the path.
   4. The time unit comes from the input `time_unit`, else from the log (`report_units` output or a `set_cmd_units`
      line), else it is ns as an assumption. All measurements are in ns.
   5. The slack limit is not checked when the slack is negative and the period is not known, or when the period is an
      input and the unit of the log is an assumption. The measurement `slack_limit_check` is then missing with the
      reason `not run`, and the response has a warning. The verdict does not include that check.
   6. The violations that remain are those of the newest table of each kind after the last repair of the log. A table
-     before the repair does not count.
+     before the repair does not count. A heading without its table (a log that is cut off) does not replace a count.
   7. The stages of the worst path start at the start point. Cells of the clock network before it are not stages.
 
   An `invalid check` is typical for a check before the placement: `repair_design` cannot buffer a net with a very
@@ -45,9 +46,10 @@ no tool. It has three operations:
   depth of the worst path are.
 
 - `spef`: an extracted SPEF file in (plain or `.gz`). It counts the nets, the resistance segments and the segments of
-  0 ohm (below 1e-6 ohm). A resistance is one number or a triplet (`best:typical:worst`); each is one segment. The
+  0 ohm (below 1e-6 ohm). A resistance is one number or a triplet (`best:typical:worst`); each is one segment, and
+  the segments of 0 ohm are counted for each corner (a corner without resistance is `invalid`). The
   verdict is `invalid` when the file has no net, a missing or unknown `*R_UNIT` or `*C_UNIT`, a row of a `*RES`
-  section that is not a resistance, no resistance segment, a negative segment, only segments of 0 ohm, or a share of
+  section that is not a resistance, no resistance segment, a negative segment (-1e-9 ohm or lower), only segments of 0 ohm, or a share of
   such segments above `max_zero_fraction` (default 0.25); else `valid`. A file that cannot be read gives `not run`.
   An extraction can end with exit code 0 and write a file without wire resistance, for example with
   `extract_parasitics -lef_res` and a technology LEF without `RESISTANCE` values.

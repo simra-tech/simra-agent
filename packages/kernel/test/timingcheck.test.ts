@@ -128,7 +128,7 @@ test("timing check: with the sizes from before the command, only the new part of
 	const dir = workspace({}, { "sta/sta.log": "sta_valid.log" });
 	try {
 		const before = timingLogSizes(dir);
-		assert.equal(before.get(join(dir, "sta/sta.log")), readFileSync(join(dir, "sta/sta.log")).length);
+		assert.equal(before.get(join(dir, "sta/sta.log"))?.size, readFileSync(join(dir, "sta/sta.log")).length);
 		// The command appends a banner and no result: the old slack line does not count.
 		appendFileSync(join(dir, "sta/sta.log"), "OpenSTA 3.2.0\nread_sdc acc.sdc\n");
 		assert.deepEqual(timingStepFinding(dir, 0, before)?.logs, ["sta/sta.log"]);
@@ -138,6 +138,18 @@ test("timing check: with the sizes from before the command, only the new part of
 		assert.equal(timingStepFinding(dir, 0, before), null);
 		// A file that the command wrote again from the start is read from the start.
 		writeFileSync(join(dir, "sta/sta.log"), "wns max 0.25\n");
+		assert.equal(timingStepFinding(dir, 0, before), null);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("timing check: a log that the command wrote again, longer than before, is read from the start", () => {
+	const dir = workspace({ "sta/sta.log": "previous run failed\n" });
+	try {
+		const before = timingLogSizes(dir);
+		// The new content is longer than the old one and starts with the result.
+		writeFileSync(join(dir, "sta/sta.log"), "   1e-3   slack (MET)\nreport_checks done, the log has no other result line\n");
 		assert.equal(timingStepFinding(dir, 0, before), null);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });

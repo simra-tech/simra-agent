@@ -302,6 +302,34 @@ class TimingEvidence(unittest.TestCase):
         two = table.format("".join(row.format(k) for k in range(5))) + table.format(row.format(0))
         self.assertEqual(orlog.design_violations(two)["remaining"], {"slew": 1})
 
+    def test_a_create_clock_line_of_another_clock_is_not_the_period(self):
+        # A clk path at 7.1 ns with a slack of -80 ns: more than 10 periods negative.
+        base = orlog.read_text(os.path.join(FIX, "sta_valid.log")).replace("2.052   slack (MET)", "-80.000   slack (VIOLATED)")
+        report, _, (status, _) = self.check(None, text=base)
+        self.assertEqual(status, "invalid check")
+        report, _, (status, _) = self.check(None, text="create_clock -name other -period 100 [get_ports c2]\n" + base)
+        self.assertEqual((report["period_source"], status), ("path", "invalid check"))
+        self.assertAlmostEqual(report["period"], 7.1)
+        # A declaration without -name has the name of its port.
+        report, _, _ = self.check(None, text="create_clock -period 14.2 [get_ports clk]\ncreate_clock -period 100 [get_ports c2]\n" + base)
+        self.assertEqual((report["period"], report["period_source"]), (14.2, "create_clock"))
+        # Without a path report the clock is not known: one declared period is used, two different ones are not.
+        report, _, _ = self.check(None, text="create_clock -name a -period 5 [get_ports a]\nwns max -1\n")
+        self.assertEqual(report["period"], 5.0)
+        report, _, _ = self.check(None, text="create_clock -name a -period 5 [get_ports a]\ncreate_clock -name b -period 9 [get_ports b]\nwns max -1\n")
+        self.assertIsNone(report["period"])
+
+    def test_a_table_that_is_cut_off_does_not_erase_a_count(self):
+        table = "max fanout\n\nPin  Limit Fanout  Slack\n-----------------\nu1/X  8  12  -4 (VIOLATED)\n\n"
+        self.assertEqual(orlog.design_violations(table)["remaining"], {"fanout": 1})
+        # The log ends after the heading of a second table: the first count stays.
+        _, violations, (status, _) = self.check(None, text=table + "wns max 0.1\nmax fanout\n")
+        self.assertEqual(violations["remaining"], {"fanout": 1})
+        self.assertEqual(status, "invalid check")
+        # A complete second table without rows replaces the count.
+        empty = "max fanout\n\nPin  Limit Fanout  Slack\n-----------------\n\n[INFO] next\n"
+        self.assertEqual(orlog.design_violations(table + empty)["remaining"], {"fanout": 0})
+
     def test_clock_network_cells_are_not_stages(self):
         text = orlog.read_text(os.path.join(FIX, "sta_valid.log"))
         launch = "   0.000    0.000 ^ _910_/CLK (sg13g2_dfrbpq_1)\n"
@@ -326,6 +354,48 @@ class SpefCheck(unittest.TestCase):
         self.assertEqual(orspef.check_spef(counts, 0.5)[0], "valid")
         self.assertEqual(orspef.spef_value("0.5:0.6:0.7"), [0.5, 0.6, 0.7])
         self.assertIsNone(orspef.spef_value("0.5:0.6"))
+
+    def test_a_corner_without_resistance_is_invalid(self):
+        net = "*D_NET n1 2.0\n*CONN\n*I u1:A I\n*CAP\n1 n1:1 2.0\n*RES\n{}*END\n"
+        with tempfile.TemporaryDirectory() as work:
+            counts = self.spef(work, net.format("".join("{} n1:{} n1:{} 0:0:1\n".format(k, k, k + 1) for k in range(1, 5))))
+            self.assertEqual(counts["res_segments"], 4)
+            self.assertEqual(counts["res_zero_by_corner"], [4, 4, 0])
+            self.assertEqual(counts["res_zero_segments"], 4)
+            status, reason = orspef.check_spef(counts)
+            self.assertEqual(status, "invalid")
+            self.assertIn("best and typical", reason)
+            # One corner with too many 0 ohm segments, the other corners fine.
+            mixed = self.spef(work, net.format("1 n1:1 n1:2 1:1:0\n2 n1:2 n1:3 1:1:0\n3 n1:3 n1:4 1:1:1\n4 n1:4 n1:5 2\n"))
+            self.assertEqual(mixed["res_zero_by_corner"], [0, 0, 2])
+            status, reason = orspef.check_spef(mixed)
+            self.assertEqual(status, "invalid")
+            self.assertIn("worst corner", reason)
+            self.assertEqual(orspef.check_spef(mixed, 0.5)[0], "valid")
+
+    def test_small_negative_values(self):
+        net = "*D_NET n1 2.0\n*CONN\n*I u1:A I\n*CAP\n1 n1:1 2.0\n*RES\n{}*END\n"
+        with tempfile.TemporaryDirectory() as work:
+            # -5e-7 ohm is not the noise of an extraction without resistance (about 1e-16): it is a negative value.
+            small = self.spef(work, net.format("1 n1:1 n1:2 -5e-7\n2 n1:2 n1:3 1\n3 n1:3 n1:4 1\n4 n1:4 n1:5 1\n"))
+            self.assertEqual(small["res_negative_segments"], 1)
+            self.assertEqual(orspef.check_spef(small)[0], "invalid")
+            noise = self.spef(work, net.format("1 n1:1 n1:2 -5e-16\n2 n1:2 n1:3 1\n3 n1:3 n1:4 1\n4 n1:4 n1:5 1\n"))
+            self.assertEqual((noise["res_negative_segments"], noise["res_zero_segments"]), (0, 1))
+            self.assertEqual(orspef.check_spef(noise)[0], "valid")
+
+    def test_damaged_gzip_data_is_an_error_of_the_read(self):
+        import gzip
+        with tempfile.TemporaryDirectory() as work:
+            with open(os.path.join(FIX, "acc_lef_res.spef"), "rb") as f:
+                packed = bytearray(gzip.compress(f.read()))
+            for k in range(40, 400):
+                packed[k] ^= 0xFF  # a valid header, then a damaged block
+            path = os.path.join(work, "x.spef.gz")
+            with open(path, "wb") as f:
+                f.write(bytes(packed))
+            with self.assertRaises(OSError):
+                orspef.read_spef(path)
 
     def test_unknown_unit_is_invalid(self):
         counts = orspef.read_spef(os.path.join(FIX, "hand_unknown_unit.spef"))

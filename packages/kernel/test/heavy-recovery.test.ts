@@ -3,11 +3,11 @@
 
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { acquireHeavyLock, heavyQueue, readStatus, type ResultRecord, runExperiment } from "../src/index.ts";
+import { acquireHeavyLock, heavyQueue, readStatus, removeContainers, type ResultRecord, runExperiment } from "../src/index.ts";
 
 const fixtures = new URL("./fixtures/", import.meta.url).pathname;
 const heavySource = new URL("../src/heavy.ts", import.meta.url).href;
@@ -115,4 +115,92 @@ held.release();`;
 		assert.deepEqual(jobs.map((j) => j.exitCode), [0, 0, 0, 0]);
 		assert.equal(heavyQueue(lock).holder, null);
 	}
+});
+
+/** A fake container engine: `ps` prints the lines of the file `containers`, or fails when the file `fail` exists; `rm` fails the same way. */
+function fakeEngine(root: string): { engine: string; set: (state: "fail" | "running" | "none") => void } {
+	const engine = join(root, "engine.sh");
+	writeFileSync(engine, `#!/bin/sh\nd=$(dirname "$0")\n[ -f "$d/fail" ] && exit 1\n[ "$1" = ps ] && cat "$d/containers"\nexit 0\n`);
+	chmodSync(engine, 0o755);
+	const set = (state: "fail" | "running" | "none") => {
+		rmSync(join(root, "fail"), { force: true });
+		writeFileSync(join(root, "containers"), state === "running" ? "abc123\n" : "");
+		if (state === "fail") writeFileSync(join(root, "fail"), "");
+	};
+	set("none");
+	return { engine, set };
+}
+
+/** Try to take the lock for ms milliseconds. */
+async function tryLock(lock: string, ms: number) {
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), ms);
+	const held = await acquireHeavyLock({ lock, experiment: "next", pollMs: 20, signal: controller.signal });
+	clearTimeout(timer);
+	return held;
+}
+
+test("a dead owner with a container engine that does not answer keeps the lock; an answer of no container frees it", { timeout: 60_000 }, async (t) => {
+	const { root, lock } = setup(t);
+	t.after(() => workers.forEach((w) => w.kill("SIGKILL")));
+	const { engine, set } = fakeEngine(root);
+	const dead = worker(lock, `const held = await acquireHeavyLock({ lock, experiment: 'exp1', pollMs: 2 }); held.track({ engine: ${JSON.stringify(engine)} }); process.stdout.write('held\\n'); await new Promise(() => {});`);
+	await new Promise((done) => dead.stdout?.once("data", done));
+	dead.kill("SIGKILL");
+	await ended(dead);
+	set("fail");
+	assert.equal(removeContainers(engine, "exp1"), false, "a failed removal is reported");
+	assert.equal(await tryLock(lock, 600), null, "the state of the container is not known: the lock stays");
+	assert.match(JSON.stringify(heavyQueue(lock).holder), /exp1/);
+	set("running");
+	assert.equal(await tryLock(lock, 600), null, "the container runs: the lock stays");
+	set("none");
+	assert.equal(removeContainers(engine, "exp1"), true);
+	const mine = await tryLock(lock, 5000);
+	assert.ok(mine, "no container: the lock is taken over");
+	mine.release();
+});
+
+test("a release that leaves the container: the lock stays with a live owner until the container is gone", { timeout: 60_000 }, async (t) => {
+	const { root, lock } = setup(t);
+	const { engine, set } = fakeEngine(root);
+	const held = await acquireHeavyLock({ lock, experiment: "exp2", pollMs: 20 });
+	assert.ok(held);
+	held.track({ engine });
+	set("fail");
+	held.release({ jobMayRun: true });
+	assert.equal(await tryLock(lock, 600), null, "the cleanup failed: the lock is not given back");
+	set("none");
+	const next = await tryLock(lock, 5000);
+	assert.ok(next, "the container is gone: the next job takes the lock");
+	next.release();
+	assert.equal(heavyQueue(lock).holder, null);
+});
+
+test("a lock directory of the earlier format (a directory with owner.json) of a dead process is taken over", { timeout: 60_000 }, async (t) => {
+	const { lock } = setup(t);
+	mkdirSync(lock, { recursive: true });
+	writeFileSync(join(lock, "owner.json"), JSON.stringify({ schema: "simra.heavy_lock/0", pid: 2 ** 22 + 12345, host: hostname(), experiment: "old", root: null, since: "2026-01-01T00:00:00.000Z" }));
+	const mine = await tryLock(lock, 5000);
+	assert.ok(mine, "the lock of the dead owner is taken over");
+	mine.release();
+	// Negative control: a directory with a file that is not an owner record of this code is never removed.
+	mkdirSync(lock, { recursive: true });
+	writeFileSync(join(lock, "owner.json"), JSON.stringify({ pid: 2 ** 22 + 12345, host: hostname() }));
+	assert.equal(await tryLock(lock, 600), null);
+	assert.equal(existsSync(join(lock, "owner.json")), true);
+});
+
+test("a relative lock path is made absolute: the link of the lock has a target", { timeout: 60_000 }, async (t) => {
+	const { root } = setup(t);
+	const cwd = process.cwd();
+	process.chdir(root);
+	t.after(() => process.chdir(cwd));
+	const mine = await acquireHeavyLock({ lock: "rel/heavy.lock", experiment: "relative", pollMs: 20 });
+	assert.ok(mine);
+	const holder = heavyQueue("rel/heavy.lock").holder;
+	assert.equal(holder !== null && holder !== "foreign" && holder.experiment, "relative");
+	assert.equal(existsSync(join(root, "rel", "heavy.lock", "owner.json")), true);
+	mine.release();
+	assert.equal(heavyQueue(join(root, "rel", "heavy.lock")).holder, null);
 });

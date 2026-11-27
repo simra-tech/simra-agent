@@ -272,15 +272,17 @@ async function executeJob(job: Job, env: NodeJS.ProcessEnv, signal?: AbortSignal
 	}
 	const started = new Date();
 	let exit: SpawnResult;
+	let containerLeft = false;
 	try {
 		exit = cancelledInQueue
 			? { code: null, signal: null, timedOut: false, cancelled: true, spawnError: null }
 			: await spawnAndWait(job.command, job.args, { cwd: root, env, stdoutPath, stderrPath, timeoutS: job.timeout_s, signal, onSpawn: (pid) => lock?.track({ pid, engine: job.engine ?? undefined }) });
 		// A stopped engine client can leave its container running: remove the container of this experiment by its label.
 		// A heavy job keeps the lock until this is done.
-		if ((exit.timedOut || exit.cancelled) && job.engine) removeContainers(job.engine, id);
+		// When the removal fails, the state of the container is not known: the lock is not given back (see heavy.ts).
+		if ((exit.timedOut || exit.cancelled) && job.engine) containerLeft = !removeContainers(job.engine, id);
 	} finally {
-		lock?.release();
+		lock?.release({ jobMayRun: containerLeft });
 	}
 	const finished = new Date();
 
@@ -311,6 +313,12 @@ async function executeJob(job: Job, env: NodeJS.ProcessEnv, signal?: AbortSignal
 	} else if (exit.cancelled) {
 		result.status = "cancelled";
 		result.errors.push(cancelledInQueue ? "the run was cancelled while it waited for the heavy-job lock: the adapter did not start" : "the run was cancelled");
+	}
+	if (containerLeft) {
+		result.errors.push(`the container engine ${job.engine} did not answer: the check that the container of this run is gone did not run${lock ? "; the heavy-job lock stays until the engine reports no container with the label of this experiment" : ""}`);
+	}
+	if (exit.timedOut || exit.cancelled) {
+		// the status and its message are set above
 	} else if (!existsSync(responsePath)) {
 		result.errors.push(`the adapter wrote no response (exit code ${exit.code}); see ${result.logs.adapter_stderr}`);
 	} else {
@@ -526,14 +534,20 @@ export function annotateTouchstone(root: string, result: Pick<ResultRecord, "inp
 	}
 }
 
-/** Remove the containers with the label simra.experiment=<id>. It never throws. */
-export function removeContainers(engine: string, id: string): void {
+/**
+ * Remove the containers with the label simra.experiment=<id>. It never throws. It returns true when the engine
+ * answered and no such container is left, false when a command of the engine failed (the state is not known).
+ */
+export function removeContainers(engine: string, id: string): boolean {
 	try {
 		const ids = execFileSync(engine, ["ps", "-q", "--filter", `label=simra.experiment=${id}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 30_000 })
 			.split("\n")
 			.filter(Boolean);
 		if (ids.length) execFileSync(engine, ["rm", "-f", ...ids], { stdio: "ignore", timeout: 60_000 });
-	} catch {}
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 /** The CPUs of a list such as "4-7,9", in order, without repeats. An invalid list is an error. */

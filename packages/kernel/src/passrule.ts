@@ -84,7 +84,9 @@ export function recordPassRule(root: string, input: PassRuleInput, now = new Dat
 			throw new Error(`pass_rule: the file ${input.file} cannot be read (${(e as NodeJS.ErrnoException).code ?? "error"}). The run did not start.`);
 		}
 		record = { key: input.id ?? file, file, bytes: data.length, sha256: sha256Bytes(data), recorded_at: now.toISOString(), changed_after_results: [] };
-		if (data.length <= MAX_CONTENT_BYTES && !data.includes(0)) record.content = data.toString("utf8");
+		// The content is kept only when the text gives the same bytes back (valid UTF-8): its hash is then the recorded hash.
+		const text = data.toString("utf8");
+		if (data.length <= MAX_CONTENT_BYTES && !data.includes(0) && Buffer.from(text, "utf8").equals(data)) record.content = text;
 	} else {
 		const text = input.text as string;
 		record = { key: input.id ?? null, text, sha256: sha256Text(text), recorded_at: now.toISOString(), changed_after_results: [] };

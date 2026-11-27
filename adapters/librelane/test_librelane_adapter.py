@@ -193,12 +193,20 @@ class Reader(unittest.TestCase):
             packed = gzip.compress(f.read())
         with open(os.path.join(step, "max", "cut.spef.gz"), "wb") as f:
             f.write(packed[:len(packed) // 2])
+        # A gzip file with a valid header and a damaged block.
+        damaged = bytearray(packed)
+        for k in range(40, 400):
+            damaged[k] ^= 0xFF
+        with open(os.path.join(step, "max", "damaged.spef.gz"), "wb") as f:
+            f.write(bytes(damaged))
         response = self.call("read", {"run": "runs/r1"})
-        self.assertEqual(response["measurements"]["spef_files"]["value"], 4)
+        self.assertEqual(response["measurements"]["spef_files"]["value"], 5)
         self.assertEqual(response["measurements"]["spef_files_invalid"]["value"], 0)
-        self.assertEqual(response["measurements"]["spef_files_not_checked"]["value"], 2)
+        self.assertEqual(response["measurements"]["spef_files_not_checked"]["value"], 3)
         found = sorted(w for w in self.warnings(response) if "did not run" in w)
-        self.assertEqual(len(found), 2)
+        self.assertEqual(len(found), 3)
+        self.assertIn("max/damaged.spef.gz did not run", found[1])
+        found = [found[0], found[2]]
         self.assertIn("max/cut.spef.gz did not run: the file cannot be read", found[0])
         self.assertIn("nom/plain.spef.gz did not run: the file cannot be read", found[1])
 
