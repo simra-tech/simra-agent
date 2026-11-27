@@ -2,7 +2,7 @@
   "schema": "simra.workarounds/0",
   "simulator": "openroad",
   "pdk": "*",
-  "versions": "OpenROAD 26Q1-1024, OpenSTA 2.7.0 and 3.1.0",
+  "versions": "OpenROAD 26Q1-1024 and 26Q4, OpenSTA 2.7.0, 3.1.0 and 3.2.0",
   "entries": [
     {
       "id": "openroad-hold-repair-one-sweep",
@@ -22,14 +22,54 @@
       "id": "opensta-verilog-signed",
       "applies_to": {
         "operations": [
-          "parse"
+          "parse",
+          "timing"
         ]
       },
-      "gap": "The Verilog reader of OpenSTA does not accept the keyword 'signed' in a port or wire declaration of a gate-level netlist.",
-      "symptom": "read_verilog stops with 'syntax error' at the line of the declaration. A script that does not check the exit code of the timing run then reports old result files.",
-      "workaround": "Remove the keyword from the netlist that the timing tool reads (it has no effect on a gate-level netlist), for example with sed after write_verilog. Check that the report files are newer than the netlist.",
+      "gap": "The Verilog reader of OpenSTA 2.7.0 and 3.1.0 does not accept the keyword 'signed' in a port or wire declaration of a gate-level netlist. OpenSTA 3.2.0 accepts it. A tool image can have both: the build that a flow uses can be older than the build on the default PATH.",
+      "symptom": "read_verilog stops with 'Error: 171 <file> line <n>, syntax error' at the line of the declaration. With 'sta -exit <script>' the exit code is 0. The log has no slack line. A script that does not check the log then reports old result files.",
+      "workaround": "Remove the keyword from the netlist that the timing tool reads (it has no effect on a gate-level netlist), for example with sed after write_verilog. Check that the log of the timing step has slack lines (openroad adapter, operation timing) and that the report files are newer than the netlist. A timing step without slack lines is not run, not passed.",
       "status": "worked_around",
-      "evidence": "a signed FIR filter synthesized with Yosys 0.67 (write_verilog -noattr) for IHP SG13G2: OpenSTA 2.7.0 and 3.1.0 stop at the port declaration (eval flow-no-work)"
+      "evidence": "a signed FIR filter synthesized with Yosys 0.67 and 0.71 (write_verilog -noattr) for IHP SG13G2 (eval flow-no-work): OpenSTA 2.7.0 and 3.1.0 stop at the declaration (3.1.0 with 'sta -exit': exit code 0); OpenSTA 3.2.0 reads the same netlist (adapters/openroad/fixtures/sta_signed_syntax_error.log)"
+    },
+    {
+      "id": "opensta-link-design-name-not-in-netlist",
+      "applies_to": {
+        "operations": [
+          "timing"
+        ]
+      },
+      "gap": "link_design <name> with a name that the netlist does not have gives one error line. With 'sta -exit <script>', or a script that ends with exit, the commands after it run without a design and the exit code is 0.",
+      "symptom": "The log has 'Error: 1390 <name> is not a verilog module.' and no slack line. A wrapper script prints its last message and ends with exit code 0. Timing reports in the tree are from an earlier run.",
+      "workaround": "Read the module names of the netlist that the timing tool reads (grep '^module'), and link the name that is there. Synthesis can change the name of a module with parameter values (see the yosys entry yosys-paramod-module-name). Check that the log has slack lines (openroad adapter, operation timing). A timing step without slack lines is not run, not passed.",
+      "status": "worked_around",
+      "evidence": "examples/acc-sg13g2 used through a wrapper with a parameter value, synthesized with Yosys 0.71 for IHP SG13G2: 'link_design acc' with OpenSTA 3.2.0 gives error 1390 and exit code 0 (adapters/openroad/fixtures/sta_not_a_module.log)"
+    },
+    {
+      "id": "openroad-timing-before-placement-not-a-result",
+      "applies_to": {
+        "operations": [
+          "timing"
+        ]
+      },
+      "gap": "A timing check on a netlist without a placement (no floorplan, no wires) is not a timing result when a net has a very high fanout. repair_design cannot buffer a net without cell locations: it inserts no buffer, or only some. The delay of the cell that drives the net is then outside the library tables.",
+      "symptom": "The worst slack is more than ten clock periods negative. repair_design reports 0 inserted buffers, or report_check_types lists hundreds or thousands of max slew, max capacitance or max fanout violations after the repair.",
+      "workaround": "Do not report this slack as a timing result (openroad adapter, operation timing: the status is 'invalid check'). The useful reading of such a run is the logic depth and the stage count of the worst path (measurements worst_path_logic_depth and worst_path_stages): they do not depend on the wire load. For a slack, run the check after the placement and the clock tree, or remove the high fanout nets from the check (a buffer tree from the synthesis, or set_dont_touch_network and ideal nets for a reset or an enable).",
+      "status": "worked_around",
+      "evidence": "a bank of 24 shift registers of 500 flip-flops with one registered enable, synthesized with Yosys 0.71 for IHP SG13G2, OpenROAD 26Q4 without placement: 0 buffers, 36001 max slew violations, worst slack -158.8 ns at a period of 10 ns, and a worst path of one flip-flop and one cell (adapters/openroad/fixtures/prelayout_no_buffers.log). Control: examples/acc-sg13g2 gives 66 buffers and a slack of -1.1 ns at a period of 7.1 ns"
+    },
+    {
+      "id": "openroad-extract-parasitics-lef-res",
+      "applies_to": {
+        "operations": [
+          "spef"
+        ]
+      },
+      "gap": "extract_parasitics -lef_res takes the wire resistance from the RESISTANCE values of the technology LEF and ignores the resistance of the rule file. A technology LEF without these values gives 0 ohm for each segment, with no warning.",
+      "symptom": "The SPEF file has *RES sections with values of 0 or about 1e-17. The exit code is 0.",
+      "workaround": "Check the SPEF file (openroad adapter, operation spef). See the librelane entry librelane-rcx-layer-resistance-from-lef.",
+      "status": "worked_around",
+      "evidence": "examples/acc-sg13g2 with IHP SG13G2 and OpenROAD 26Q4 (adapters/openroad/fixtures/acc_lef_res.spef and acc_lef_res_no_resistance.spef)"
     }
   ]
 }

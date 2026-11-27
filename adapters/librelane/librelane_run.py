@@ -31,6 +31,7 @@ def _openroad_log():
 
 
 orlog = _openroad_log()
+import openroad_spef as orspef  # noqa: E402  (a module of the openroad adapter, on sys.path after _openroad_log)
 
 LEVELS = ("no_wires", "placement_estimate", "global_route", "extracted")
 LEVEL_TEXT = {"no_wires": "no wires", "placement_estimate": "wires estimated from the placement",
@@ -243,6 +244,48 @@ def repair_findings(steps):
                 out.append({"step": step["name"], "line": table["line"], "pattern": finding["pattern"],
                             "message": "step {} ({} repair table at line {}): {}".format(
                                 step["name"], table["kind"], table["line"], finding["message"])})
+    return out
+
+
+MAX_SPEF_BYTES = 200 * 1024 * 1024
+
+
+def spef_files(steps):
+    """The SPEF files that the steps of the run wrote (in the step directory, or one level below): [(step, path)]."""
+    out = []
+    for step in steps:
+        found = []
+        for base, dirs, names in os.walk(step["dir"]):
+            if os.path.relpath(base, step["dir"]).count(os.sep) >= 1:
+                dirs[:] = []
+            found += [os.path.join(base, n) for n in names if n.endswith((".spef", ".spef.gz"))]
+        out += [(step, path) for path in sorted(found)]
+    return out
+
+
+def spef_findings(steps, max_zero_fraction=None):
+    """The resistance check of each SPEF file of the run: [{step, file, status, message}]. status is "valid",
+    "invalid" or "not run" (a file above MAX_SPEF_BYTES is not read here)."""
+    out = []
+    limit = orspef.MAX_ZERO_FRACTION if max_zero_fraction is None else max_zero_fraction
+    for step, path in spef_files(steps):
+        name = os.path.join(step["name"], os.path.relpath(path, step["dir"]))
+        if os.path.getsize(path) > MAX_SPEF_BYTES:
+            out.append({"step": step["name"], "file": name, "status": "not run", "message": (
+                "the resistance check of {} did not run: the file has {:.0f} MB (the limit of this read is {:.0f} MB). Run "
+                "the openroad adapter, operation spef, on it.").format(name, os.path.getsize(path) / 1e6, MAX_SPEF_BYTES / 1e6)})
+            continue
+        try:
+            counts = orspef.read_spef(path)
+        except OSError:
+            continue
+        status, reason = orspef.check_spef(counts, limit)
+        message = None
+        if status == "invalid":
+            message = ("the extracted file {} is invalid: {} The slack numbers of this run with extracted wires used it. "
+                       "Find where the extraction takes the layer resistance from (the rule file of the extractor, or the "
+                       "technology LEF), and check that this source has resistance values.").format(name, reason)
+        out.append({"step": step["name"], "file": name, "status": status, "message": message})
     return out
 
 

@@ -38,11 +38,22 @@ and of the launcher files that the request gives (input `launcher`).
 
 The inputs and measurements are in [adapter.json](adapter.json).
 
+`read` also checks each SPEF file that a step of the run wrote (the extraction step). It gives the measurements
+`spef_files` and `spef_files_invalid`, and a warning for a file without wire resistance: no resistance segment, only
+segments of 0 ohm, or too many of them. The slack numbers with the level `extracted` used these files. A file above
+200 MB is not read: the warning says that the check did not run. The check is the operation `spef` of the openroad
+adapter.
+
 The pi extension calls `read` (with `against: "auto"`) after a shell command that runs LibreLane or reads a run
 directory, and adds the warnings to the result of the command, each one time. The variable `SIMRA_FLOW_CHECK=off`
 turns this off.
 
-The command check is a second hook, off by default (`SIMRA_COMMAND_CHECK=on`): after a shell command with exit code
+The timing step check is part of the same hook: after a shell command with exit code 0 that wrote the log of a
+timing step (a file named `sta`, `opensta` or `timing`, or a log with timing commands) and no file with a slack line
+or a path report, the result gets the note `Simra timing check: not run` with the first error line. The step
+directories of a LibreLane run are not part of this check.
+
+The command check is another hook, off by default (`SIMRA_COMMAND_CHECK=on`): after a shell command with exit code
 0, it adds the logs with error lines and the empty result files that the command wrote. In the pilots of
 `evals/flow-no-work` and `evals/flow-vacuous-checker` the agents found these faults without it, and the notes added
 tokens; so it is not on by default.

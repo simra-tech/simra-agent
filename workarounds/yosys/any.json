@@ -2,7 +2,7 @@
   "schema": "simra.workarounds/0",
   "simulator": "yosys",
   "pdk": "*",
-  "versions": "Yosys 0.67",
+  "versions": "Yosys 0.67 and 0.71",
   "entries": [
     {
       "id": "yosys-abc-delay-target-no-effect",
@@ -16,6 +16,32 @@
       "workaround": "Compare the netlist hash of two values before you record a delay target as a decision. To change the logic depth, use a depth-oriented ABC script before the mapping, and check the depth with a timing run.",
       "status": "open",
       "evidence": "a 4-tap FIR filter with the IHP SG13G2 typical library: no -D, and -D 100, 1000, 5000 and 20000 give the same netlist"
+    },
+    {
+      "id": "yosys-write-verilog-signed",
+      "applies_to": {
+        "operations": [
+          "timing"
+        ]
+      },
+      "gap": "write_verilog keeps the keyword 'signed' in the port and wire declarations of a gate-level netlist when the source declares the signal as signed. Some timing tools do not accept the keyword there.",
+      "symptom": "The netlist has lines such as 'input signed [7:0] x;' and 'wire signed [7:0] x;'. OpenSTA 2.7.0 and 3.1.0 stop at the first of them with a syntax error (openroad entry opensta-verilog-signed).",
+      "workaround": "After write_verilog, check the netlist for the keyword (grep -n signed). Remove it from the netlist that the timing tool reads, and keep the netlist of the synthesis as it is. Then check that the timing log has slack lines.",
+      "status": "worked_around",
+      "evidence": "the signed FIR filter of eval flow-no-work, synthesized with Yosys 0.71 (synth, abc, autoname, write_verilog -noattr) for IHP SG13G2: 'input signed' at line 8 and 'wire signed' at line 9 of the netlist"
+    },
+    {
+      "id": "yosys-paramod-module-name",
+      "applies_to": {
+        "operations": [
+          "timing"
+        ]
+      },
+      "gap": "A module that is used with parameter values other than its defaults gets a new name in the netlist: $paramod\\<name>\\<parameter>=<value>. A netlist that keeps the hierarchy has no module with the name of the source. In Yosys 0.71 this was seen for a module below the top (a parameter value on an instance); chparam on the top module kept the name of the top.",
+      "symptom": "A timing script with 'link_design <name>' gives 'is not a verilog module' and no slack (openroad entry opensta-link-design-name-not-in-netlist). The netlist has 'module \\$paramod\\<name>\\...'.",
+      "workaround": "Read the module names of the netlist before the timing run (grep '^module'). Link the top module of the netlist, or flatten before write_verilog, or give the derived module its name back (rename in the synthesis script). Do not copy a module name from the source into a later step without this check.",
+      "status": "worked_around",
+      "evidence": "examples/acc-sg13g2 below a wrapper that sets W=8, synthesized with Yosys 0.71 for IHP SG13G2: the netlist has the module $paramod\\acc\\W=s32'00000000000000000000000000001000 and no module acc (adapters/openroad/fixtures/make/acc_top_synth.ys)"
     }
   ]
 }

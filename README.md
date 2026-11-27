@@ -53,8 +53,9 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
   layout cell as a Touchstone file: one openEMS job per port, then the merge (see [EM S-parameters](#em-s-parameters)).
 - The tool `em_sparameters` (pi) runs `simra em` and lists S at given frequencies. `simra snp-diff` compares two
   Touchstone files per entry in dB, degrees and |dS|.
-- The openroad adapter has one operation, `parse`: the typed record of an OpenROAD log (repair tables with the pattern
-  that a table shows, the congestion report, messages). The librelane adapter has three operations: `read` (the typed
+- The openroad adapter has three operations: `parse` (the typed record of an OpenROAD log: repair tables with the
+  pattern that a table shows, the congestion report, messages), `timing` (is the log of a timing step a timing
+  result: not run, invalid check or valid) and `spef` (does an extracted SPEF file have wire resistance). The librelane adapter has three operations: `read` (the typed
   record of a LibreLane run: the slack of each corner with its evidence level, and warnings for carried-over numbers,
   a corner name that does not agree with its library, and a step that did not end), `compare` (two runs: did a changed
   setting change a result) and `replay` (one step again on its saved state, with changed variables). After a shell
@@ -82,7 +83,7 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
   lists the rows of an assumption.
 - The commands `simra pack init` and `simra pack check` add a PDK to a site: an adapter proposes a technology pack
   from the kit, the user confirms it, and the adapter checks it (see "Add a PDK").
-- The openroad adapter has one operation, `parse`. The librelane adapter has four operations: `read`, `compare`,
+- The openroad adapter has three operations: `parse`, `timing` and `spef`. The librelane adapter has four operations: `read`, `compare`,
   `replay` and `preflight`. The pi extension adds the findings of `read` to the result of a shell command that runs
   LibreLane or reads a run directory (see [Digital flow](#digital-flow)).
 - Three example designs exist for the open IHP SG13G2 PDK: a two-stage OTA, and two digital blocks
@@ -105,7 +106,7 @@ What the harness has now, and what a task needs that it does not have yet.
 | Antenna | `em_sparameters` (S11) | far-field gain and pattern |
 | Baseband amplifier, filter, regulator | ngspice ac, noise, transient, `monte_carlo` | loop gain at an internal node (a loop-probe operation) |
 | Bias reference with trim | ngspice, `monte_carlo` | a trim search per Monte Carlo seed |
-| Digital control | `librelane` (`read`, `compare`, `replay`, `preflight`), `openroad` (`parse`), flow check (see [Digital flow](#digital-flow)) | an operation that starts a complete flow; adapters for synthesis (Yosys) and for RTL simulation (Verilator, Icarus Verilog) |
+| Digital control | `librelane` (`read`, `compare`, `replay`, `preflight`), `openroad` (`parse`, `timing`, `spef`), flow check (see [Digital flow](#digital-flow)) | an operation that starts a complete flow; adapters for synthesis (Yosys) and for RTL simulation (Verilator, Icarus Verilog) |
 | Whole chip | `assemble_dc` | a whole-chip transient or harmonic-balance check |
 
 ## Install
@@ -498,9 +499,9 @@ simulator fails in the stored device-class probe has an entry.
 | Xyce 7.10 | any | no autonomous HB or HB noise, .step with HB, YLIN outside HB, .temp ignored |
 | ngspice 46 | IHP SG13G2 | KLU on a large mixed deck, Monte Carlo DC with reltol 1e-4, HBT self-heating, antenna diode step |
 | ngspice 46 | any | pulse with PW = 0, trnoise with a round step, trnoise current source, threads in a container, .pss |
-| LibreLane 3.1.0.dev2 | any | timing steps in the layout analyse one corner, integer clock tree derate (open), empty step log, two OpenROAD builds |
-| OpenROAD 26Q1-1024, OpenSTA 2.7.0 and 3.1.0 | any | hold repair stops after one pass, `signed` in a netlist |
-| Yosys 0.67 | any | `abc -D` without `-constr` has no effect (open) |
+| LibreLane 3.1.0.dev2 and 3.1.0.dev6 | any | timing steps in the layout analyse one corner, integer clock tree derate (open), empty step log, two OpenROAD builds, extraction with layer resistance from the technology LEF |
+| OpenROAD 26Q1-1024 and 26Q4, OpenSTA 2.7.0, 3.1.0 and 3.2.0 | any | hold repair stops after one pass, `signed` in a netlist, `link_design` with a name that the netlist does not have, timing before the placement is not a result, `extract_parasitics -lef_res` |
+| Yosys 0.67 and 0.71 | any | `abc -D` without `-constr` has no effect (open), `signed` in the written netlist, `$paramod` module names |
 | Verilator 5.050 | any | no trace of names that start with an underscore |
 | openEMS 0.37 | any | MUR energy plateau, thin dielectric time step, headless runs |
 
@@ -1353,17 +1354,21 @@ LibreLane with a shell command. Two adapters exist:
 | librelane | `replay` | runs one step of a run again on its saved state, with changed variables. It does not change the run directory. |
 | librelane | `preflight` | starts the version command of each flow tool, lists the PDK views, checks the free disk space |
 | openroad | `parse` | reads an OpenROAD log: messages, repair tables with a known pattern (for example the buffer limit), global route congestion |
+| openroad | `timing` | checks the log of a timing step: `not run` when the log has no slack line and no path report, `invalid check` when the worst slack is more than 10 clock periods negative or design rule violations remain after a repair (both limits are inputs), else `valid` |
+| openroad | `spef` | checks an extracted SPEF file: `invalid` when it has no resistance segment, only segments of 0 ohm, or too many of them |
 
 Only `replay` and `preflight` start a tool. See [adapters/librelane/README.md](adapters/librelane/README.md).
 
-The pi extension has two checks on a shell command of the agent:
+The pi extension has three checks on a shell command of the agent:
 
 - Flow check: after a command that runs LibreLane or a call that reads a run directory, the result gets the warnings
   of `read`, each one time. `SIMRA_FLOW_CHECK=off` stops it.
+- Timing step check: after a command with exit code 0 that wrote the log of a timing step and no slack line, the
+  result gets the note `Simra timing check: not run`. Such a step is not passed. `SIMRA_FLOW_CHECK=off` stops it too.
 - Command check: after a command with exit code 0, the result gets the logs with error lines and the empty result
   files that the command wrote. It is off by default. `SIMRA_COMMAND_CHECK=on` starts it.
 
-Yosys and Verilator have no adapter. Each has one entry in the [workaround registry](#workaround-registry).
+Yosys and Verilator have no adapter. Each has entries in the [workaround registry](#workaround-registry).
 `preflight` reads their versions.
 
 Eight demo tasks are in `evals/flow-*`: `flow-setting-effect`, `flow-evidence-level`, `flow-no-work`,

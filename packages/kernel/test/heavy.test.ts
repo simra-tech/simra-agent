@@ -125,7 +125,8 @@ test("a lock of a process of this host that is gone is taken over; an abort ends
 
 test("two heavy runs do not overlap: the second is queued, then runs; both end in the inbox, and a wait takes them out", async (t) => {
 	const { root, lock } = setup(t);
-	const a = await start(root, { mode: "slow", seconds: 2 }, true);
+	// The first run is long enough for the second to start and queue on a loaded machine.
+	const a = await start(root, { mode: "slow", seconds: 5 }, true);
 	await until("the first run holds the lock", () => {
 		const h = heavyQueue(lock).holder;
 		return h !== null && h !== "foreign" && h.experiment === a.id;

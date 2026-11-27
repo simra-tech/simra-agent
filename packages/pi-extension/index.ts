@@ -73,6 +73,8 @@ import {
 	runCheck,
 	commandFindings,
 	formatCommandFindings,
+	timingStepFinding,
+	formatTimingStepFinding,
 	queryAdapter,
 	runExperiment,
 	runJobs,
@@ -631,6 +633,24 @@ export default function (pi: ExtensionAPI) {
 	});
 	pi.on("session_shutdown", () => stopInboxTimer());
 
+	// A command that ended with exit code 0 and wrote the log of a timing step, but no timing result: the step is
+	// "not run". A finding for the same logs is shown at most two times. It is a part of the flow check.
+	const timingShown = new Map<string, number>();
+	function timingNote(event: ToolResultEvent, cwd: string, sinceMs: number | null): string | null {
+		if (event.toolName !== "bash" || event.isError || sinceMs === null) return null;
+		let finding: ReturnType<typeof timingStepFinding>;
+		try {
+			finding = timingStepFinding(cwd, sinceMs);
+		} catch {
+			return null;
+		}
+		if (!finding) return null;
+		const key = finding.logs.join("|");
+		const count = timingShown.get(key) ?? 0;
+		timingShown.set(key, count + 1);
+		return count < 2 ? formatTimingStepFinding(finding) : null;
+	}
+
 	pi.on("before_agent_start", (event) => {
 		chipDesignPrompt(event.systemPromptOptions);
 	});
@@ -690,6 +710,7 @@ export default function (pi: ExtensionAPI) {
 		const flowNotes = [
 			process.env.SIMRA_COMMAND_CHECK === "on" ? commandNote(event, ctx.cwd, since) : null,
 			process.env.SIMRA_FLOW_CHECK === "off" ? null : await flowNote(event, ctx.cwd, since),
+			process.env.SIMRA_FLOW_CHECK === "off" ? null : timingNote(event, ctx.cwd, since),
 		];
 		const inbox = inboxNote(ctx.cwd);
 		const notes = [await netlistNote(event, ctx.cwd), ...flowNotes, recordNote, outputNote, inbox === null ? null : `\n${inbox}`, clock?.(Date.now()) ?? null].filter((n): n is string => n !== null);

@@ -1,7 +1,7 @@
 {
   "contract": "simra.adapter/0",
   "name": "openroad",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "command": [
     "python3",
     "{adapter_dir}/openroad_adapter.py"
@@ -9,6 +9,12 @@
   "operations": {
     "parse": {
       "description": "Read a log of OpenROAD and give typed records, without a tool run. Inputs: log (the log, relative to the design root), liberty (optional; a list of Liberty files: the report gives the library name and nominal conditions of each). Measurements: errors, warnings; for each repair table n of repair_timing or repair_design: repair<n>_rows, repair<n>_wns_ns, repair<n>_tns_ns, repair<n>_buffers (the last row); route_usage_pct (over all routing resources of the die), route_overflow, route_wirelength_um. Diagnostics: one error per error message code; one warning per repair table that shows a known pattern: buffer_limit (the repair stopped at the maximum buffer count), one_pass_per_endpoint (a hold repair that made one sweep), worst_slack_constant, margin_only (all checks met; the message is about the margin). Use it when a repair step says 'unable to repair', before you name a cause."
+    },
+    "timing": {
+      "description": "Check the log or report of a timing step (OpenSTA, or OpenROAD with report_checks, report_wns, report_tns, report_worst_slack, report_check_types), without a tool run. Inputs: log (relative to the design root), clock_period_ns (optional; default: the period of the worst path report or of a create_clock line), max_slack_periods (optional, default 10), max_violations (optional, default 0). The check is 'not run' when the log has no slack line and no path report (the tool did not read or link the design; an exit code 0 of the script does not show this), 'invalid check' when the worst slack is more than max_slack_periods clock periods negative or when more than max_violations max slew, max fanout or max capacitance violations remain (for example a check before the placement where repair_design inserted no buffer), else 'valid'. Measurements: timing_check (1 when valid; else failed with the reason), worst_slack_ns (measured only when valid), paths, slack_lines, worst_path_stages, worst_path_logic_depth, clock_period_ns, repair_buffers, max_slew_violations, max_fanout_violations, max_capacitance_violations. The response status is failed for 'not run' and 'invalid check'. Use it before you report a slack from a script or a hand-made timing run. For an invalid check before the placement, report the stages and the logic depth of the worst path, not the slack."
+    },
+    "spef": {
+      "description": "Check an extracted SPEF file for wire resistance, without a tool run. Inputs: spef (relative to the design root; .gz is read), max_zero_fraction (optional, default 0.25: the share of the resistance segments that can be 0 ohm). The check is 'invalid' when the file has no net, no resistance segment, only segments of 0 ohm, or more segments of 0 ohm than max_zero_fraction; else 'valid'. Measurements: spef_check (1 when valid; else failed with the reason), nets, res_segments, res_zero_segments, res_zero_fraction, res_total_ohm, cap_total_pf. The response status is failed for an invalid file. Use it before you report timing with extracted wires: an extraction can end without an error and write no wire resistance (for example extract_parasitics -lef_res with a technology LEF without RESISTANCE values)."
     }
   }
 }

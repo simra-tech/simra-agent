@@ -1,0 +1,7 @@
+read_verilog fir.v
+synth -top fir
+dfflibmap -liberty /work/lib/sg13g2_stdcell_typ_1p20V_25C.lib
+abc -liberty /work/lib/sg13g2_stdcell_typ_1p20V_25C.lib
+opt_clean
+autoname
+write_verilog -noattr fir.nl.v
