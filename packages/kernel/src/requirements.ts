@@ -112,6 +112,18 @@ export interface DeviceCheckGate {
 	environment?: string;
 }
 
+/**
+ * The required-corner gate: the corners (conditions) that the block must pass. Each requirement of the gate needs a
+ * result at each required corner. Without one, its gate row is not run: a pass at another corner (for example the
+ * typical corner) does not cover a required corner, and a required corner is never left out of the verdict.
+ */
+export interface CornersGate {
+	/** The required corners: names of conditions of the file. */
+	required: string[];
+	/** The requirements of the gate (default: every requirement that has conditions). */
+	requirements?: string[];
+}
+
 export interface StabilityGate {
 	/** The active RF stages of the block. A mu requirement names its stage in "stage". */
 	stages: string[];
@@ -137,7 +149,10 @@ export interface Requirement {
 	experiment: string;
 	/** Default "measurement". */
 	kind?: RequirementKind;
-	/** Measurement name in the result of that experiment (kind "measurement" only). */
+	/**
+	 * Measurement name in the result of that experiment (kind "measurement" only). "{condition}" is replaced with the
+	 * condition name, for an experiment that gives one measurement per corner (for example "setup_ws_ns@{condition}").
+	 */
 	measurement?: string;
 	/** s_db and mu: the Touchstone file, by its path or the end of its path; optional when the experiment has one. */
 	touchstone?: string;
@@ -214,7 +229,7 @@ export interface RequirementsFile {
 	experiments: Record<string, ExperimentTemplate>;
 	requirements: Requirement[];
 	assumptions?: Record<string, Assumption>;
-	gates?: { stability?: StabilityGate; connections?: ConnectionsGate; limits?: LimitsGate; netlist?: NetlistRules; device_check?: DeviceCheckGate };
+	gates?: { stability?: StabilityGate; connections?: ConnectionsGate; limits?: LimitsGate; netlist?: NetlistRules; device_check?: DeviceCheckGate; corners?: CornersGate };
 }
 
 /**
@@ -326,7 +341,25 @@ export function validateRequirements(file: RequirementsFile): string[] {
 		for (const e of Object.keys(c?.experiment_inputs ?? {})) if (!experiments[e]) errors.push(`condition "${name}": experiment_inputs.${e}: experiment "${e}" is not defined`);
 	}
 	const gate = file.gates?.stability;
-	for (const k of Object.keys(file.gates ?? {})) if (!["stability", "connections", "limits", "netlist", "device_check"].includes(k)) errors.push(`gates.${k}: unknown gate; the gates are stability, connections, limits, netlist and device_check`);
+	for (const k of Object.keys(file.gates ?? {})) if (!["stability", "connections", "limits", "netlist", "device_check", "corners"].includes(k)) errors.push(`gates.${k}: unknown gate; the gates are stability, connections, limits, netlist, device_check and corners`);
+	if (file.gates && "corners" in file.gates) {
+		const cg = file.gates.corners;
+		if (!cg || typeof cg !== "object" || Array.isArray(cg)) errors.push("gates.corners: must be an object with required (the corners that the block must pass)");
+		else {
+			for (const k of Object.keys(cg)) if (!["required", "requirements"].includes(k)) errors.push(`gates.corners.${k}: unknown field; the fields are required and requirements`);
+			if (!Array.isArray(cg.required) || !cg.required.length || !cg.required.every((x) => typeof x === "string" && x)) errors.push("gates.corners: required must list the corners that the block must pass (names of conditions)");
+			else {
+				for (const c of cg.required) if (!conditions[c]) errors.push(`gates.corners: required corner "${c}" is not defined in conditions`);
+				if (new Set(cg.required).size !== cg.required.length) errors.push("gates.corners: a required corner is listed more than once");
+			}
+			if (cg.requirements !== undefined) {
+				if (!Array.isArray(cg.requirements) || !cg.requirements.length || !cg.requirements.every((x) => typeof x === "string" && x)) errors.push("gates.corners: requirements must list requirement ids (or leave the field out: every requirement that has conditions)");
+				else for (const id of cg.requirements) if (!(Array.isArray(file.requirements) ? file.requirements : []).some((r) => r?.id === id)) errors.push(`gates.corners: requirement "${id}" is not defined`);
+			} else if (Array.isArray(file.requirements) && !file.requirements.some((r) => r?.conditions !== undefined)) {
+				errors.push("gates.corners: no requirement has conditions, so the gate has no requirement. Give the requirements their conditions, or name them in gates.corners.requirements");
+			}
+		}
+	}
 	const dg = file.gates?.device_check;
 	if (file.gates && "device_check" in file.gates) {
 		if (!dg || typeof dg !== "object") errors.push("gates.device_check: must be an object");
@@ -442,6 +475,7 @@ export function validateRequirements(file: RequirementsFile): string[] {
 		}
 		if (!["<=", ">=", "between"].includes(r.op)) errors.push(`${where}: op is ${String(r.op)}, expected <=, >= or between`);
 		if (r.conditions === undefined) {
+			if (typeof r.measurement === "string" && r.measurement.includes("{condition}")) errors.push(`${where}: measurement uses {condition}, so the requirement needs conditions`);
 			if (!validLimit(r.op, r.limit)) errors.push(`${where}: no valid limit for op ${r.op}`);
 			if (experiments[r.experiment] && JSON.stringify(experiments[r.experiment].inputs ?? {}).includes("{condition}")) {
 				errors.push(`${where}: experiment "${r.experiment}" uses {condition}, so the requirement needs conditions`);
@@ -634,6 +668,8 @@ export function evaluateRow(
 	notRunReason: string,
 	root?: string,
 ): VerdictRow {
+	// One measurement per corner in one result: the name has the condition in it.
+	if (condition !== null && typeof r.measurement === "string" && r.measurement.includes("{condition}")) r = { ...r, measurement: r.measurement.replaceAll("{condition}", condition) };
 	const limit = limitFor(r, condition) as Limit;
 	const row: VerdictRow = {
 		requirement: r.id,
@@ -951,6 +987,53 @@ export function stabilityGateRows(file: RequirementsFile, rows: VerdictRow[]): V
 	return out;
 }
 
+/**
+ * The rows of the required-corner gate: one per requirement of the gate and required corner. A gate row takes the
+ * value and the status of the row of its requirement at that corner when that row is a pass or a fail. In every other
+ * case the gate row is not run, with the reason: the requirement has no row at the corner, the corner is only
+ * reported, the check did not select the row, or the row has no value. So the check cannot pass on the other corners.
+ */
+export function cornersGateRows(file: RequirementsFile, rows: VerdictRow[]): VerdictRow[] {
+	const gate = file.gates?.corners;
+	if (!gate) return [];
+	const covered = gate.requirements ? file.requirements.filter((r) => gate.requirements?.includes(r.id)) : file.requirements.filter((r) => r.conditions !== undefined);
+	const out: VerdictRow[] = [];
+	for (const r of covered) {
+		for (const c of gate.required) {
+			const scored = r.conditions?.includes(c) === true;
+			const row = scored ? rows.find((x) => x.requirement === r.id && x.condition === c && !x.gate) : undefined;
+			const limit = limitFor(r, scored ? c : null) ?? limitFor(r, r.conditions?.[0] ?? null);
+			const base: VerdictRow = {
+				requirement: `gate corners ${r.id}`,
+				condition: c,
+				measurement: (row?.measurement ?? rowMeasurement(r)).replaceAll("{condition}", c),
+				op: r.op,
+				limit: (row?.limit ?? limit) as Limit,
+				value: null,
+				unit: row?.unit ?? r.unit ?? null,
+				margin: null,
+				margin_rel: null,
+				status: "not_run",
+				experiment: row?.experiment ?? null,
+				reason: null,
+				at: null,
+				gate: { name: "corners", stage: r.id, covered_by: scored ? [r.id] : [] },
+			};
+			if (row && (row.status === "pass" || row.status === "fail")) {
+				out.push({ ...base, value: row.value, margin: row.margin, margin_rel: row.margin_rel, status: row.status, at: row.at, reason: `from requirement ${r.id}${row.reason ? `: ${row.reason}` : ""}` });
+			} else if (row) {
+				out.push({ ...base, reason: `no result at the required corner ${c}: ${row.reason ?? `the row of requirement ${r.id} is ${row.status.replace("_", " ")}`}` });
+			} else if (r.reported?.conditions?.includes(c)) {
+				out.push({ ...base, reason: `requirement ${r.id} reports the required corner ${c} and does not score it (${r.reported.reason}). A reported row does not cover a required corner.` });
+			} else {
+				const has = r.conditions?.length ? `its conditions are ${r.conditions.join(", ")}` : "it has no conditions";
+				out.push({ ...base, reason: `requirement ${r.id} has no row at the required corner ${c} (${has}). A pass at another corner does not cover it.` });
+			}
+		}
+	}
+	return out;
+}
+
 export interface AssumptionUse {
 	assumption: string;
 	definition: Assumption | null;
@@ -1152,6 +1235,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 		}
 	}
 	rows.push(...stabilityGateRows(file, rows));
+	rows.push(...cornersGateRows(file, rows));
 	rows.push(...connectionGateRows(file, root));
 	rows.push(...limitsGateRows(limitRuns, root));
 	rows.push(...netlistGateRows(file, root));

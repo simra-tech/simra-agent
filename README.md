@@ -81,6 +81,9 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
 - Requirements can reduce a sweep table with the bracket rule (kind `sweep`), gate an RF block on mu over a band at
   each corner for each active stage (`gates.stability`), and cite assumption ids (`assumptions`); `simra assumptions`
   lists the rows of an assumption.
+- A block declares the corners that it must pass (`gates.corners`). A requirement without a result at a required
+  corner gives a gate row `not_run`; the typical corner does not cover it (see
+  [Required-corner gate](#required-corner-gate)).
 - The commands `simra pack init` and `simra pack check` add a PDK to a site: an adapter proposes a technology pack
   from the kit, the user confirms it, and the adapter checks it (see "Add a PDK").
 - The openroad adapter has three operations: `parse`, `timing` and `spef`. The librelane adapter has four operations: `read`, `compare`,
@@ -518,7 +521,7 @@ simulator fails in the stored device-class probe has an entry.
 | Xyce 7.10 | any | no autonomous HB or HB noise, .step with HB, YLIN outside HB, .temp ignored |
 | ngspice 46 | IHP SG13G2 | KLU on a large mixed deck, Monte Carlo DC with reltol 1e-4, HBT self-heating, antenna diode step |
 | ngspice 46 | any | pulse with PW = 0, trnoise with a round step, trnoise current source, threads in a container, .pss |
-| LibreLane 3.1.0.dev2 and 3.1.0.dev6 | any | timing steps in the layout analyse one corner, integer clock tree derate (open), empty step log, two OpenROAD builds, extraction with layer resistance from the technology LEF |
+| LibreLane 3.1.0.dev2 and 3.1.0.dev6 | any | timing steps in the layout analyse one corner, integer clock tree derate (open), empty step log, two OpenROAD builds, extraction with layer resistance from the technology LEF, a corner that the run did not analyse has no number |
 | OpenROAD 26Q1-1024 and 26Q4, OpenSTA 2.7.0, 3.1.0 and 3.2.0 | any | hold repair stops after one pass, `signed` in a netlist, `link_design` with a name that the netlist does not have, timing before the placement is not a result, `extract_parasitics -lef_res` |
 | Yosys 0.67 and 0.71 | any | `abc -D` without `-constr` has no effect (open), `signed` in the written netlist, `$paramod` module names |
 | Verilator 5.050 | any | no trace of names that start with an underscore |
@@ -1311,6 +1314,47 @@ condition:
 2. Make its `band_hz` contain the gate band (default 1 GHz to 300 GHz), and give it each condition of the gate.
 3. Run the check. A gate row takes the worst of the mu rows that cover it. Without such a row, the gate row is
    `not_run` with the stage, band and condition in the reason, so the block cannot pass without the record.
+
+### Required-corner gate
+
+A block that passes at the typical corner can fail at another corner, for example cold at low voltage. A block
+declares the corners that it must pass in `gates.corners`:
+
+```json
+"gates": { "corners": { "required": ["tt_25c", "ss_m40c_lowv", "ff_125c_highv"] } }
+```
+
+1. Define each required corner in `conditions`.
+2. Give each requirement its `conditions`. The gate covers every requirement that has conditions. To cover other
+   requirements, name them: `"requirements": ["gain", "setup"]`.
+3. Run the check. The check adds one gate row per requirement of the gate and required corner,
+   `gate corners <requirement> @ <corner>`.
+
+A gate row takes the value and the status of the row of its requirement at that corner, when that row is `pass` or
+`fail`. In every other case the gate row is `not_run`, and the reason says why:
+
+- the requirement has no row at the corner (its `conditions` do not list it);
+- the corner is only in `reported` (a reported row is not scored);
+- the check did not select the row (`--only`, `--conditions`);
+- the experiment did not complete, or it gave no value at the corner.
+
+So a required corner is never left out of the verdict, and the pass at the typical corner never covers it: the check
+is `incomplete`, not `pass`.
+
+An experiment can give one measurement per corner in one result. The `read` operation of the librelane adapter gives
+`setup_ws_ns@<corner>` and `hold_ws_ns@<corner>`. Write `"measurement": "setup_ws_ns@{condition}"`: `{condition}` is
+replaced with the condition name. A corner that the flow did not analyse has no measurement, so its gate row is
+`not_run`. `examples/acc-sg13g2/requirements.json` is such a file for a public block, with its result in the README
+of the example.
+
+Why the list is in `requirements.json`, not in the configuration of the flow:
+
+- The configuration of the flow says what a tool analysed. The list says what the block must pass. When both are one
+  field, a flow that leaves a corner out also removes the requirement, and nothing shows it.
+- An analog block has no flow configuration. `requirements.json` holds the corners of an analog and of a digital
+  block in the same form (`conditions`).
+- Each verdict records the sha256 of the requirements file, so a change of the list is in the record. A
+  [decision](#decisions) can name the file or a requirement in `affects`.
 
 ### Monte Carlo rows
 

@@ -70,6 +70,19 @@
       "workaround": "Check each extracted SPEF file before you use a slack that depends on it (openroad adapter, operation spef; the librelane adapter, operation read, checks the SPEF files of a run). An invalid file: find where the layer resistance comes from. Use a technology LEF with RESISTANCE RPERSQ values for each routing layer, or extract without -lef_res when the rule file has the resistance. Then run the extraction and the timing steps after it again.",
       "status": "worked_around",
       "evidence": "examples/acc-sg13g2 with IHP SG13G2, routed with LibreLane 3.1.0.dev6: the extraction with the technology LEF of the PDK gives 15382 segments, none at 0 ohm; the same step with a copy of the technology LEF without the RESISTANCE statements gives 11573 segments with a sum below 1e-12 ohm, exit code 0 and no warning; without -lef_res the same LEF copy gives resistance from the rule file (adapters/openroad/fixtures/README.md)"
+    },
+    {
+      "id": "librelane-corner-not-analysed-has-no-number",
+      "applies_to": {
+        "operations": [
+          "read"
+        ]
+      },
+      "gap": "A run analyses the corners of STA_CORNERS only. A corner that is not in the list has no metric, no report directory and no warning. The record of the run (operation read) has no measurement for it: the corner is not there, it is not marked as missing.",
+      "symptom": "The run ends without an error, and each slack that it reports is positive. The corner at which the block fails (for example the slow corner for setup, the fast corner for hold) is not in the reports.",
+      "workaround": "Declare the corners that the block must pass in requirements.json (gates.corners.required), with one requirement for each slack and the measurement name setup_ws_ns@{condition} or hold_ws_ns@{condition}. Run simra check on the run. A required corner without a number gives a gate row NOT_RUN, and the check is not a pass. Then run the flow with every required corner in STA_CORNERS.",
+      "status": "worked_around",
+      "evidence": "examples/acc-sg13g2 with IHP SG13G2, LibreLane 3.1.0.dev6, timing without wires: with the three corners of the PDK, the setup slack is 2.026 ns at the typical corner and -0.756 ns at the slow corner, and the hold slack is -0.049 ns at the fast corner; with STA_CORNERS set to the typical corner, the run has the typical numbers only and exit code 0 (test/corners-gate.test.mjs; examples/acc-sg13g2/requirements.json)"
     }
   ]
 }
