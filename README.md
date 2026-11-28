@@ -86,6 +86,10 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
 - The openroad adapter has three operations: `parse`, `timing` and `spef`. The librelane adapter has four operations: `read`, `compare`,
   `replay` and `preflight`. The pi extension adds the findings of `read` to the result of a shell command that runs
   LibreLane or reads a run directory (see [Digital flow](#digital-flow)).
+- A decision record (`simra decide`, the pi tool `record_decision`) holds a decision of an agent with its class: class
+  A waits for the owner, class B is listed, class C is logged. The summary of a result that rests on a class A decision
+  without an answer has the line `UNCONFIRMED DECISION`. `simra digest` prints the decisions, the pass rules that failed
+  or changed, and the checks that did not run since a time (see [Decisions](#decisions)).
 - Three example designs exist for the open IHP SG13G2 PDK: a two-stage OTA, and two digital blocks
   (`examples/acc-sg13g2` and `examples/shreg-sg13g2`).
 
@@ -331,7 +335,8 @@ directory `<lock>.queue`, with one file for each waiting run. The lock needs sym
 
 ### Inbox
 
-A detached run that ends writes a marker file, `simra/inbox/<id>.json`, in the design root. The marker stays until
+A detached run that ends writes a marker file, `simra/inbox/<id>.json`, in the design root. (A decision that waits
+for the owner has a marker there too; see [Decisions](#decisions).) The marker stays until
 the result is read: by a wait (`simra wait`, `wait_experiments`, `simra jobs`, `run_jobs`) or by `simra show <id>`.
 So a session that did other work, or a new session, finds the runs that ended.
 
@@ -670,6 +675,141 @@ The flag is a statement, not a stop: a rule can change for a good reason. Then t
 earlier results must be judged again with the new rule or run again. The kernel does not apply the rule. For limits
 that the kernel applies, use [requirements](#check-requirements); a check records the hash of its requirements
 file.
+
+## Decisions
+
+In a long automatic session, an agent takes decisions: which variant stays, which rule decides a pass, an estimate in
+the place of a tool result, the start of a long run, what a result means for a claim. A result table does not show
+which lines were decisions. A decision record does. The agent writes it at the moment it decides.
+
+A decision has a class:
+
+| Class | The decision | What happens |
+| --- | --- | --- |
+| A | changes the scope, the cost, the schedule, an external claim or a number that a third party will see | It waits for the owner (status `waiting for owner`). A run that cites it does not start. |
+| B | is a technical direction that is costly to reverse | The work continues. The owner sees the decision in the digest. |
+| C | is routine | It is in the log only. |
+
+Record a decision from a plain command line:
+
+1. Write the decision as JSON:
+   ```json
+   {
+     "class": "A",
+     "statement": "Start the full flow of the block for about 6 hours",
+     "alternative": "run the flow to the global route only (10 minutes)",
+     "why": "the timing with extracted wires needs the detailed route",
+     "reverse": "stop the run; the hours that it used are lost",
+     "evidence": ["reports/grt_timing.txt"],
+     "affects": ["file:runs/full", "claim:the block meets its clock period"]
+   }
+   ```
+2. Run `npx simra decide decision.json`. The command writes `simra/decisions/<id>.json` and prints the record. For
+   class A it prints `STOP` and exits with 3. For class B and C it exits with 0.
+3. For class A: do not act on the decision. Do work that does not depend on it, and name the decision in the report.
+
+The fields:
+
+- `statement`, `why`: required. `alternative` (the alternative that was not taken) and `reverse` (how to reverse the
+  decision, and what that costs): required for class A and B.
+- `evidence`: files of the design root, or ids of experiments or checks. The record has the sha256 of each file. A path
+  to no file stops the record.
+- `affects`: required for class A and B. Each entry is `kind:ref` or `{"kind": ..., "ref": ...}`. The kinds are
+  `experiment` and `check` (a record id), `pass_rule` (its id or file), `file` (a file or a directory of the design
+  root), `requirement` and `assumption` (an id of `requirements.json`), and `claim` (a statement for a reader outside
+  the project, as text).
+- The class has a floor. A decision with a `claim` is class A. A decision with a `pass_rule`, a `requirement` or an
+  `assumption` is class B or A.
+
+A result rests on a decision in two ways:
+
+- The run cites it: `"decisions": ["<id>"]` in the run specification (`simra run`, `simra jobs`), or the parameter
+  `decisions` of `run_experiment` and of a job of `run_jobs`. The runner writes the ids to `experiment.json`. The run
+  does not start when a cited class A decision waits for the owner, or when the owner reversed a cited decision.
+- The decision names it in `affects`: an experiment, a check, the runs with a pass rule, the runs that read a file,
+  the checks with a requirement or an assumption. A check rests on a decision when one of its experiments does.
+
+The summary of such a result (`simra show`, `simra wait`, `run_experiment`, `wait_experiments`, and the summary of a
+check) has one of these lines:
+
+```
+UNCONFIRMED DECISION: this result rests on decision 20261128-101530-3fa2c1 (class A, waiting for owner since 2026-11-28T10:15:30.120Z): "Start the full flow of the block for about 6 hours". The owner did not confirm it.
+DECISION REVERSED: the owner (owner) reversed decision 20261128-101530-3fa2c1 on 2026-11-28T11:02:00.000Z: "...". This result depended on it. Do not use it for a claim.
+DECISION CHANGED: the owner (owner) changed decision 20261128-101530-3fa2c1 on 2026-11-28T11:02:00.000Z: now "...". This result depended on the earlier statement. Judge it again, or run again.
+```
+
+A line is a statement, as `PASS RULE CHANGED` is. It does not change the status of a run or of a check. A run that
+cites a decision also has a line `decision: <id> class B, adopted by policy (no answer of the owner): "..."`, so
+"adopted by policy" is never read as "confirmed by the owner".
+
+The owner answers a decision:
+
+1. Run `npx simra decision answer <id> confirmed --by <name>`. The other answers are `changed` (with
+   `--statement "<the statement of the owner>"`) and `reversed`. `--note <text>` adds a note. The id can be the 6
+   characters at its end.
+2. In a pi session, type `/decision <id> confirmed|changed|reversed [text]`. `/decision` alone shows the decisions that
+   wait.
+
+The answer is added to the record (`answers`: the answer, the time, the name, a note, and how it arrived). The status
+of the decision is its last answer. A `changed` or `reversed` answer lists the results that depended on the decision
+at that time (`marked`), and their summaries get the line. A result that comes later is not marked. The agent has no
+tool that answers. An answer from the command line records if it came from a terminal. When an agent runs `simra
+decision answer` in its shell, the pi extension adds a note to the result of the command.
+
+Other commands: `npx simra decision list [--class A,B] [--status waiting] [--since 24h]` and `npx simra decision show
+<id>` (the record, the evidence that changed after the decision, the results that rest on it now). In pi, the tools
+are `record_decision` and `decisions`.
+
+A class A decision that waits has a marker in the [inbox](#inbox), `simra/inbox/decision-<id>.json`. The answer of the
+owner removes it and writes `simra/inbox/answer-<id>.json`, which stays until the decision is read (`simra decision
+show`, tool `decisions`). `npx simra inbox` prints both. In pi, the inbox note names a decision that waits and an
+answer one time for each session, and an idle session starts a turn with the note. So a session that coordinates
+other agents learns that a decision waits, and a session that waits learns of the answer.
+
+Limits: the class is the statement of the agent. The kernel checks the fields and the floor, not the meaning. A
+decision that an agent does not record is not seen. The records are files: they are not a security boundary.
+
+### Owner digest
+
+`npx simra digest --since <time>` prints what the owner must see since a time: an ISO time (`2026-11-27`,
+`2026-11-27T18:00:00Z`) or a duration (`90m`, `24h`, `3d`, `2w`; default `24h`). In pi, type `/digest [time]`.
+
+```
+digest of acc since 2026-11-27 00:00 UTC (to 2026-11-28 07:30): 5 runs ended, 1 check
+
+WAITING FOR OWNER: 1 class A decision
+  A a1b2c3 since 2026-11-20 14:10: State 140 MHz as the clock rate of acc in the project table, from the timing of the global route
+    not taken: state no clock rate until the timing with extracted wires exists
+    reverse: replace the number in the table when the extracted timing exists
+    evidence: none; results that rest on it: 4
+  answer: simra decision answer <id> confirmed|changed|reversed --by <name>
+
+CLASS A ANSWERED: 2
+  A 3c4d5e confirmed by owner 2026-11-27 09:40: Start the detailed route of acc with 12 threads for about 5 hours
+  A 0a1b2c reversed by owner 2026-11-27 11:02; marked 1 result: Use the typical corner alone as the pass rule of the hold check
+
+CLASS B: 1 (the work continued)
+  B 7f8e9d not confirmed: Give the multiplier of acc one pipeline register
+    reverse: remove the register and the valid delay in src/acc.v, then run the flow again (about 1 ...; results: 0
+CLASS C: 1 logged
+
+PASS RULE: 2 changed, 2 failed
+  ...
+NOT RUN: 4 items in 2 records
+  ...
+```
+
+- A class A decision that waits is in every digest, also when it is older than the time.
+- A class A or B decision is in the digest when it was taken or answered since the time. Class C gives a count.
+- `PASS RULE`: the runs whose summary has `PASS RULE CHANGED`; the runs with a pass rule that did not complete; the
+  checks with the status `fail`. The kernel does not apply a pass rule, so the completed runs with a pass rule are a
+  count with the words "not judged".
+- `NOT RUN`: the rows of a check with the status `not_run`, and the runs whose record says "not run" (a measurement,
+  an item of a pack check, a report line or a diagnostic).
+- Each list shows 5 entries and the number of the others. A count is never cut. A decision file that cannot be read is
+  named.
+
+The digest reads the records. It runs no tool and writes nothing. `--json` gives the digest as a record.
 
 ## System prompt
 

@@ -26,6 +26,9 @@
 // runs that nobody has read to the next tool result, gives the session one more turn when the agent ends with such a
 // run, and, while the session is idle, starts a turn with them (SIMRA_INBOX_WAKE=off stops the idle wake;
 // SIMRA_INBOX_POLL_S sets the time between two looks, default 10 s).
+// Decisions: the tool record_decision writes a decision record (class A, B or C). A class A decision waits for the
+// owner: it is named in the inbox note until the owner answers, and the answer is named until the agent reads it. The
+// user answers with the command /decision; the agent has no tool that answers. The command /digest shows the owner digest.
 // All logic lives in @simra-tech/kernel, which works without pi.
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
@@ -81,6 +84,22 @@ import {
 	runJobs,
 	readInbox,
 	formatInbox,
+	readDecisionInbox,
+	formatDecisionInbox,
+	recordDecision,
+	formatRecorded,
+	listDecisions,
+	findDecision,
+	formatDecision,
+	formatDecisionList,
+	ackAnswers,
+	answerDecision,
+	waitsForOwner,
+	OWNER_ANSWERS,
+	type OwnerAnswer,
+	buildDigest,
+	formatDigest,
+	parseSince,
 	runtimeEstimate,
 	waitExperiments,
 	type AdapterManifest,
@@ -480,6 +499,30 @@ const PASS_RULE = Type.Object(
 	{ description: "The rule that decides pass or fail, recorded before the run starts" },
 );
 
+/** The parameter decisions of run_experiment and of a job of run_jobs. */
+const DECISIONS = Type.Array(Type.String(), { description: "The ids of the decisions (record_decision) that this run rests on. The run does not start when one of them is a class A decision that waits for the owner." });
+
+/**
+ * The parts of the command /decision: `<id> confirmed|changed|reversed [text]`. For changed, the text is the statement
+ * of the owner; for confirmed and reversed, it is a note. It throws with the usage on another form.
+ */
+export function parseDecisionCommand(args: string): { id: string; answer: OwnerAnswer; text: string | undefined } {
+	const m = /^\s*(\S+)\s+(\S+)(?:\s+([\s\S]*\S))?\s*$/.exec(args);
+	if (!m || !(OWNER_ANSWERS as string[]).includes(m[2])) throw new Error("usage: /decision <id> confirmed|changed|reversed [text]. For changed, the text is your statement; else it is a note. /decision alone lists the decisions that wait.");
+	return { id: m[1], answer: m[2] as OwnerAnswer, text: m[3] };
+}
+
+/** The note for a shell command of the agent that answers a decision (see answerNote). */
+export const ANSWER_NOTE =
+	"\nSimra decisions: this command recorded an answer to a decision from the shell of the agent. An answer is the word of the owner. " +
+	"The record has the name that the command gave and the fact that it did not come from a terminal. If the owner did not give this answer in this session, say so now and ask the owner to answer again.";
+
+/** A shell command of the agent that ran `simra decision answer` and did not fail: the result gets ANSWER_NOTE. */
+export function answerNote(event: Pick<ToolResultEvent, "toolName" | "isError" | "input">): string | null {
+	if (event.toolName !== "bash" || event.isError) return null;
+	return /\bdecision\s+answer\b/.test(String((event.input as { command?: unknown })?.command ?? "")) ? ANSWER_NOTE : null;
+}
+
 export const STATE_NOTE_MAX = 3000;
 /** The custom message type of an inbox note. */
 export const INBOX_TYPE = "simra-inbox";
@@ -593,18 +636,33 @@ export default function (pi: ExtensionAPI) {
 	// Inbox: the detached runs of the design root that ended and whose result nobody has read. Each run is named one
 	// time in a session; a read of the result (wait_experiments) takes it out of the inbox.
 	const inboxTold = new Set<string>();
+	/** The key of a decision marker in inboxTold: the answer has the time, so that a second answer is named too. */
+	const decisionKey = (m: { kind: string; decision: string; at: string }) => (m.kind === "answer" ? `answer:${m.decision}:${m.at}` : `decision:${m.decision}`);
 	/** The note for the runs that the session was not told about, and the call that marks them as told. */
 	function inboxFresh(cwd: string): { note: string; told: () => void } | null {
 		let fresh: ReturnType<typeof readInbox>;
+		let decisions: ReturnType<typeof readDecisionInbox>;
 		try {
-			fresh = readInbox(findRoot(cwd) ?? cwd).filter((m) => !inboxTold.has(m.experiment));
+			const root = findRoot(cwd) ?? cwd;
+			fresh = readInbox(root).filter((m) => !inboxTold.has(m.experiment));
+			// A class A decision that waits for the owner, and an answer of the owner that nobody has read: each is named
+			// one time in a session, as an ended run is.
+			decisions = readDecisionInbox(root).filter((m) => !inboxTold.has(decisionKey(m)));
 		} catch {
 			return null;
 		}
-		if (fresh.length === 0) return null;
+		if (fresh.length === 0 && decisions.length === 0) return null;
+		const notes = [
+			fresh.length ? `Simra ${formatInbox(fresh, `wait_experiments with ids ${JSON.stringify(fresh.map((m) => m.experiment))}`)}` : null,
+			decisions.length ? `Simra ${formatDecisionInbox(decisions, "decisions with the id", "the user of the session types /decision <id> confirmed|changed|reversed [text], or simra decision answer in a terminal").replaceAll("\ninbox: ", "\nSimra inbox: ")}` : null,
+			decisions.some((m) => m.kind === "decision") ? "Name each decision that waits in your report to the owner. Do not answer a decision yourself." : null,
+		];
 		return {
-			note: `Simra ${formatInbox(fresh, `wait_experiments with ids ${JSON.stringify(fresh.map((m) => m.experiment))}`)}`,
-			told: () => fresh.forEach((m) => inboxTold.add(m.experiment)),
+			note: notes.filter((n) => n !== null).join("\n"),
+			told: () => {
+				for (const m of fresh) inboxTold.add(m.experiment);
+				for (const m of decisions) inboxTold.add(decisionKey(m));
+			},
 		};
 	}
 	function inboxNote(cwd: string): string | null {
@@ -736,7 +794,7 @@ export default function (pi: ExtensionAPI) {
 			process.env.SIMRA_FLOW_CHECK === "off" ? null : timingNote(event, ctx.cwd, since, sizes),
 		];
 		const inbox = inboxNote(ctx.cwd);
-		const notes = [await netlistNote(event, ctx.cwd), ...flowNotes, recordNote, outputNote, inbox === null ? null : `\n${inbox}`, clock?.(Date.now()) ?? null].filter((n): n is string => n !== null);
+		const notes = [await netlistNote(event, ctx.cwd), ...flowNotes, recordNote, outputNote, answerNote(event), inbox === null ? null : `\n${inbox}`, clock?.(Date.now()) ?? null].filter((n): n is string => n !== null);
 		if (notes.length === 0) return;
 		return { content: [...event.content, ...notes.map((text) => ({ type: "text" as const, text }))], structuredContent: event.structuredContent };
 	});
@@ -870,6 +928,107 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
+		name: "record_decision",
+		label: "Record decision",
+		description: [
+			"Record a decision at the moment you take it: simra/decisions/<id>.json in the design root.",
+			"class A: the decision changes the scope, the cost, the schedule, an external claim or a number that a third party will",
+			"see (for example: a long or costly run, a relaxed requirement, an estimate in the place of a tool result in a report, what",
+			"a result means for a claim). It waits for the owner: the tool result says STOP, and a run that cites it does not start.",
+			"class B: a technical direction that is costly to reverse (for example which architecture variant stays, a pass rule).",
+			"The work continues, and the owner sees the decision in the digest.",
+			"class C: routine. It is logged only.",
+			"A decision with a claim in affects is class A. A decision with a pass_rule, requirement or assumption in affects is",
+			"class B or A. The owner answers a decision (confirmed, changed, reversed); you cannot answer it. The summary of a result",
+			"that rests on a class A decision without an answer has the line UNCONFIRMED DECISION.",
+		].join("\n"),
+		promptSnippet: "record a decision (class A waits for the owner, B is listed, C is logged)",
+		promptGuidelines: [
+			"When you choose between alternatives and the choice changes scope, cost, schedule, a claim or a number for a reader outside the project (class A), or is costly to reverse (class B), call record_decision before you act on it. After a class A decision, stop the work that depends on it and wait for the owner; do other work or end with the decision named in your report.",
+			"Give the decisions that a run rests on to run_experiment in decisions. When a summary has a line UNCONFIRMED DECISION, DECISION REVERSED or DECISION CHANGED, repeat it with the result in your report.",
+		],
+		parameters: Type.Object({
+			class: Type.Union([Type.Literal("A"), Type.Literal("B"), Type.Literal("C")], { description: "A: scope, cost, schedule, external claim or number for a third party (waits for the owner). B: technical direction that is costly to reverse (listed). C: routine (logged)." }),
+			statement: Type.String({ description: "What you decided, in one sentence" }),
+			alternative: Type.Optional(Type.String({ description: "The alternative that you did not take (required for A and B)" })),
+			why: Type.String({ description: "Why, in one or two sentences" }),
+			reverse: Type.Optional(Type.String({ description: "How to reverse the decision, and what that costs (required for A and B)" })),
+			evidence: Type.Optional(Type.Array(Type.String(), { description: "Files of the design root, or ids of experiments or checks. Leave it empty when there is none; do not name a file that does not exist." })),
+			affects: Type.Optional(
+				Type.Array(
+					Type.Object({
+						kind: Type.Union(["experiment", "check", "pass_rule", "file", "requirement", "assumption", "claim"].map((k) => Type.Literal(k)), { description: "experiment or check: a record id. pass_rule: its id or file. file: a file or directory of the design root. requirement, assumption: an id of requirements.json. claim: the statement for an outside reader, as text." }),
+						ref: Type.String(),
+					}),
+					{ description: "What the decision affects (required for A and B). The results of these experiments, checks, pass rules and files rest on the decision." },
+				),
+			),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const root = findRoot(ctx.cwd) ?? ctx.cwd;
+			const decision = recordDecision(root, params as Parameters<typeof recordDecision>[1]);
+			// This session knows its own decision: the inbox note is for the other sessions of the design root.
+			inboxTold.add(decisionKey({ kind: "decision", decision: decision.id, at: decision.created_at }));
+			return { content: [{ type: "text", text: formatRecorded(root, decision) }], details: { id: decision.id, class: decision.class, status: decision.status } };
+		},
+	});
+	pi.registerTool({
+		name: "decisions",
+		label: "Decisions",
+		description: [
+			"List the decision records of the design root (simra/decisions), or show one with its answers and the results that rest",
+			"on it. Use it to see if the owner answered a class A decision. A decision is found by its id, or by the start or end of",
+			"its id. The tool reads; it does not answer a decision.",
+		].join("\n"),
+		promptSnippet: "list the recorded decisions, or show one with the answer of the owner",
+		parameters: Type.Object({
+			id: Type.Optional(Type.String({ description: "Show this decision (default: list all)" })),
+			class: Type.Optional(Type.Array(Type.Union([Type.Literal("A"), Type.Literal("B"), Type.Literal("C")]), { description: "List only these classes" })),
+			waiting: Type.Optional(Type.Boolean({ description: "List only the class A decisions that wait for the owner" })),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const root = findRoot(ctx.cwd) ?? ctx.cwd;
+			if (params.id) {
+				const decision = findDecision(root, params.id);
+				// The agent read the answer of the owner: it leaves the inbox.
+				ackAnswers(root, [decision.id]);
+				return { content: [{ type: "text", text: formatDecision(root, decision) }], details: { id: decision.id, class: decision.class, status: decision.status } };
+			}
+			const found = listDecisions(root).filter((d) => (!params.class || params.class.includes(d.class)) && (!params.waiting || waitsForOwner(d)));
+			return { content: [{ type: "text", text: formatDecisionList(found) }], details: { count: found.length, waiting: found.filter(waitsForOwner).length } };
+		},
+	});
+	// The answer of the owner comes from the user of the session, through a command: the model cannot call a command.
+	pi.registerCommand("decision", {
+		description: "Answer a decision: /decision <id> confirmed|changed|reversed [text]. Without arguments: the decisions that wait.",
+		handler: async (args, ctx) => {
+			const root = findRoot(ctx.cwd) ?? ctx.cwd;
+			try {
+				if (!args.trim()) {
+					const waiting = listDecisions(root).filter(waitsForOwner);
+					ctx.ui.notify(waiting.length ? waiting.map((d) => formatDecision(root, d)).join("\n\n") : "no class A decision waits for the owner", "info");
+					return;
+				}
+				const { id, answer, text } = parseDecisionCommand(args);
+				const decision = answerDecision(root, id, { answer, by: "user of the session", via: "session", ...(answer === "changed" ? { statement: text } : text ? { note: text } : {}) });
+				ctx.ui.notify(formatDecision(root, decision), "info");
+			} catch (e) {
+				ctx.ui.notify((e as Error).message, "error");
+			}
+		},
+	});
+	pi.registerCommand("digest", {
+		description: "Owner digest: /digest [since], for example /digest 24h or /digest 2026-11-27. Decisions of class A and B, pass rules that failed or changed, checks that did not run.",
+		handler: async (args, ctx) => {
+			try {
+				ctx.ui.notify(formatDigest(buildDigest(findRoot(ctx.cwd) ?? ctx.cwd, parseSince(args.trim() || "24h"))), "info");
+			} catch (e) {
+				ctx.ui.notify((e as Error).message, "error");
+			}
+		},
+	});
+
+	pi.registerTool({
 		name: "run_experiment",
 		label: "Run experiment",
 		description: [
@@ -889,6 +1048,8 @@ export default function (pi: ExtensionAPI) {
 			"heavy true marks a heavy job (place and route, a full flow, a large DRC or extraction deck). One heavy job runs at a",
 			"time on a machine: the run waits in a queue with the status queued until the heavy-job lock is free. Start a heavy job",
 			"detached. When it ends, the session gets a note (Simra inbox) with its id.",
+			"decisions lists the ids of the decisions (record_decision) that the run rests on. They are recorded with the run. The run",
+			"does not start when one of them is a class A decision that waits for the owner, or a decision that the owner reversed.",
 			"Environments are defined in simra.config.json in the design root ('local' always exists).",
 			"Available adapters:",
 			adapterCatalog(),
@@ -917,6 +1078,7 @@ export default function (pi: ExtensionAPI) {
 			),
 			pass_rule: Type.Optional(PASS_RULE),
 			heavy: Type.Optional(Type.Boolean({ description: "A heavy job: it waits for the heavy-job lock of the machine, one heavy job at a time (default: the heavy_operations of simra.config.json)" })),
+			decisions: Type.Optional(DECISIONS),
 		}),
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const root = findRoot(ctx.cwd) ?? ctx.cwd;
@@ -930,6 +1092,7 @@ export default function (pi: ExtensionAPI) {
 				timeoutS: params.timeout_s,
 				passRule: params.pass_rule,
 				heavy: params.heavy,
+				decisions: params.decisions,
 			};
 			if (params.detached) {
 				const started = await runExperiment({ ...opts, detached: true });
@@ -1002,6 +1165,7 @@ export default function (pi: ExtensionAPI) {
 					timeout_s: Type.Optional(Type.Number({ description: "Watchdog of this job in seconds (default 3600)" })),
 					pass_rule: Type.Optional(PASS_RULE),
 					heavy: Type.Optional(Type.Boolean({ description: "A heavy job: it waits for the heavy-job lock of the machine" })),
+					decisions: Type.Optional(DECISIONS),
 				}),
 				{ minItems: 1 },
 			),
