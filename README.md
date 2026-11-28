@@ -81,11 +81,18 @@ The first targets are analog and mixed-signal design with an open PDK and open-s
 - Requirements can reduce a sweep table with the bracket rule (kind `sweep`), gate an RF block on mu over a band at
   each corner for each active stage (`gates.stability`), and cite assumption ids (`assumptions`); `simra assumptions`
   lists the rows of an assumption.
+- A block declares the corners that it must pass (`gates.corners`). A requirement without a result at a required
+  corner gives a gate row `not_run`; the typical corner does not cover it (see
+  [Required-corner gate](#required-corner-gate)).
 - The commands `simra pack init` and `simra pack check` add a PDK to a site: an adapter proposes a technology pack
   from the kit, the user confirms it, and the adapter checks it (see "Add a PDK").
 - The openroad adapter has three operations: `parse`, `timing` and `spef`. The librelane adapter has four operations: `read`, `compare`,
   `replay` and `preflight`. The pi extension adds the findings of `read` to the result of a shell command that runs
   LibreLane or reads a run directory (see [Digital flow](#digital-flow)).
+- A decision record (`simra decide`, the pi tool `record_decision`) holds a decision of an agent with its class: class
+  A waits for the owner, class B is listed, class C is logged. The summary of a result that rests on a class A decision
+  without an answer has the line `UNCONFIRMED DECISION`. `simra digest` prints the decisions, the pass rules that failed
+  or changed, and the checks that did not run since a time (see [Decisions](#decisions)).
 - Three example designs exist for the open IHP SG13G2 PDK: a two-stage OTA, and two digital blocks
   (`examples/acc-sg13g2` and `examples/shreg-sg13g2`).
 
@@ -331,7 +338,8 @@ directory `<lock>.queue`, with one file for each waiting run. The lock needs sym
 
 ### Inbox
 
-A detached run that ends writes a marker file, `simra/inbox/<id>.json`, in the design root. The marker stays until
+A detached run that ends writes a marker file, `simra/inbox/<id>.json`, in the design root. (A decision that waits
+for the owner has a marker there too; see [Decisions](#decisions).) The marker stays until
 the result is read: by a wait (`simra wait`, `wait_experiments`, `simra jobs`, `run_jobs`) or by `simra show <id>`.
 So a session that did other work, or a new session, finds the runs that ended.
 
@@ -513,7 +521,7 @@ simulator fails in the stored device-class probe has an entry.
 | Xyce 7.10 | any | no autonomous HB or HB noise, .step with HB, YLIN outside HB, .temp ignored |
 | ngspice 46 | IHP SG13G2 | KLU on a large mixed deck, Monte Carlo DC with reltol 1e-4, HBT self-heating, antenna diode step |
 | ngspice 46 | any | pulse with PW = 0, trnoise with a round step, trnoise current source, threads in a container, .pss |
-| LibreLane 3.1.0.dev2 and 3.1.0.dev6 | any | timing steps in the layout analyse one corner, integer clock tree derate (open), empty step log, two OpenROAD builds, extraction with layer resistance from the technology LEF |
+| LibreLane 3.1.0.dev2 and 3.1.0.dev6 | any | timing steps in the layout analyse one corner, integer clock tree derate (open), empty step log, two OpenROAD builds, extraction with layer resistance from the technology LEF, a corner that the run did not analyse has no number |
 | OpenROAD 26Q1-1024 and 26Q4, OpenSTA 2.7.0, 3.1.0 and 3.2.0 | any | hold repair stops after one pass, `signed` in a netlist, `link_design` with a name that the netlist does not have, timing before the placement is not a result, `extract_parasitics -lef_res` |
 | Yosys 0.67 and 0.71 | any | `abc -D` without `-constr` has no effect (open), `signed` in the written netlist, `$paramod` module names |
 | Verilator 5.050 | any | no trace of names that start with an underscore |
@@ -670,6 +678,168 @@ The flag is a statement, not a stop: a rule can change for a good reason. Then t
 earlier results must be judged again with the new rule or run again. The kernel does not apply the rule. For limits
 that the kernel applies, use [requirements](#check-requirements); a check records the hash of its requirements
 file.
+
+## Decisions
+
+In a long automatic session, an agent takes decisions: which variant stays, which rule decides a pass, an estimate in
+the place of a tool result, the start of a long run, what a result means for a claim. A result table does not show
+which lines were decisions. A decision record does. The agent writes it at the moment it decides.
+
+A decision has a class:
+
+| Class | The decision | What happens |
+| --- | --- | --- |
+| A | changes the scope, the cost, the schedule, an external claim or a number that a third party will see | It waits for the owner (status `waiting for owner`). A run that cites it does not start. |
+| B | is a technical direction that is costly to reverse | The work continues. The owner sees the decision in the digest. |
+| C | is routine | It is in the log only. |
+
+Record a decision from a plain command line:
+
+1. Write the decision as JSON:
+   ```json
+   {
+     "class": "A",
+     "statement": "Start the full flow of the block for about 6 hours",
+     "alternative": "run the flow to the global route only (10 minutes)",
+     "why": "the timing with extracted wires needs the detailed route",
+     "reverse": "stop the run; the hours that it used are lost",
+     "evidence": ["reports/grt_timing.txt"],
+     "affects": ["file:runs/full", "claim:the block meets its clock period"]
+   }
+   ```
+2. Run `npx simra decide decision.json`. The command writes `simra/decisions/<id>.json` and prints the record. For
+   class A it prints `STOP` and exits with 3. For class B and C it exits with 0.
+3. For class A: do not act on the decision. Do work that does not depend on it, and name the decision in the report.
+
+The fields:
+
+- `statement`, `why`: required. `alternative` (the alternative that was not taken) and `reverse` (how to reverse the
+  decision, and what that costs): required for class A and B.
+- `evidence`: files of the design root, or ids of experiments or checks. The record has the sha256 of each file. A path
+  to no file stops the record, and so does a link to a file outside the design root.
+- `affects`: required for class A and B. Each entry is `kind:ref` or `{"kind": ..., "ref": ...}`. The kinds are
+  `experiment` and `check` (a record id), `pass_rule` (its id or file), `file` (a file or a directory of the design
+  root; `.` is the root), `requirement` and `assumption` (an id of `requirements.json`), and `claim` (a statement for a
+  reader outside the project, as text). An experiment or a check that is named must be there, with its full id.
+- The class has a floor. A decision with a `claim` is class A. A decision with a `pass_rule`, a `requirement` or an
+  `assumption` is class B or A.
+
+A result rests on a decision in two ways:
+
+- The run cites it: `"decisions": ["<id>"]` in the run specification (`simra run`, `simra jobs`), or the parameter
+  `decisions` of `run_experiment` and of a job of `run_jobs`. For `simra check`, an experiment of `requirements.json`
+  has the field: `"experiments": {"ac": {..., "decisions": ["<id>"]}}`. The runner writes the ids to
+  `experiment.json`. The run does not start when a cited class A decision waits for the owner, when the owner reversed
+  a cited decision, or when the record of a cited decision cannot be read. The runner checks this two times: when the
+  run is recorded, and again when the adapter is about to start (a run can wait in the queue of the
+  [heavy-job lock](#heavy-jobs-one-at-a-time) while the owner answers). A check does not start a run when one of its
+  experiments cites such a decision.
+- The decision names it in `affects`: an experiment, a check, the runs with a pass rule (by its id or its file), the
+  runs that read a file, the checks with a requirement or an assumption (a scored row or a reported row). A check
+  rests on a decision when one of its experiments does.
+
+The summary of such a result (`simra show`, `simra wait`, `run_experiment`, `wait_experiments`, and the summary of a
+check) has one of these lines:
+
+```
+UNCONFIRMED DECISION: this result rests on decision 20261128-101530-3fa2c1 (class A, waiting for owner since 2026-11-28T10:15:30.120Z): "Start the full flow of the block for about 6 hours". The owner did not confirm it.
+DECISION REVERSED: the owner (owner) reversed decision 20261128-101530-3fa2c1 on 2026-11-28T11:02:00.000Z: "...". This result depended on it. Do not use it for a claim.
+DECISION CHANGED: the owner (owner) changed decision 20261128-101530-3fa2c1 on 2026-11-28T11:02:00.000Z: now "...". This result depended on the earlier statement. Judge it again, or run again.
+```
+
+A line is a statement, as `PASS RULE CHANGED` is. It does not change the status of a run or of a check. A later
+answer does not take a line away: a result that a `changed` answer marked keeps `DECISION CHANGED` after the owner
+confirms the new statement, and the line then ends with the last answer. A run that
+cites a decision also has a line `decision: <id> class B, adopted by policy (no answer of the owner): "..."`, so
+"adopted by policy" is never read as "confirmed by the owner".
+
+The owner answers a decision:
+
+1. Run `npx simra decision answer <id> confirmed --by <name>`. The other answers are `changed` (with
+   `--statement "<the statement of the owner>"`) and `reversed`. `--note <text>` adds a note. The id can be the 6
+   characters at its end.
+2. In a pi session, type `/decision <id> confirmed|changed|reversed [text]`. `/decision` alone shows the decisions that
+   wait.
+
+The answer is added to the record (`answers`: the answer, the time, the name, a note, and how it arrived). The status
+of the decision is its last answer. The statement of a `changed` answer holds until the owner changes it again. A
+`changed` or `reversed` answer lists the results that depended on the decision at that time (`marked`), and their
+summaries get the line. A run without a result at that time is in the list with `no_result`: it is not counted as a
+result, and its later result has the line. A result of a run that starts after the answer is not marked. The agent
+has no tool that answers. An answer from the command line records if it came from a terminal. When a shell command
+of the agent records an answer that did not come from a terminal, the pi extension adds a note to the result of the
+command. The note follows the record, not the text of the command.
+
+Two answers at the same time are recorded one after the other. A writer holds the lock `<record>.lock` (a symbolic
+link that names its process). A lock is taken over only when its process is gone, never for its age. When the lock
+cannot be had in 5 seconds, the command stops with an error and writes nothing.
+
+A record that is not complete is not read: for example a record without its status, or with a status that does not
+follow from its class and its answers. `simra digest` and `simra decision list` name the file, and a run that cites
+the decision does not start.
+
+Other commands: `npx simra decision list [--class A,B] [--status waiting] [--since 24h]` and `npx simra decision show
+<id>` (the record, the evidence that changed after the decision, the results that rest on it now). In pi, the tools
+are `record_decision` and `decisions`.
+
+A class A decision that waits has a marker in the [inbox](#inbox), `simra/inbox/decision-<id>.json`. The answer of the
+owner removes it and writes `simra/inbox/answer-<id>.json`, which stays until the decision is read (`simra decision
+show`, tool `decisions`). `npx simra inbox` prints both. What the inbox says comes from the records: a decision that
+waits is named also when its marker is lost, and an answer is named with the last answer of the record. A read takes
+out the answer that it showed; a newer answer stays. In pi, the inbox note names a decision that waits and an
+answer one time for each session, and an idle session starts a turn with the note. So a session that coordinates
+other agents learns that a decision waits, and a session that waits learns of the answer.
+
+Limits: the class is the statement of the agent. The kernel checks the fields and the floor, not the meaning. A
+decision that an agent does not record is not seen. The records are files: they are not a security boundary. The lock
+of a record knows the processes of one host: on a file system that two hosts share, a lock of the other host is never
+taken over.
+
+### Owner digest
+
+`npx simra digest --since <time>` prints what the owner must see since a time: an ISO time (`2026-11-27`,
+`2026-11-27T18:00:00Z`) or a duration (`90m`, `24h`, `3d`, `2w`; default `24h`). In pi, type `/digest [time]`.
+
+```
+digest of acc since 2026-11-27 00:00 UTC (to 2026-11-28 07:30): 5 runs ended, 1 check
+
+WAITING FOR OWNER: 1 class A decision
+  A a1b2c3 since 2026-11-20 14:10: State 140 MHz as the clock rate of acc in the project table, from the timing of the global route
+    not taken: state no clock rate until the timing with extracted wires exists
+    reverse: replace the number in the table when the extracted timing exists
+    evidence: none; results that rest on it: 4
+  answer: simra decision answer <id> confirmed|changed|reversed --by <name>
+
+CLASS A ANSWERED: 2
+  A 3c4d5e confirmed by owner 2026-11-27 09:40: Start the detailed route of acc with 12 threads for about 5 hours
+  A 0a1b2c reversed by owner 2026-11-27 11:02; marked 1 result: Use the typical corner alone as the pass rule of the hold check
+
+CLASS B: 1 (the work continued)
+  B 7f8e9d not confirmed: Give the multiplier of acc one pipeline register
+    reverse: remove the register and the valid delay in src/acc.v, then run the flow again (about 1 ...; results: 0
+CLASS C: 1 logged
+
+PASS RULE: 2 changed, 2 failed
+  ...
+NOT RUN: 4 items in 2 records
+  ...
+```
+
+- A class A decision that waits is in every digest, also when it is older than the time.
+- A class A or B decision is in the digest when it was taken or answered since the time. Class C gives a count, and
+  one line for each class C decision that the owner answered.
+- `PASS RULE`: the runs whose summary has `PASS RULE CHANGED`; the runs with a pass rule that did not complete; the
+  checks with the status `fail`. A run that ended before the time is named when its rule file or its record changed
+  in the time of the digest (by the change time of the files). The kernel does not apply a pass rule, so the completed
+  runs with a pass rule are a count with the words "not judged".
+- `NOT RUN`: the rows of a check with the status `not_run`, and the runs whose record says "not run" (a measurement,
+  an item of a pack check, a report line or a diagnostic). Two lines with the same check name are one item; two
+  checks are two items. The rows of a check with the status `not_measured` are named with the words "not measured",
+  and the heading has their count (`NOT MEASURED`).
+- Each list shows 5 entries and the number of the others. A count is never cut. A decision file that cannot be read is
+  named.
+
+The digest reads the records. It runs no tool and writes nothing. `--json` gives the digest as a record.
 
 ## System prompt
 
@@ -1171,6 +1341,52 @@ condition:
 2. Make its `band_hz` contain the gate band (default 1 GHz to 300 GHz), and give it each condition of the gate.
 3. Run the check. A gate row takes the worst of the mu rows that cover it. Without such a row, the gate row is
    `not_run` with the stage, band and condition in the reason, so the block cannot pass without the record.
+
+### Required-corner gate
+
+A block that passes at the typical corner can fail at another corner, for example cold at low voltage. A block
+declares the corners that it must pass in `gates.corners`:
+
+```json
+"gates": { "corners": { "required": ["tt_25c", "ss_m40c_lowv", "ff_125c_highv"] } }
+```
+
+1. Define each required corner in `conditions`.
+2. Give each requirement its `conditions`. The gate covers every requirement that has conditions. To cover other
+   requirements, name them: `"requirements": ["gain", "setup"]`.
+3. Run the check. The check adds one gate row per requirement of the gate and required corner,
+   `gate corners <requirement> @ <corner>`.
+
+A gate row takes the value and the status of the row of its requirement at that corner, when that row is `pass` or
+`fail`. In every other case the gate row is `not_run`, and the reason says why:
+
+- the requirement has no row at the corner (its `conditions` do not list it);
+- the corner is only in `reported` (a reported row is not scored);
+- the check did not select the row (`--only`, `--conditions`);
+- the experiment did not complete, or it gave no value at the corner;
+- the row reads the same measurement with the same inputs as another condition of the requirement. Such a row is not a
+  result at its corner: nothing in the file ties it to the corner. The check of the file reports this as an error
+  before a run starts.
+
+So a required corner is never left out of the verdict, and the pass at the typical corner never covers it: the check
+is `incomplete`, not `pass`.
+
+An experiment can give one measurement per corner in one result. The `read` operation of the librelane adapter gives
+`setup_ws_ns@<corner>` and `hold_ws_ns@<corner>`. Write `"measurement": "setup_ws_ns@{condition}"`: `{condition}` is
+replaced with the condition name. Without `{condition}` in the name (and without inputs of their own), all corners
+would read one value, and the file is refused. A corner that the flow did not analyse has no measurement, so its gate
+row is `not_run`. The gate row shows the limit of its corner; when the file gives no limit for the corner, it shows
+"not given for this corner". `examples/acc-sg13g2/requirements.json` is such a file for a public block, with its result in the README
+of the example.
+
+Why the list is in `requirements.json`, not in the configuration of the flow:
+
+- The configuration of the flow says what a tool analysed. The list says what the block must pass. When both are one
+  field, a flow that leaves a corner out also removes the requirement, and nothing shows it.
+- An analog block has no flow configuration. `requirements.json` holds the corners of an analog and of a digital
+  block in the same form (`conditions`).
+- Each verdict records the sha256 of the requirements file, so a change of the list is in the record. A
+  [decision](#decisions) can name the file or a requirement in `affects`.
 
 ### Monte Carlo rows
 

@@ -1,0 +1,21 @@
+{
+  "schema": "simra.result/0",
+  "experiment": "20261127-090000-b2c3d4",
+  "status": "completed",
+  "started_at": "2026-11-27T09:00:20.000Z",
+  "finished_at": "2026-11-27T09:00:20.000Z",
+  "duration_s": 1,
+  "exit_code": 0,
+  "signal": null,
+  "errors": [],
+  "tool": null,
+  "input_files": null,
+  "outputs": [],
+  "measurements": {},
+  "diagnostics": [],
+  "logs": {
+    "adapter_stdout": "adapter.stdout.log",
+    "adapter_stderr": "adapter.stderr.log"
+  },
+  "pass_rule_sha256": "dca3b6cebe9b119d47c8ab49de6027edaf49c97009c1651cac9c0e0876843516"
+}

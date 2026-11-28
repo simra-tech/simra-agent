@@ -1,0 +1,35 @@
+{
+  "schema": "simra.experiment/0",
+  "id": "20261127-090000-b2c3d4",
+  "created_at": "2026-11-27T09:00:00.000Z",
+  "purpose": "timing of the second global route",
+  "adapter": {
+    "name": "librelane",
+    "version": "0.1.0",
+    "dir": "adapters/librelane",
+    "files": []
+  },
+  "operation": "read",
+  "inputs": {
+    "run": "runs/grt2"
+  },
+  "environment": {
+    "name": "local",
+    "kind": "local"
+  },
+  "design": {
+    "root": ".",
+    "git_commit": null,
+    "git_dirty": null
+  },
+  "simra": {
+    "kernel_version": "0.1.0"
+  },
+  "pass_rule": {
+    "key": "timing",
+    "text": "setup slack >= 0 ns at the three corners, with extracted wires",
+    "sha256": "dca3b6cebe9b119d47c8ab49de6027edaf49c97009c1651cac9c0e0876843516",
+    "recorded_at": "2026-11-27T09:00:00.000Z",
+    "changed_after_results": []
+  }
+}

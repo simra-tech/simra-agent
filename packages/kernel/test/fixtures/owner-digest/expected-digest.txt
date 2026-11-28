@@ -1,0 +1,34 @@
+digest of owner-digest since 2026-11-27 00:00 UTC (to 2026-11-28 07:30): 5 runs ended, 1 check
+
+WAITING FOR OWNER: 1 class A decision
+  A a1b2c3 since 2026-11-20 14:10: State 140 MHz as the clock rate of acc in the project table, from the timing of the global route
+    not taken: state no clock rate until the timing with extracted wires exists
+    reverse: replace the number in the table when the extracted timing exists
+    evidence: none; results that rest on it: 4
+  answer: simra decision answer <id> confirmed|changed|reversed --by <name>
+
+CLASS A ANSWERED: 2
+  A 3c4d5e confirmed by owner 2026-11-27 09:40: Start the detailed route of acc with 12 threads for about 5 hours
+  A 0a1b2c reversed by owner 2026-11-27 11:02; marked 1 result: Use the typical corner alone as the pass rule of the hold check
+
+CLASS B: 1 (the work continued)
+  B 7f8e9d not confirmed: Give the multiplier of acc one pipeline register
+    reverse: remove the register and the valid delay in src/acc.v, then run the flow again (about 1 ...; results: 0
+CLASS C: 1 logged
+DECISION RECORD NOT READ: simra/decisions/20261127-130000-ffffff.json cannot be read. It is not in this digest.
+
+PASS RULE: 2 changed, 2 failed
+  CHANGED 20261127-130000-d4e5f6 librelane.read: experiment 20261127-090000-b2c3d4 (ended 2026-11-27T09:00:20.000Z) used sha256:dca3b6cebe9b for the rule timing; this run uses sha256:1d2...
+  CHANGED 20261127-140000-a7b8c9 openroad.timing: experiment 20261127-090000-b2c3d4 (ended 2026-11-27T09:00:20.000Z) used sha256:dca3b6cebe9b for the rule timing; this run uses sha256:1d2...
+  FAILED 20261127-140000-a7b8c9 openroad.timing: the run ended with the status failed; pass rule timing
+  FAILED check 20261127-133000-9a8b7c: 1 row fail of 6
+  not judged: 3 completed runs have a pass rule. The kernel records a pass rule; it does not apply it.
+
+NOT RUN: 4 items in 2 records
+  run 20261127-140000-a7b8c9 openroad.timing: 1 not run
+    timing_check: not run: the log has no slack line and no path report
+  check 20261127-133000-9a8b7c: 3 not run
+    gate corners setup @ nom_fast_1p32V_m40C: requirement setup has no row at the required corner nom_fast_1p32V_m40C. A pass at an...
+    gate corners hold @ nom_fast_1p32V_m40C: requirement hold has no row at the required corner nom_fast_1p32V_m40C. A pass at anot...
+    gate corners hold @ nom_slow_1p08V_125C: requirement hold has no row at the required corner nom_slow_1p08V_125C. A pass at anot...
+RUNS THAT DID NOT COMPLETE: 1 failed, 1 timeout (simra list)

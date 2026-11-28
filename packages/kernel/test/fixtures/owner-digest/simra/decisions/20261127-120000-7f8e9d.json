@@ -1,0 +1,21 @@
+{
+  "schema": "simra.decision/0",
+  "id": "20261127-120000-7f8e9d",
+  "created_at": "2026-11-27T12:00:00.000Z",
+  "class": "B",
+  "alternative": "keep the multiplier in one cycle and lower the clock rate",
+  "reverse": "remove the register and the valid delay in src/acc.v, then run the flow again (about 1 hour)",
+  "evidence": [],
+  "affects": [
+    {
+      "kind": "file",
+      "ref": "src/acc.v"
+    }
+  ],
+  "decided_by": null,
+  "status": "adopted",
+  "authority": "policy",
+  "answers": [],
+  "statement": "Give the multiplier of acc one pipeline register",
+  "why": "the multiplier path has 31 logic levels at the slow corner"
+}

@@ -17,6 +17,7 @@
 // PDK facts.
 
 import { type ConnectionRow, connectionGate } from "./connections.ts";
+import { citeDecisions } from "./decisions.ts";
 import { type Analysis, checkNetlist, fitBandFindings, fittedModels, type InstanceParamClass, type NetlistRules } from "./netlist.ts";
 import { designTechnologyDirs, findPack } from "./packs.ts";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
@@ -112,6 +113,18 @@ export interface DeviceCheckGate {
 	environment?: string;
 }
 
+/**
+ * The required-corner gate: the corners (conditions) that the block must pass. Each requirement of the gate needs a
+ * result at each required corner. Without one, its gate row is not run: a pass at another corner (for example the
+ * typical corner) does not cover a required corner, and a required corner is never left out of the verdict.
+ */
+export interface CornersGate {
+	/** The required corners: names of conditions of the file. */
+	required: string[];
+	/** The requirements of the gate (default: every requirement that has conditions). */
+	requirements?: string[];
+}
+
 export interface StabilityGate {
 	/** The active RF stages of the block. A mu requirement names its stage in "stage". */
 	stages: string[];
@@ -137,7 +150,10 @@ export interface Requirement {
 	experiment: string;
 	/** Default "measurement". */
 	kind?: RequirementKind;
-	/** Measurement name in the result of that experiment (kind "measurement" only). */
+	/**
+	 * Measurement name in the result of that experiment (kind "measurement" only). "{condition}" is replaced with the
+	 * condition name, for an experiment that gives one measurement per corner (for example "setup_ws_ns@{condition}").
+	 */
 	measurement?: string;
 	/** s_db and mu: the Touchstone file, by its path or the end of its path; optional when the experiment has one. */
 	touchstone?: string;
@@ -201,6 +217,8 @@ export interface ExperimentTemplate {
 	timeout_s?: number;
 	/** Assumptions that every row of this experiment depends on. */
 	assumptions?: string[];
+	/** The decisions that each run of this experiment rests on (ids of simra/decisions). See RunOptions.decisions. */
+	decisions?: string[];
 }
 
 export interface RequirementsFile {
@@ -214,7 +232,7 @@ export interface RequirementsFile {
 	experiments: Record<string, ExperimentTemplate>;
 	requirements: Requirement[];
 	assumptions?: Record<string, Assumption>;
-	gates?: { stability?: StabilityGate; connections?: ConnectionsGate; limits?: LimitsGate; netlist?: NetlistRules; device_check?: DeviceCheckGate };
+	gates?: { stability?: StabilityGate; connections?: ConnectionsGate; limits?: LimitsGate; netlist?: NetlistRules; device_check?: DeviceCheckGate; corners?: CornersGate };
 }
 
 /**
@@ -229,7 +247,8 @@ export interface VerdictRow {
 	condition: string | null;
 	measurement: string;
 	op: Requirement["op"];
-	limit: Limit;
+	/** null: a gate row of a corner for which the file gives no limit. */
+	limit: Limit | null;
 	value: number | null;
 	unit: string | null;
 	/** Distance to the limit in the measurement unit; positive means inside the limit. */
@@ -320,13 +339,50 @@ export function validateRequirements(file: RequirementsFile): string[] {
 	for (const [name, e] of Object.entries(experiments)) {
 		if (!e.adapter || !e.operation) errors.push(`experiment "${name}": adapter and operation are required`);
 		cites(`experiment "${name}"`, e.assumptions);
+		if (e.decisions !== undefined && !(Array.isArray(e.decisions) && e.decisions.every((x) => typeof x === "string" && x))) errors.push(`experiment "${name}": decisions must be a list of decision ids (simra/decisions)`);
 	}
 	for (const [name, c] of Object.entries(conditions)) {
 		cites(`condition "${name}"`, c?.assumptions);
 		for (const e of Object.keys(c?.experiment_inputs ?? {})) if (!experiments[e]) errors.push(`condition "${name}": experiment_inputs.${e}: experiment "${e}" is not defined`);
 	}
 	const gate = file.gates?.stability;
-	for (const k of Object.keys(file.gates ?? {})) if (!["stability", "connections", "limits", "netlist", "device_check"].includes(k)) errors.push(`gates.${k}: unknown gate; the gates are stability, connections, limits, netlist and device_check`);
+	for (const k of Object.keys(file.gates ?? {})) if (!["stability", "connections", "limits", "netlist", "device_check", "corners"].includes(k)) errors.push(`gates.${k}: unknown gate; the gates are stability, connections, limits, netlist, device_check and corners`);
+	if (file.gates && "corners" in file.gates) {
+		const cg = file.gates.corners;
+		if (!cg || typeof cg !== "object" || Array.isArray(cg)) errors.push("gates.corners: must be an object with required (the corners that the block must pass)");
+		else {
+			for (const k of Object.keys(cg)) if (!["required", "requirements"].includes(k)) errors.push(`gates.corners.${k}: unknown field; the fields are required and requirements`);
+			if (!Array.isArray(cg.required) || !cg.required.length || !cg.required.every((x) => typeof x === "string" && x)) errors.push("gates.corners: required must list the corners that the block must pass (names of conditions)");
+			else {
+				for (const c of cg.required) if (!conditions[c]) errors.push(`gates.corners: required corner "${c}" is not defined in conditions`);
+				if (new Set(cg.required).size !== cg.required.length) errors.push("gates.corners: a required corner is listed more than once");
+			}
+			if (cg.requirements !== undefined) {
+				if (!Array.isArray(cg.requirements) || !cg.requirements.length || !cg.requirements.every((x) => typeof x === "string" && x)) errors.push("gates.corners: requirements must list requirement ids (or leave the field out: every requirement that has conditions)");
+				else for (const id of cg.requirements) if (!(Array.isArray(file.requirements) ? file.requirements : []).some((r) => r?.id === id)) errors.push(`gates.corners: requirement "${id}" is not defined`);
+			} else if (Array.isArray(file.requirements) && !file.requirements.some((r) => r?.conditions !== undefined)) {
+				errors.push("gates.corners: no requirement has conditions, so the gate has no requirement. Give the requirements their conditions, or name them in gates.corners.requirements");
+			}
+			// A row at a required corner must be a result at that corner: its inputs or its measurement name differ
+			// from those of the other conditions of the requirement.
+			if (Array.isArray(cg.required) && Array.isArray(file.requirements)) {
+				for (const r of file.requirements) {
+					if (!r || !Array.isArray(r.conditions) || (Array.isArray(cg.requirements) && !cg.requirements.includes(r.id))) continue;
+					const told = new Set<string>();
+					for (const c of r.conditions) {
+						if (!cg.required.includes(c) || told.has(c)) continue;
+						let other: string | null = null;
+						try {
+							other = sameAsOtherCondition(file, r, c);
+						} catch {}
+						if (other === null) continue;
+						told.add(other);
+						errors.push(`requirement "${r.id}": the conditions ${c} and ${other} give the same inputs to experiment "${r.experiment}" and read the same measurement ${atCondition(rowMeasurement(r), c)}. A row at the required corner ${c} would not be a result at that corner. Put {condition} in the measurement name, or give the conditions their inputs.`);
+					}
+				}
+			}
+		}
+	}
 	const dg = file.gates?.device_check;
 	if (file.gates && "device_check" in file.gates) {
 		if (!dg || typeof dg !== "object") errors.push("gates.device_check: must be an object");
@@ -442,6 +498,7 @@ export function validateRequirements(file: RequirementsFile): string[] {
 		}
 		if (!["<=", ">=", "between"].includes(r.op)) errors.push(`${where}: op is ${String(r.op)}, expected <=, >= or between`);
 		if (r.conditions === undefined) {
+			if (typeof r.measurement === "string" && r.measurement.includes("{condition}")) errors.push(`${where}: measurement uses {condition}, so the requirement needs conditions`);
 			if (!validLimit(r.op, r.limit)) errors.push(`${where}: no valid limit for op ${r.op}`);
 			if (experiments[r.experiment] && JSON.stringify(experiments[r.experiment].inputs ?? {}).includes("{condition}")) {
 				errors.push(`${where}: experiment "${r.experiment}" uses {condition}, so the requirement needs conditions`);
@@ -473,13 +530,38 @@ export function validateRequirements(file: RequirementsFile): string[] {
 	return errors;
 }
 
+/** A measurement name at a condition: "{condition}" becomes the name (as it is: a "$" in a name is not a pattern). */
+const atCondition = (name: string, condition: string): string => name.replaceAll("{condition}", () => condition);
+
+/** A value as text with its object keys in order, to compare two sets of inputs. */
+function stable(value: unknown): string {
+	if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
+	if (value && typeof value === "object") return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${stable((value as Record<string, unknown>)[k])}`).join(",")}}`;
+	return JSON.stringify(value) ?? "null";
+}
+
+/**
+ * Another condition of the requirement that gives the same inputs to its experiment and reads the same measurement
+ * as the condition c, or null. A row at c is then not a result at c: nothing in the file ties it to the corner.
+ */
+export function sameAsOtherCondition(file: RequirementsFile, r: Requirement, c: string): string | null {
+	if (!file.experiments?.[r.experiment] || !file.conditions?.[c]) return null;
+	const signature = (x: string) => stable([experimentInputs(file, r.experiment, x), atCondition(rowMeasurement(r), x)]);
+	const mine = signature(c);
+	for (const other of [...(r.conditions ?? []), ...(r.reported?.conditions ?? [])]) {
+		if (other !== c && typeof other === "string" && file.conditions[other] && signature(other) === mine) return other;
+	}
+	return null;
+}
+
 function limitFor(r: Requirement, condition: string | null): Limit | undefined {
 	if (isNumber(r.limit) || Array.isArray(r.limit)) return r.limit;
 	return condition === null ? undefined : (r.limit as Record<string, Limit> | undefined)?.[condition];
 }
 
 function substitute(value: unknown, condition: string): unknown {
-	if (typeof value === "string") return value.replaceAll("{condition}", condition);
+	// A function: a "$" in a condition name is not a replacement pattern.
+	if (typeof value === "string") return value.replaceAll("{condition}", () => condition);
 	if (Array.isArray(value)) return value.map((v) => substitute(v, condition));
 	if (value && typeof value === "object") {
 		return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, substitute(v, condition)]));
@@ -634,6 +716,8 @@ export function evaluateRow(
 	notRunReason: string,
 	root?: string,
 ): VerdictRow {
+	// One measurement per corner in one result: the name has the condition in it.
+	if (condition !== null && typeof r.measurement === "string" && r.measurement.includes("{condition}")) r = { ...r, measurement: atCondition(r.measurement, condition) };
 	const limit = limitFor(r, condition) as Limit;
 	const row: VerdictRow = {
 		requirement: r.id,
@@ -951,6 +1035,57 @@ export function stabilityGateRows(file: RequirementsFile, rows: VerdictRow[]): V
 	return out;
 }
 
+/**
+ * The rows of the required-corner gate: one per requirement of the gate and required corner. A gate row takes the
+ * value and the status of the row of its requirement at that corner when that row is a pass or a fail. In every other
+ * case the gate row is not run, with the reason: the requirement has no row at the corner, the corner is only
+ * reported, the check did not select the row, or the row has no value. So the check cannot pass on the other corners.
+ */
+export function cornersGateRows(file: RequirementsFile, rows: VerdictRow[]): VerdictRow[] {
+	const gate = file.gates?.corners;
+	if (!gate) return [];
+	const covered = gate.requirements ? file.requirements.filter((r) => gate.requirements?.includes(r.id)) : file.requirements.filter((r) => r.conditions !== undefined);
+	const out: VerdictRow[] = [];
+	for (const r of covered) {
+		for (const c of gate.required) {
+			const scored = r.conditions?.includes(c) === true;
+			const row = scored ? rows.find((x) => x.requirement === r.id && x.condition === c && !x.gate) : undefined;
+			// The limit of this corner. A file without a limit for the corner gives none: the limit of another corner is not shown.
+			const limit = limitFor(r, c) ?? null;
+			const same = row ? sameAsOtherCondition(file, r, c) : null;
+			const base: VerdictRow = {
+				requirement: `gate corners ${r.id}`,
+				condition: c,
+				measurement: row?.measurement ?? atCondition(rowMeasurement(r), c),
+				op: r.op,
+				limit: row?.limit ?? limit,
+				value: null,
+				unit: row?.unit ?? r.unit ?? null,
+				margin: null,
+				margin_rel: null,
+				status: "not_run",
+				experiment: row?.experiment ?? null,
+				reason: null,
+				at: null,
+				gate: { name: "corners", stage: r.id, covered_by: scored ? [r.id] : [] },
+			};
+			if (row && same !== null) {
+				out.push({ ...base, reason: `no result at the required corner ${c}: the row reads the same measurement with the same inputs as the corner ${same}. It is not a result at ${c}.` });
+			} else if (row && (row.status === "pass" || row.status === "fail")) {
+				out.push({ ...base, value: row.value, margin: row.margin, margin_rel: row.margin_rel, status: row.status, at: row.at, reason: `from requirement ${r.id}${row.reason ? `: ${row.reason}` : ""}` });
+			} else if (row) {
+				out.push({ ...base, reason: `no result at the required corner ${c}: ${row.reason ?? `the row of requirement ${r.id} is ${row.status.replace("_", " ")}`}` });
+			} else if (r.reported?.conditions?.includes(c)) {
+				out.push({ ...base, reason: `requirement ${r.id} reports the required corner ${c} and does not score it (${r.reported.reason}). A reported row does not cover a required corner.` });
+			} else {
+				const has = r.conditions?.length ? `its conditions are ${r.conditions.join(", ")}` : "it has no conditions";
+				out.push({ ...base, reason: `requirement ${r.id} has no row at the required corner ${c} (${has}). A pass at another corner does not cover it.` });
+			}
+		}
+	}
+	return out;
+}
+
 export interface AssumptionUse {
 	assumption: string;
 	definition: Assumption | null;
@@ -1039,6 +1174,20 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 		return own.length ? own : checkConditions.map((condition) => ({ experiment, condition }));
 	});
 
+	// The decisions that the experiments of this check cite are checked before a run starts: a class A decision that
+	// waits for the owner, or a decision that the owner reversed, stops the check. Each run records its decisions.
+	const dgateUsed = file.gates?.device_check && opts.requirements === undefined ? [file.gates.device_check.ngspice_experiment, file.gates.device_check.xyce_experiment] : [];
+	const cited = new Map<string, string[]>();
+	for (const name of new Set([...[...pairs.values(), ...reportedPairs.values(), ...limitPairs].map((p) => p.experiment), ...dgateUsed])) {
+		const refs = file.experiments[name]?.decisions;
+		if (!refs?.length) continue;
+		try {
+			cited.set(name, citeDecisions(root, refs));
+		} catch (e) {
+			throw new Error(`the check did not start: experiment "${name}": ${(e as Error).message.replace(/^the run did not start: /, "")}`);
+		}
+	}
+
 	const id = newExperimentId();
 	const runs = new Map<string, { id: string; result: ResultRecord }>();
 	const limitRuns: { experiment: string; condition: string | null; id: string; result: ResultRecord }[] = [];
@@ -1054,6 +1203,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 			environment: t.environment,
 			timeoutS: t.timeout_s,
 			purpose: `check ${id}: ${experiment}${condition === null ? "" : ` at ${condition}`}`,
+			decisions: cited.get(experiment),
 			signal: opts.signal,
 		});
 		runs.set(pair, { id: outcome.id, result: outcome.result });
@@ -1081,6 +1231,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 				environment: t.environment,
 				timeoutS: t.timeout_s,
 				purpose: `check ${id}: gate limits ${experiment}${condition === null ? "" : ` at ${condition}`}`,
+				decisions: cited.get(experiment),
 				signal: opts.signal,
 			});
 			limitRuns.push({ experiment, condition, id: outcome.id, result: outcome.result });
@@ -1092,6 +1243,8 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 	// leaves the gate out (its rows are then not run).
 	const dgate = file.gates?.device_check;
 	const deviceRuns: { device: string; condition: string; id: string | null; result: ResultRecord | null; why?: string }[] = [];
+	const deviceCited = dgate ? [...new Set([...(cited.get(dgate.ngspice_experiment) ?? []), ...(cited.get(dgate.xyce_experiment) ?? [])])] : [];
+	const deviceDecisions = deviceCited.length ? deviceCited : undefined;
 	for (const condition of dgate?.conditions ?? []) {
 		for (const d of dgate?.devices ?? []) {
 			const run: (typeof deviceRuns)[number] = { device: d.name, condition, id: null, result: null };
@@ -1115,7 +1268,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 					...(ng.temp_c !== undefined ? { temp_c: ng.temp_c, reference_temp_c: dgate!.reference_temp_c ?? 27 } : {}),
 					...(dgate!.tolerance ? { tolerance: dgate!.tolerance } : {}),
 				};
-				const outcome = await runExperiment({ root, adapter: "xyce", operation: "device_crosscheck", inputs, environment: dgate!.environment ?? file.experiments[dgate!.xyce_experiment].environment, purpose: `check ${id}: gate device_check ${d.name} at ${condition}`, signal: opts.signal });
+				const outcome = await runExperiment({ root, adapter: "xyce", operation: "device_crosscheck", inputs, environment: dgate!.environment ?? file.experiments[dgate!.xyce_experiment].environment, purpose: `check ${id}: gate device_check ${d.name} at ${condition}`, decisions: deviceDecisions, signal: opts.signal });
 				run.id = outcome.id;
 				run.result = outcome.result;
 				done.push({ id: outcome.id, experiment: `gate device_check ${d.name}`, condition, status: outcome.result.status, diagnostics: outcome.result.diagnostics.filter((x) => x.severity === "error") });
@@ -1152,6 +1305,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 		}
 	}
 	rows.push(...stabilityGateRows(file, rows));
+	rows.push(...cornersGateRows(file, rows));
 	rows.push(...connectionGateRows(file, root));
 	rows.push(...limitsGateRows(limitRuns, root));
 	rows.push(...netlistGateRows(file, root));

@@ -1,0 +1,36 @@
+{
+  "schema": "simra.requirements/0",
+  "conditions": {
+    "nom_typ_1p20V_25C": { "description": "typical process, 1.20 V, 25 C" },
+    "nom_slow_1p08V_125C": { "description": "slow process, 1.08 V, 125 C" },
+    "nom_fast_1p32V_m40C": { "description": "fast process, 1.32 V, -40 C" }
+  },
+  "experiments": {
+    "flow": { "adapter": "librelane", "operation": "read", "inputs": { "run": "runs/syn" } }
+  },
+  "requirements": [
+    {
+      "id": "setup",
+      "description": "worst setup slack",
+      "experiment": "flow",
+      "measurement": "setup_ws_ns@{condition}",
+      "unit": "ns",
+      "op": ">=",
+      "limit": 0,
+      "conditions": ["nom_typ_1p20V_25C", "nom_slow_1p08V_125C", "nom_fast_1p32V_m40C"]
+    },
+    {
+      "id": "hold",
+      "description": "worst hold slack",
+      "experiment": "flow",
+      "measurement": "hold_ws_ns@{condition}",
+      "unit": "ns",
+      "op": ">=",
+      "limit": 0,
+      "conditions": ["nom_typ_1p20V_25C", "nom_slow_1p08V_125C", "nom_fast_1p32V_m40C"]
+    }
+  ],
+  "gates": {
+    "corners": { "required": ["nom_typ_1p20V_25C", "nom_slow_1p08V_125C", "nom_fast_1p32V_m40C"] }
+  }
+}
