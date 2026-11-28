@@ -124,8 +124,8 @@ export function formatCommand(c: CommandRun): string {
 }
 
 const num = (x: number) => Number(x.toPrecision(4)).toString();
-const limitText = (op: VerdictRow["op"], limit: Limit) =>
-	op === "between" ? `${num((limit as [number, number])[0])}..${num((limit as [number, number])[1])}` : `${op} ${num(limit as number)}`;
+const limitText = (op: VerdictRow["op"], limit: Limit | null) =>
+	limit === null ? "not given for this corner" : op === "between" ? `${num((limit as [number, number])[0])}..${num((limit as [number, number])[1])}` : `${op} ${num(limit as number)}`;
 
 /** One line per row, failures first, so that the model sees what to fix before what already passes. */
 export function formatVerdict(root: string, verdict: VerdictRecord): string {

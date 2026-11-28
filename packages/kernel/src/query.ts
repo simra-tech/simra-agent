@@ -95,7 +95,7 @@ export function queryRecords(root: string, filter: QueryFilter = {}): QueryResul
 			if (filter.condition !== undefined && r.condition !== filter.condition) continue;
 			if (filter.status && r.status !== filter.status) continue;
 			if (filter.experiment && !(names.get(r.experiment ?? "") ?? "").toLowerCase().includes(filter.experiment.toLowerCase())) continue;
-			const lim = Array.isArray(r.limit) ? `[${r.limit.join(", ")}]` : String(r.limit);
+			const lim = Array.isArray(r.limit) ? `[${r.limit.join(", ")}]` : r.limit === null ? "-" : String(r.limit);
 			rows.push({
 				source: "check",
 				id: r.experiment ?? "-",

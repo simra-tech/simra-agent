@@ -201,3 +201,46 @@ test("simra check: a block that passes at the typical corner only exits with 1, 
 	for (const c of [SLOW, FAST]) assert.match(r.stdout, new RegExp(`^  NOT_RUN      gate corners setup @ ${c}: -, limit >= 0 \\[\\S+\\] \\(no result at the required corner ${c}: `, "m"));
 	assert.match(r.stdout, new RegExp(`^  PASS         gate corners setup @ ${TYP}: 0\\.41 ns, limit >= 0 `, "m"));
 });
+
+test("a row that reads the same measurement with the same inputs as another corner is not a result at its corner", async (t) => {
+	// The measurement names the typical corner in each row: the three rows read one value.
+	const file = digital({ [TYP]: 2.026 });
+	file.requirements[0].measurement = `setup_ws_ns@${TYP}`;
+	assert.match(validateRequirements(file as RequirementsFile).join("\n"), new RegExp(`requirement "setup": the conditions ${TYP} and ${SLOW} give the same inputs to experiment "flow" and read the same measurement setup_ws_ns@${TYP}`));
+	// The gate holds also when the file is not validated (a caller of cornersGateRows).
+	const row = (c: string): VerdictRow => ({ requirement: "setup", condition: c, measurement: `setup_ws_ns@${TYP}`, op: ">=", limit: 0, value: 2.026, unit: "ns", margin: 2.026, margin_rel: null, status: "pass", experiment: "x", reason: null, at: null });
+	const gate = cornersGateRows(file as RequirementsFile, [row(TYP), row(SLOW), row(FAST)]);
+	assert.deepEqual(gate.map((r) => [r.condition, r.status, r.value]), [[TYP, "not_run", null], [SLOW, "not_run", null], [FAST, "not_run", null]]);
+	assert.match(gate[1].reason as string, new RegExp(`^no result at the required corner ${SLOW}: the row reads the same measurement with the same inputs as the corner ${TYP}`));
+	// Negative control: one experiment per corner with other inputs, and one measurement per corner in one result.
+	assert.deepEqual(validateRequirements(amplifier([TYP, SLOW, FAST]) as RequirementsFile), []);
+	assert.deepEqual(validateRequirements(digital({ [TYP]: 2 }) as RequirementsFile), []);
+});
+
+test("a condition name with a dollar sign reads its own measurement", async (t) => {
+	const file = {
+		schema: "simra.requirements/0",
+		conditions: { ss$: {}, ss$$: {} },
+		experiments: { flow: { adapter: "fake", operation: "run", inputs: { mode: "values", values: { "gain@ss$": 60 } } } },
+		requirements: [{ id: "gain", experiment: "flow", measurement: "gain@{condition}", op: ">=", limit: 58, conditions: ["ss$", "ss$$"] }],
+		gates: { corners: { required: ["ss$", "ss$$"] } },
+	};
+	const root = designRoot(t, file);
+	const { verdict } = await runCheck({ root });
+	assert.deepEqual(verdict.rows.filter((r) => !r.gate).map((r) => [r.condition, r.measurement, r.status]), [["ss$", "gain@ss$", "pass"], ["ss$$", "gain@ss$$", "not_measured"]]);
+	assert.deepEqual([gateRow(verdict.rows, "gain", "ss$").status, gateRow(verdict.rows, "gain", "ss$$").status, gateRow(verdict.rows, "gain", "ss$$").measurement], ["pass", "not_run", "gain@ss$$"]);
+	assert.equal(verdict.status, "incomplete");
+});
+
+test("the gate row of a corner without a scored row has the limit of that corner", () => {
+	const file = {
+		schema: "simra.requirements/0",
+		conditions: { tt: { inputs: { t: 25 } }, ss: { inputs: { t: 125 } }, ff: { inputs: { t: -40 } } },
+		experiments: { ac: { adapter: "fake", operation: "run", inputs: {} } },
+		requirements: [{ id: "gain", experiment: "ac", measurement: "gain_db", op: ">=", limit: { tt: 2, ss: 7 }, conditions: ["tt"], reported: { conditions: ["ss"], reason: "no slow model" } }],
+		gates: { corners: { required: ["tt", "ss", "ff"] } },
+	} as unknown as RequirementsFile;
+	assert.deepEqual(validateRequirements(file), []);
+	// ff has no limit in the file: the row says so, and does not show the limit of another corner.
+	assert.deepEqual(cornersGateRows(file, []).map((r) => [r.condition, r.status, r.limit]), [["tt", "not_run", 2], ["ss", "not_run", 7], ["ff", "not_run", null]]);
+});

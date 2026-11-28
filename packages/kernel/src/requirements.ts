@@ -17,6 +17,7 @@
 // PDK facts.
 
 import { type ConnectionRow, connectionGate } from "./connections.ts";
+import { citeDecisions } from "./decisions.ts";
 import { type Analysis, checkNetlist, fitBandFindings, fittedModels, type InstanceParamClass, type NetlistRules } from "./netlist.ts";
 import { designTechnologyDirs, findPack } from "./packs.ts";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
@@ -216,6 +217,8 @@ export interface ExperimentTemplate {
 	timeout_s?: number;
 	/** Assumptions that every row of this experiment depends on. */
 	assumptions?: string[];
+	/** The decisions that each run of this experiment rests on (ids of simra/decisions). See RunOptions.decisions. */
+	decisions?: string[];
 }
 
 export interface RequirementsFile {
@@ -244,7 +247,8 @@ export interface VerdictRow {
 	condition: string | null;
 	measurement: string;
 	op: Requirement["op"];
-	limit: Limit;
+	/** null: a gate row of a corner for which the file gives no limit. */
+	limit: Limit | null;
 	value: number | null;
 	unit: string | null;
 	/** Distance to the limit in the measurement unit; positive means inside the limit. */
@@ -335,6 +339,7 @@ export function validateRequirements(file: RequirementsFile): string[] {
 	for (const [name, e] of Object.entries(experiments)) {
 		if (!e.adapter || !e.operation) errors.push(`experiment "${name}": adapter and operation are required`);
 		cites(`experiment "${name}"`, e.assumptions);
+		if (e.decisions !== undefined && !(Array.isArray(e.decisions) && e.decisions.every((x) => typeof x === "string" && x))) errors.push(`experiment "${name}": decisions must be a list of decision ids (simra/decisions)`);
 	}
 	for (const [name, c] of Object.entries(conditions)) {
 		cites(`condition "${name}"`, c?.assumptions);
@@ -357,6 +362,24 @@ export function validateRequirements(file: RequirementsFile): string[] {
 				else for (const id of cg.requirements) if (!(Array.isArray(file.requirements) ? file.requirements : []).some((r) => r?.id === id)) errors.push(`gates.corners: requirement "${id}" is not defined`);
 			} else if (Array.isArray(file.requirements) && !file.requirements.some((r) => r?.conditions !== undefined)) {
 				errors.push("gates.corners: no requirement has conditions, so the gate has no requirement. Give the requirements their conditions, or name them in gates.corners.requirements");
+			}
+			// A row at a required corner must be a result at that corner: its inputs or its measurement name differ
+			// from those of the other conditions of the requirement.
+			if (Array.isArray(cg.required) && Array.isArray(file.requirements)) {
+				for (const r of file.requirements) {
+					if (!r || !Array.isArray(r.conditions) || (Array.isArray(cg.requirements) && !cg.requirements.includes(r.id))) continue;
+					const told = new Set<string>();
+					for (const c of r.conditions) {
+						if (!cg.required.includes(c) || told.has(c)) continue;
+						let other: string | null = null;
+						try {
+							other = sameAsOtherCondition(file, r, c);
+						} catch {}
+						if (other === null) continue;
+						told.add(other);
+						errors.push(`requirement "${r.id}": the conditions ${c} and ${other} give the same inputs to experiment "${r.experiment}" and read the same measurement ${atCondition(rowMeasurement(r), c)}. A row at the required corner ${c} would not be a result at that corner. Put {condition} in the measurement name, or give the conditions their inputs.`);
+					}
+				}
 			}
 		}
 	}
@@ -507,13 +530,38 @@ export function validateRequirements(file: RequirementsFile): string[] {
 	return errors;
 }
 
+/** A measurement name at a condition: "{condition}" becomes the name (as it is: a "$" in a name is not a pattern). */
+const atCondition = (name: string, condition: string): string => name.replaceAll("{condition}", () => condition);
+
+/** A value as text with its object keys in order, to compare two sets of inputs. */
+function stable(value: unknown): string {
+	if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
+	if (value && typeof value === "object") return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${stable((value as Record<string, unknown>)[k])}`).join(",")}}`;
+	return JSON.stringify(value) ?? "null";
+}
+
+/**
+ * Another condition of the requirement that gives the same inputs to its experiment and reads the same measurement
+ * as the condition c, or null. A row at c is then not a result at c: nothing in the file ties it to the corner.
+ */
+export function sameAsOtherCondition(file: RequirementsFile, r: Requirement, c: string): string | null {
+	if (!file.experiments?.[r.experiment] || !file.conditions?.[c]) return null;
+	const signature = (x: string) => stable([experimentInputs(file, r.experiment, x), atCondition(rowMeasurement(r), x)]);
+	const mine = signature(c);
+	for (const other of [...(r.conditions ?? []), ...(r.reported?.conditions ?? [])]) {
+		if (other !== c && typeof other === "string" && file.conditions[other] && signature(other) === mine) return other;
+	}
+	return null;
+}
+
 function limitFor(r: Requirement, condition: string | null): Limit | undefined {
 	if (isNumber(r.limit) || Array.isArray(r.limit)) return r.limit;
 	return condition === null ? undefined : (r.limit as Record<string, Limit> | undefined)?.[condition];
 }
 
 function substitute(value: unknown, condition: string): unknown {
-	if (typeof value === "string") return value.replaceAll("{condition}", condition);
+	// A function: a "$" in a condition name is not a replacement pattern.
+	if (typeof value === "string") return value.replaceAll("{condition}", () => condition);
 	if (Array.isArray(value)) return value.map((v) => substitute(v, condition));
 	if (value && typeof value === "object") {
 		return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, substitute(v, condition)]));
@@ -669,7 +717,7 @@ export function evaluateRow(
 	root?: string,
 ): VerdictRow {
 	// One measurement per corner in one result: the name has the condition in it.
-	if (condition !== null && typeof r.measurement === "string" && r.measurement.includes("{condition}")) r = { ...r, measurement: r.measurement.replaceAll("{condition}", condition) };
+	if (condition !== null && typeof r.measurement === "string" && r.measurement.includes("{condition}")) r = { ...r, measurement: atCondition(r.measurement, condition) };
 	const limit = limitFor(r, condition) as Limit;
 	const row: VerdictRow = {
 		requirement: r.id,
@@ -1002,13 +1050,15 @@ export function cornersGateRows(file: RequirementsFile, rows: VerdictRow[]): Ver
 		for (const c of gate.required) {
 			const scored = r.conditions?.includes(c) === true;
 			const row = scored ? rows.find((x) => x.requirement === r.id && x.condition === c && !x.gate) : undefined;
-			const limit = limitFor(r, scored ? c : null) ?? limitFor(r, r.conditions?.[0] ?? null);
+			// The limit of this corner. A file without a limit for the corner gives none: the limit of another corner is not shown.
+			const limit = limitFor(r, c) ?? null;
+			const same = row ? sameAsOtherCondition(file, r, c) : null;
 			const base: VerdictRow = {
 				requirement: `gate corners ${r.id}`,
 				condition: c,
-				measurement: (row?.measurement ?? rowMeasurement(r)).replaceAll("{condition}", c),
+				measurement: row?.measurement ?? atCondition(rowMeasurement(r), c),
 				op: r.op,
-				limit: (row?.limit ?? limit) as Limit,
+				limit: row?.limit ?? limit,
 				value: null,
 				unit: row?.unit ?? r.unit ?? null,
 				margin: null,
@@ -1019,7 +1069,9 @@ export function cornersGateRows(file: RequirementsFile, rows: VerdictRow[]): Ver
 				at: null,
 				gate: { name: "corners", stage: r.id, covered_by: scored ? [r.id] : [] },
 			};
-			if (row && (row.status === "pass" || row.status === "fail")) {
+			if (row && same !== null) {
+				out.push({ ...base, reason: `no result at the required corner ${c}: the row reads the same measurement with the same inputs as the corner ${same}. It is not a result at ${c}.` });
+			} else if (row && (row.status === "pass" || row.status === "fail")) {
 				out.push({ ...base, value: row.value, margin: row.margin, margin_rel: row.margin_rel, status: row.status, at: row.at, reason: `from requirement ${r.id}${row.reason ? `: ${row.reason}` : ""}` });
 			} else if (row) {
 				out.push({ ...base, reason: `no result at the required corner ${c}: ${row.reason ?? `the row of requirement ${r.id} is ${row.status.replace("_", " ")}`}` });
@@ -1122,6 +1174,20 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 		return own.length ? own : checkConditions.map((condition) => ({ experiment, condition }));
 	});
 
+	// The decisions that the experiments of this check cite are checked before a run starts: a class A decision that
+	// waits for the owner, or a decision that the owner reversed, stops the check. Each run records its decisions.
+	const dgateUsed = file.gates?.device_check && opts.requirements === undefined ? [file.gates.device_check.ngspice_experiment, file.gates.device_check.xyce_experiment] : [];
+	const cited = new Map<string, string[]>();
+	for (const name of new Set([...[...pairs.values(), ...reportedPairs.values(), ...limitPairs].map((p) => p.experiment), ...dgateUsed])) {
+		const refs = file.experiments[name]?.decisions;
+		if (!refs?.length) continue;
+		try {
+			cited.set(name, citeDecisions(root, refs));
+		} catch (e) {
+			throw new Error(`the check did not start: experiment "${name}": ${(e as Error).message.replace(/^the run did not start: /, "")}`);
+		}
+	}
+
 	const id = newExperimentId();
 	const runs = new Map<string, { id: string; result: ResultRecord }>();
 	const limitRuns: { experiment: string; condition: string | null; id: string; result: ResultRecord }[] = [];
@@ -1137,6 +1203,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 			environment: t.environment,
 			timeoutS: t.timeout_s,
 			purpose: `check ${id}: ${experiment}${condition === null ? "" : ` at ${condition}`}`,
+			decisions: cited.get(experiment),
 			signal: opts.signal,
 		});
 		runs.set(pair, { id: outcome.id, result: outcome.result });
@@ -1164,6 +1231,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 				environment: t.environment,
 				timeoutS: t.timeout_s,
 				purpose: `check ${id}: gate limits ${experiment}${condition === null ? "" : ` at ${condition}`}`,
+				decisions: cited.get(experiment),
 				signal: opts.signal,
 			});
 			limitRuns.push({ experiment, condition, id: outcome.id, result: outcome.result });
@@ -1175,6 +1243,8 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 	// leaves the gate out (its rows are then not run).
 	const dgate = file.gates?.device_check;
 	const deviceRuns: { device: string; condition: string; id: string | null; result: ResultRecord | null; why?: string }[] = [];
+	const deviceCited = dgate ? [...new Set([...(cited.get(dgate.ngspice_experiment) ?? []), ...(cited.get(dgate.xyce_experiment) ?? [])])] : [];
+	const deviceDecisions = deviceCited.length ? deviceCited : undefined;
 	for (const condition of dgate?.conditions ?? []) {
 		for (const d of dgate?.devices ?? []) {
 			const run: (typeof deviceRuns)[number] = { device: d.name, condition, id: null, result: null };
@@ -1198,7 +1268,7 @@ export async function runCheck(opts: CheckOptions): Promise<{ id: string; dir: s
 					...(ng.temp_c !== undefined ? { temp_c: ng.temp_c, reference_temp_c: dgate!.reference_temp_c ?? 27 } : {}),
 					...(dgate!.tolerance ? { tolerance: dgate!.tolerance } : {}),
 				};
-				const outcome = await runExperiment({ root, adapter: "xyce", operation: "device_crosscheck", inputs, environment: dgate!.environment ?? file.experiments[dgate!.xyce_experiment].environment, purpose: `check ${id}: gate device_check ${d.name} at ${condition}`, signal: opts.signal });
+				const outcome = await runExperiment({ root, adapter: "xyce", operation: "device_crosscheck", inputs, environment: dgate!.environment ?? file.experiments[dgate!.xyce_experiment].environment, purpose: `check ${id}: gate device_check ${d.name} at ${condition}`, decisions: deviceDecisions, signal: opts.signal });
 				run.id = outcome.id;
 				run.result = outcome.result;
 				done.push({ id: outcome.id, experiment: `gate device_check ${d.name}`, condition, status: outcome.result.status, diagnostics: outcome.result.diagnostics.filter((x) => x.severity === "error") });
