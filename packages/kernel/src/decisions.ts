@@ -17,10 +17,11 @@
 // assumption. The summary of such a result has a line "UNCONFIRMED DECISION", "DECISION REVERSED" or "DECISION
 // CHANGED". The lines are computed from the records, as the pass rule flags are (passrule.ts); no result is rewritten.
 
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
-import { isAbsolute, join, normalize, relative, resolve } from "node:path";
-import { ackDecisionInbox, writeDecisionMarker } from "./inbox.ts";
+import { createHash, randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync } from "node:fs";
+import { hostname } from "node:os";
+import { isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
+import { ackDecisionInbox, type DecisionMarker, INBOX_SCHEMA, readDecisionInbox, writeDecisionMarker } from "./inbox.ts";
 import { experimentDir, experimentsDir, type ExperimentRecord, newExperimentId, readJson, type ResultRecord, writeJsonAtomic } from "./records.ts";
 import type { VerdictRecord } from "./requirements.ts";
 
@@ -64,6 +65,8 @@ export interface DecisionMark {
 	id: string;
 	/** How the result depends on the decision, for example "cited by the run" or "file rtl/top.v". */
 	via: string;
+	/** true: a run without result.json at that time (it waits or it runs). It is not a result; its later result has the mark. */
+	no_result?: true;
 }
 
 export interface DecisionAnswer {
@@ -177,14 +180,19 @@ function evidencePath(root: string, entry: string): string {
 	}
 	const full = resolve(root, entry);
 	const path = relative(resolve(root), full);
-	if (path.startsWith("..") || isAbsolute(path)) throw new Error(`decision: the evidence ${entry} is not in the design root`);
+	if (!inRoot(path)) throw new Error(`decision: the evidence ${entry} is not in the design root`);
 	let isFile = false;
 	try {
 		isFile = statSync(full).isFile();
 	} catch {}
 	if (!isFile) throw new Error(`decision: the evidence ${entry} is not a file of the design root (and not the id of an experiment with a result, or of a check). Evidence that is not there is not evidence: leave it out and say so in why.`);
+	// The file that is read and hashed is the target of a link: it must be in the design root too.
+	if (!inRoot(relative(realpathSync(resolve(root)), realpathSync(full)))) throw new Error(`decision: the evidence ${entry} is a link to a file that is not in the design root`);
 	return path;
 }
+
+/** true for a relative path that stays in the root ("..x" is a file name, "../x" leaves the root). */
+const inRoot = (path: string): boolean => path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path);
 
 function hashEvidence(root: string, path: string): DecisionEvidence {
 	const data = readFileSync(join(root, path));
@@ -203,6 +211,11 @@ export function recordDecision(root: string, input: DecisionInput, now = new Dat
 	if (errors.length) throw new Error(`invalid decision:\n- ${errors.join("\n- ")}`);
 	const evidence = [...new Set((input.evidence ?? []).map((e) => evidencePath(root, e.trim())))].map((p) => hashEvidence(root, p));
 	const affects = (affectsOf(input) as DecisionAffect[]).map((a) => ({ kind: a.kind, ref: a.kind === "file" ? affectPath(root, a.ref) : a.ref.trim() }));
+	// A record that is named must be there: a wrong id would mark nothing, without a word.
+	for (const a of affects) {
+		if (a.kind === "experiment" && !(VALID_ID.test(a.ref) && existsSync(join(experimentDir(root, a.ref), "experiment.json")))) throw new Error(`invalid decision:\n- affects names the experiment ${a.ref}, and simra/experiments has no such record (give the full id)`);
+		if (a.kind === "check" && !(VALID_ID.test(a.ref) && existsSync(join(checksDir(root), a.ref, "verdict.json")))) throw new Error(`invalid decision:\n- affects names the check ${a.ref}, and simra/checks has no such record (give the full id)`);
+	}
 	mkdirSync(decisionsDir(root), { recursive: true });
 	let id = newExperimentId(now);
 	while (existsSync(decisionPath(root, id))) id = newExperimentId(now);
@@ -230,12 +243,32 @@ export function recordDecision(root: string, input: DecisionInput, now = new Dat
 /** A file reference of affects as a path relative to the design root. It throws for a path outside the root. */
 function affectPath(root: string, ref: string): string {
 	const path = relative(resolve(root), resolve(root, ref.trim()));
-	if (path.startsWith("..") || isAbsolute(path)) throw new Error(`decision: the file ${ref} of affects is not in the design root`);
+	if (!inRoot(path)) throw new Error(`decision: the file ${ref} of affects is not in the design root`);
 	return normalize(path);
 }
 
 function decisionPath(root: string, id: string): string {
 	return join(decisionsDir(root), `${id}.json`);
+}
+
+const isTime = (x: unknown): x is string => typeof x === "string" && !Number.isNaN(Date.parse(x));
+const validAnswer = (a: DecisionAnswer): boolean =>
+	!!a && typeof a === "object" && OWNER_ANSWERS.includes(a.answer) && isTime(a.at) && text(a.by) && (a.answer !== "changed" || text(a.statement)) && Array.isArray(a.marked) && a.marked.every((m) => !!m && (m.kind === "experiment" || m.kind === "check") && text(m.id));
+
+/**
+ * true for a complete record with the given id. The status must follow from the class and the answers: a record
+ * without its status, or a class A record that says "confirmed" without an answer, is not read. So a damaged record
+ * cannot let a run start.
+ */
+function validRecord(d: DecisionRecord, id: string): boolean {
+	if (!d || typeof d !== "object" || d.schema !== DECISION_SCHEMA || d.id !== id || !DECISION_CLASSES.includes(d.class)) return false;
+	if (!text(d.statement) || !text(d.why) || !isTime(d.created_at)) return false;
+	for (const k of ["alternative", "reverse", "decided_by"] as const) if (d[k] != null && typeof d[k] !== "string") return false;
+	if (!Array.isArray(d.evidence) || !d.evidence.every((e) => !!e && typeof e === "object" && text(e.path) && typeof e.sha256 === "string")) return false;
+	if (!Array.isArray(d.affects) || !d.affects.every(validAffect)) return false;
+	if (!Array.isArray(d.answers) || !d.answers.every(validAnswer)) return false;
+	const last = d.answers[d.answers.length - 1];
+	return d.status === (last ? last.answer : firstStatus(d.class)) && d.authority === (last ? "owner" : "policy");
 }
 
 /** The decisions of the design root, oldest first, and the record files that cannot be read (never left out without a word). */
@@ -252,8 +285,7 @@ export function readDecisions(root: string): { decisions: DecisionRecord[]; unre
 		const file = join("simra", "decisions", name);
 		try {
 			const d = readJson<DecisionRecord>(join(root, file));
-			const ok = d && d.schema === DECISION_SCHEMA && d.id === name.slice(0, -5) && DECISION_CLASSES.includes(d.class) && typeof d.statement === "string" && Array.isArray(d.affects) && Array.isArray(d.answers) && Array.isArray(d.evidence);
-			if (ok) decisions.push(d);
+			if (validRecord(d, name.slice(0, -5))) decisions.push(d);
 			else unreadable.push(file);
 		} catch {
 			unreadable.push(file);
@@ -287,8 +319,12 @@ export function findDecision(root: string, ref: string, decisions = listDecision
 
 /** The statement that holds now: the statement of the owner after a "changed" answer, else the statement of the decision. */
 export function currentStatement(d: DecisionRecord): string {
-	const last = d.answers[d.answers.length - 1];
-	return last?.answer === "changed" && last.statement ? last.statement : d.statement;
+	// The last "changed" answer holds, also after a later "confirmed" or "reversed".
+	for (let i = d.answers.length - 1; i >= 0; i--) {
+		const a = d.answers[i];
+		if (a.answer === "changed" && a.statement) return a.statement;
+	}
+	return d.statement;
 }
 
 const lastAnswer = (d: DecisionRecord): DecisionAnswer | null => d.answers[d.answers.length - 1] ?? null;
@@ -349,6 +385,8 @@ export function listVerdicts(root: string): VerdictRecord[] {
 function underPath(root: string, path: unknown, ref: string): boolean {
 	if (typeof path !== "string" || !path) return false;
 	const rel = normalize(isAbsolute(path) ? relative(resolve(root), path) : path);
+	// "." is the design root: every path in it.
+	if (ref === ".") return inRoot(rel);
 	return rel === ref || rel.startsWith(`${ref}/`);
 }
 
@@ -365,7 +403,9 @@ export function experimentDependsOn(root: string, d: DecisionRecord, e: Decision
 	if (e.experiment.decisions?.includes(d.id)) return "cited by the run";
 	for (const a of d.affects) {
 		if (a.kind === "experiment" && a.ref === e.id) return "named by the decision";
-		if (a.kind === "pass_rule" && e.experiment.pass_rule && e.experiment.pass_rule.key === a.ref) return `pass rule ${a.ref}`;
+		// A pass rule is named by its key (its id, else its file) or by its file.
+		const rule = e.experiment.pass_rule;
+		if (a.kind === "pass_rule" && rule && (rule.key === a.ref || (typeof rule.file === "string" && normalize(rule.file) === normalize(a.ref)))) return `pass rule ${a.ref}`;
 		if (a.kind === "file") {
 			const files = [...(e.result?.input_files?.files ?? []).map((f) => f.path), e.experiment.pass_rule?.file, ...inputTexts(e.experiment.inputs)];
 			if (files.some((f) => underPath(root, f, a.ref))) return `file ${a.ref}`;
@@ -380,6 +420,9 @@ export function verdictDependsOn(root: string, d: DecisionRecord, v: VerdictReco
 		if (a.kind === "check" && a.ref === v.id) return "named by the decision";
 		if (a.kind === "requirement" && v.rows.some((r) => r.requirement === a.ref)) return `requirement ${a.ref}`;
 		if (a.kind === "assumption" && v.rows.some((r) => r.assumptions?.includes(a.ref))) return `assumption ${a.ref}`;
+		// A reported row is not scored, but its value is in the summary of the check.
+		if (a.kind === "requirement" && v.reported?.some((r) => r.requirement === a.ref)) return `requirement ${a.ref} (reported row)`;
+		if (a.kind === "assumption" && v.reported?.some((r) => r.assumptions?.includes(a.ref))) return `assumption ${a.ref} (reported row)`;
 		if (a.kind === "file" && (underPath(root, v.requirements_file?.path, a.ref) || underPath(root, v.design_file?.path, a.ref))) return `file ${a.ref}`;
 	}
 	const ids = new Set((v.experiments ?? []).map((x) => x.id));
@@ -390,12 +433,15 @@ export function verdictDependsOn(root: string, d: DecisionRecord, v: VerdictReco
 	return null;
 }
 
-/** The results that depend on a decision now: experiments first, then checks, each oldest first. */
+/**
+ * The results that depend on a decision now: experiments first, then checks, each oldest first. A run without
+ * result.json is in the list with no_result: it is not a result, and its later result depends on the decision.
+ */
 export function decisionDependents(root: string, d: DecisionRecord, scan: DecisionScan = scanRecords(root)): DecisionMark[] {
 	const out: DecisionMark[] = [];
 	for (const e of scan.experiments) {
 		const via = experimentDependsOn(root, d, e);
-		if (via !== null) out.push({ kind: "experiment", id: e.id, via });
+		if (via !== null) out.push({ kind: "experiment", id: e.id, via, ...(e.result ? {} : { no_result: true as const }) });
 	}
 	for (const v of scan.verdicts) {
 		const via = verdictDependsOn(root, d, v, scan.experiments);
@@ -404,22 +450,36 @@ export function decisionDependents(root: string, d: DecisionRecord, scan: Decisi
 	return out;
 }
 
-/** A decision that the owner must still answer: class A, no answer. */
-export const waitsForOwner = (d: DecisionRecord): boolean => d.class === "A" && d.status === "waiting for owner";
+/** A decision that the owner must still answer: class A, no answer. The answers decide, not the status text. */
+export const waitsForOwner = (d: DecisionRecord): boolean => d.class === "A" && d.answers.length === 0;
 
 const quote = (s: string, max = 160) => {
 	const line = s.replace(/\s+/g, " ").trim();
 	return `"${line.length > max ? `${line.slice(0, max - 3)}...` : line}"`;
 };
 
-/** The flag line of one decision for a result that depends on it (kind: the result is marked by the last answer, or it depends now). */
-function flagLine(d: DecisionRecord, marked: boolean, live: boolean): string | null {
-	const last = lastAnswer(d);
-	if (d.status === "reversed" && last && marked) {
-		return `DECISION REVERSED: the owner (${last.by}) reversed decision ${d.id} on ${last.at}: ${quote(d.statement)}. This result depended on it. Do not use it for a claim.`;
+interface ResultMark {
+	answer: DecisionAnswer;
+	/** The last answer of the decision, when it is later than the answer that marked the result. */
+	later: DecisionAnswer | null;
+}
+
+/** The last "changed" or "reversed" answer that marked the result. A later answer does not take the mark away. */
+function markOf(d: DecisionRecord, kind: DecisionMark["kind"], id: string): ResultMark | null {
+	for (let i = d.answers.length - 1; i >= 0; i--) {
+		const a = d.answers[i];
+		if (a.answer !== "confirmed" && a.marked.some((m) => m.kind === kind && m.id === id)) return { answer: a, later: i < d.answers.length - 1 ? d.answers[d.answers.length - 1] : null };
 	}
-	if (d.status === "changed" && last && marked) {
-		return `DECISION CHANGED: the owner (${last.by}) changed decision ${d.id} on ${last.at}: now ${quote(currentStatement(d))}. This result depended on the earlier statement. Judge it again, or run again.`;
+	return null;
+}
+
+/** The flag line of one decision for a result: the result is marked by an answer, or it depends now on a decision that waits. */
+function flagLine(d: DecisionRecord, mark: ResultMark | null, live: boolean): string | null {
+	if (mark) {
+		const a = mark.answer;
+		const later = mark.later ? ` The last answer of the owner is "${mark.later.answer}" (${mark.later.by}, ${mark.later.at}).` : "";
+		if (a.answer === "reversed") return `DECISION REVERSED: the owner (${a.by}) reversed decision ${d.id} on ${a.at}: ${quote(currentStatement(d))}. This result depended on it. Do not use it for a claim.${later}`;
+		return `DECISION CHANGED: the owner (${a.by}) changed decision ${d.id} on ${a.at}: now ${quote(a.statement ?? currentStatement(d))}. This result depended on the earlier statement. Judge it again, or run again.${later}`;
 	}
 	if (waitsForOwner(d) && live) {
 		return `UNCONFIRMED DECISION: this result rests on decision ${d.id} (class A, waiting for owner since ${d.created_at}): ${quote(d.statement)}. The owner did not confirm it.`;
@@ -427,8 +487,7 @@ function flagLine(d: DecisionRecord, marked: boolean, live: boolean): string | n
 	return null;
 }
 
-const isMarked = (d: DecisionRecord, kind: DecisionMark["kind"], id: string): boolean => (lastAnswer(d)?.marked ?? []).some((m) => m.kind === kind && m.id === id);
-const flagged = (d: DecisionRecord): boolean => waitsForOwner(d) || d.status === "reversed" || d.status === "changed";
+const flagged = (d: DecisionRecord): boolean => waitsForOwner(d) || d.answers.some((a) => a.answer !== "confirmed");
 
 /**
  * The decision lines of one experiment: `UNCONFIRMED DECISION:` for a class A decision that waits for the owner and
@@ -440,7 +499,7 @@ export function experimentDecisionFlags(root: string, experiment: ExperimentReco
 	const e = { id: experiment.id, experiment, result };
 	for (const d of decisions) {
 		if (!flagged(d)) continue;
-		const line = flagLine(d, isMarked(d, "experiment", e.id), waitsForOwner(d) && experimentDependsOn(root, d, e) !== null);
+		const line = flagLine(d, markOf(d, "experiment", e.id), waitsForOwner(d) && experimentDependsOn(root, d, e) !== null);
 		if (line) out.push(line);
 	}
 	// A cited decision whose record is gone: the run rests on a decision that cannot be read.
@@ -466,7 +525,7 @@ export function verdictDecisionFlags(root: string, verdict: VerdictRecord, decis
 		}
 	}
 	for (const d of wanted) {
-		const line = flagLine(d, isMarked(d, "check", verdict.id), waitsForOwner(d) && verdictDependsOn(root, d, verdict, experiments) !== null);
+		const line = flagLine(d, markOf(d, "check", verdict.id), waitsForOwner(d) && verdictDependsOn(root, d, verdict, experiments) !== null);
 		if (line) out.push(line.replace("this result rests", "this check rests").replace("This result depended", "This check depended"));
 	}
 	return out;
@@ -490,9 +549,15 @@ export function statusText(d: DecisionRecord): string {
  */
 export function citeDecisions(root: string, refs: string[]): string[] {
 	if (!Array.isArray(refs) || !refs.every((r) => typeof r === "string" && r)) throw new Error("decisions: give a list of decision ids");
-	const all = listDecisions(root);
+	const { decisions: all, unreadable } = readDecisions(root);
 	const ids: string[] = [];
 	for (const ref of refs) {
+		// A record that cannot be read can be a class A decision that waits: the run does not start.
+		const damaged = unreadable.find((file) => {
+			const id = file.slice(file.lastIndexOf("/") + 1, -5);
+			return id === ref || (ref.trim().length >= 4 && (id.startsWith(ref.trim()) || id.endsWith(ref.trim())));
+		});
+		if (damaged) throw new Error(`the run did not start: the record of decision ${damaged.slice(damaged.lastIndexOf("/") + 1, -5)} cannot be read (${damaged}). Repair the record, or record the decision again.`);
 		const d = findDecision(root, ref, all);
 		if (waitsForOwner(d)) {
 			throw new Error(`the run did not start: decision ${d.id} (class A) waits for the owner: ${quote(d.statement)}. Do work that does not depend on it. The owner answers with: simra decision answer ${shortId(d.id)} confirmed|changed|reversed --by <name>`);
@@ -518,35 +583,100 @@ export interface AnswerInput {
 
 const sleepSync = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
-/** Run fn while this process holds the lock directory of a record. A lock older than 30 s is from a process that is gone. */
-function withLock<T>(path: string, fn: () => T): T {
+/** How long a writer waits for the lock of a record before it gives up (a test can make it short). */
+export const DECISION_LOCK = { wait_ms: 5000 };
+
+/** true when a process of this host with the pid is there (EPERM: it is there, and it belongs to another user). */
+function alive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (e) {
+		return (e as NodeJS.ErrnoException).code === "EPERM";
+	}
+}
+
+/**
+ * Run fn while this process holds the lock of a record. The lock is a symbolic link `<record>.lock` whose target names
+ * its owner (`pid:<pid>:<random>:<host>`), so the lock and its owner appear in one step. A lock is taken over only
+ * when its owner is a process of this host that is gone. The age of a lock proves nothing: a writer can be paused
+ * between its read and its write. A lock that this kernel did not write (for example a directory) is never removed.
+ * fn gets held(): it throws when the lock is no longer the lock of this process; call it before the write.
+ */
+function withLock<T>(path: string, fn: (held: () => void) => T): T {
 	const lock = `${path}.lock`;
-	for (let i = 0; ; i++) {
+	const token = `pid:${process.pid}:${randomBytes(6).toString("hex")}:${hostname()}`;
+	const end = Date.now() + DECISION_LOCK.wait_ms;
+	for (;;) {
 		try {
-			mkdirSync(lock);
+			symlinkSync(token, lock);
 			break;
 		} catch (e) {
 			if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
-			let age = 0;
-			try {
-				age = Date.now() - statSync(lock).mtimeMs;
-			} catch {}
-			if (age > 30_000) rmSync(lock, { recursive: true, force: true });
-			else if (i >= 200) throw new Error(`the record ${path} is locked by another process (${lock})`);
-			else sleepSync(25);
 		}
+		let owner: string | null = null;
+		try {
+			owner = readlinkSync(lock);
+		} catch (e) {
+			if ((e as NodeJS.ErrnoException).code === "ENOENT") continue;
+		}
+		const m = owner === null ? null : /^pid:(\d+):[^:]*(?::(.*))?$/.exec(owner);
+		const local = m !== null && (m[2] === undefined || m[2] === hostname());
+		if (owner !== null && m !== null && local && !alive(Number(m[1]))) {
+			// Two processes can find the same dead owner. A short guard lets one of them remove that lock, and only that lock.
+			const guard = `${lock}.takeover`;
+			try {
+				mkdirSync(guard);
+				try {
+					if (readlinkSync(lock) === owner) unlinkSync(lock);
+				} catch {
+				} finally {
+					rmdirSync(guard);
+				}
+				continue;
+			} catch (e) {
+				if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+				let age = 0;
+				try {
+					age = Date.now() - statSync(guard).mtimeMs;
+				} catch {}
+				if (age > 10_000) rmSync(guard, { recursive: true, force: true });
+			}
+		}
+		if (Date.now() >= end) throw new Error(`the record ${path} is locked by another process (${m ? `process ${m[1]}${local ? "" : ` of host ${m[2]}`}` : "a lock that this kernel did not write"}): ${lock}. Nothing was written. Try again. When no process works on the record, remove the lock.`);
+		sleepSync(25);
 	}
+	const held = () => {
+		let now: string | null = null;
+		try {
+			now = readlinkSync(lock);
+		} catch {}
+		if (now !== token) throw new Error(`the lock of the record ${path} was taken by another process. Nothing was written. Try again.`);
+	};
 	try {
-		return fn();
+		return fn(held);
 	} finally {
-		rmSync(lock, { recursive: true, force: true });
+		try {
+			if (readlinkSync(lock) === token) unlinkSync(lock);
+		} catch {}
 	}
+}
+
+/** The record of a decision as it is in the file now. It throws when the record is not complete. */
+function readRecord(root: string, id: string): DecisionRecord {
+	let d: DecisionRecord | null = null;
+	try {
+		d = readJson<DecisionRecord>(decisionPath(root, id));
+	} catch {}
+	if (!d || !validRecord(d, id)) throw new Error(`the record of decision ${id} cannot be read (${relative(root, decisionPath(root, id))})`);
+	return d;
 }
 
 /**
  * Add the answer of the owner to a decision. A changed or reversed decision marks the results that depend on it at this
  * time (the list is in the answer). The marker of the waiting decision leaves the inbox, and a marker of the answer
- * enters it, so that a session that waits learns of the answer.
+ * enters it, so that a session that waits learns of the answer. The record and the markers change under one lock:
+ * two answers are recorded one after the other, and none is lost.
  */
 export function answerDecision(root: string, ref: string, input: AnswerInput, now = new Date()): DecisionRecord {
 	if (!OWNER_ANSWERS.includes(input.answer)) throw new Error(`answer is ${JSON.stringify(input.answer)}, expected ${OWNER_ANSWERS.join(", ")}`);
@@ -556,8 +686,8 @@ export function answerDecision(root: string, ref: string, input: AnswerInput, no
 	if (input.note !== undefined && !text(input.note)) throw new Error("answer: note must be a text");
 	const id = findDecision(root, ref).id;
 	const path = decisionPath(root, id);
-	const record = withLock(path, () => {
-		const d = readJson<DecisionRecord>(path);
+	return withLock(path, (held) => {
+		const d = readRecord(root, id);
 		const answer: DecisionAnswer = {
 			answer: input.answer,
 			at: now.toISOString(),
@@ -569,18 +699,47 @@ export function answerDecision(root: string, ref: string, input: AnswerInput, no
 			marked: input.answer === "confirmed" ? [] : decisionDependents(root, d),
 		};
 		const next: DecisionRecord = { ...d, status: input.answer, authority: "owner", answers: [...d.answers, answer] };
+		held();
 		writeJsonAtomic(path, next);
+		ackDecisionInbox(root, "decision", [id]);
+		writeDecisionMarker(root, { kind: "answer", decision: id, class: next.class, statement: currentStatement(next), at: answer.at, answer: answer.answer, by: answer.by });
 		return next;
 	});
-	ackDecisionInbox(root, "decision", [id]);
-	const last = record.answers[record.answers.length - 1];
-	writeDecisionMarker(root, { kind: "answer", decision: id, class: record.class, statement: currentStatement(record), at: last.at, answer: last.answer, by: last.by });
-	return record;
 }
 
-/** The answer of the owner was read: its marker leaves the inbox. */
-export function ackAnswers(root: string, ids: string[]): string[] {
-	return ackDecisionInbox(root, "answer", ids);
+/**
+ * The reader saw the last answer of these decisions: the marker of the answer leaves the inbox. A decision that has
+ * a newer answer than the one the reader holds keeps its marker. It returns the ids whose marker was removed.
+ */
+export function ackAnswers(root: string, decisions: DecisionRecord[]): string[] {
+	const done: string[] = [];
+	for (const seen of decisions) {
+		try {
+			withLock(decisionPath(root, seen.id), () => {
+				const now = readRecord(root, seen.id);
+				if (lastAnswer(now)?.at === lastAnswer(seen)?.at) done.push(...ackDecisionInbox(root, "answer", [seen.id]));
+			});
+		} catch {
+			// The record is locked or cannot be read: the marker stays, and the answer is named again.
+		}
+	}
+	return done;
+}
+
+/**
+ * The decision part of the inbox, from the records: each class A decision that waits for the owner, and the last
+ * answer of each decision whose answer nobody has read (its marker is in simra/inbox). The records decide what is
+ * said; a marker that is lost or out of date does not change it.
+ */
+export function decisionInbox(root: string, decisions = listDecisions(root)): DecisionMarker[] {
+	const unread = new Set(readDecisionInbox(root).filter((m) => m.kind === "answer").map((m) => m.decision));
+	const out: DecisionMarker[] = [];
+	for (const d of decisions) {
+		const last = lastAnswer(d);
+		if (waitsForOwner(d)) out.push({ schema: INBOX_SCHEMA, kind: "decision", decision: d.id, class: d.class, statement: d.statement, at: d.created_at });
+		else if (last && unread.has(d.id)) out.push({ schema: INBOX_SCHEMA, kind: "answer", decision: d.id, class: d.class, statement: currentStatement(d), at: last.at, answer: last.answer, by: last.by });
+	}
+	return out.sort((a, b) => a.at.localeCompare(b.at) || a.decision.localeCompare(b.decision));
 }
 
 /** The current sha256 of an evidence file, "missing" or "unreadable". */
@@ -610,18 +769,27 @@ export function formatDecision(root: string, d: DecisionRecord, scan?: DecisionS
 		lines.push(`  evidence: ${e.path} sha256:${e.sha256.slice(0, 12)}${note}`);
 	}
 	lines.push(`  affects: ${d.affects.length ? d.affects.map(affectText).join("; ") : "nothing named"}`);
-	const dependents = decisionDependents(root, d, scan);
+	const all = decisionDependents(root, d, scan);
+	const dependents = all.filter((m) => !m.no_result);
+	const open = all.filter((m) => m.no_result);
 	if (dependents.length) {
 		lines.push(`  results that rest on it now: ${dependents.length}`);
 		for (const m of dependents.slice(0, 8)) lines.push(`    ${m.kind} ${m.id} (${m.via})`);
 		if (dependents.length > 8) lines.push(`    ... ${dependents.length - 8} more`);
 	} else lines.push("  results that rest on it now: none");
+	if (open.length) {
+		lines.push(`  runs without a result that rest on it now: ${open.length}`);
+		for (const m of open.slice(0, 8)) lines.push(`    ${m.kind} ${m.id} (${m.via})`);
+		if (open.length > 8) lines.push(`    ... ${open.length - 8} more`);
+	}
 	for (const a of d.answers) {
 		lines.push(`  answer: ${a.answer} by ${a.by}, ${a.at} (${a.via === "session" ? "command of the user in a session" : a.terminal ? "command line, terminal" : "command line, not from a terminal"})${a.note ? `: ${a.note}` : ""}`);
 		if (a.statement) lines.push(`    statement of the owner: ${a.statement}`);
 		if (a.answer !== "confirmed") {
-			lines.push(`    marked ${a.marked.length} result${a.marked.length === 1 ? "" : "s"} that depended on it${a.marked.length ? ":" : ""}`);
-			for (const m of a.marked.slice(0, 8)) lines.push(`      ${m.kind} ${m.id} (${m.via})`);
+			const open = a.marked.filter((m) => m.no_result).length;
+			const results = a.marked.length - open;
+			lines.push(`    marked ${results} result${results === 1 ? "" : "s"} that depended on it${open ? `, and ${open} run${open === 1 ? "" : "s"} without a result` : ""}${a.marked.length ? ":" : ""}`);
+			for (const m of a.marked.slice(0, 8)) lines.push(`      ${m.kind} ${m.id} (${m.via}${m.no_result ? "; no result at that time" : ""})`);
 			if (a.marked.length > 8) lines.push(`      ... ${a.marked.length - 8} more (all are in the record)`);
 		}
 	}

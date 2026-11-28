@@ -78,8 +78,8 @@ import { formatWorkarounds, workaroundsFor } from "./workarounds.ts";
 import { checkTable, connectionGate, formatConnectionRows, loadConnectionTable } from "./connections.ts";
 import { formatJobs, runJobs } from "./jobs.ts";
 import { formatHeavyQueue, formatHolder, heavyQueue } from "./heavy.ts";
-import { ackInbox, formatDecisionInbox, formatInbox, readDecisionInbox, readInbox } from "./inbox.ts";
-import { ackAnswers, answerDecision, DECISION_CLASSES, findDecision, formatDecision, formatDecisionList, formatRecorded, listDecisions, OWNER_ANSWERS, type OwnerAnswer, recordDecision, waitsForOwner } from "./decisions.ts";
+import { ackInbox, formatDecisionInbox, formatInbox, readInbox } from "./inbox.ts";
+import { ackAnswers, answerDecision, DECISION_CLASSES, decisionInbox, findDecision, formatDecision, formatDecisionList, formatRecorded, OWNER_ANSWERS, type OwnerAnswer, readDecisions, recordDecision, waitsForOwner } from "./decisions.ts";
 import { buildDigest, formatDigest, parseSince } from "./digest.ts";
 import { assumptionUses, latestVerdict, loadRequirements, runCheck } from "./requirements.ts";
 import { runtimeEstimate } from "./estimate.ts";
@@ -99,6 +99,10 @@ function usage(): never {
 	throw new CliUsageError();
 }
 
+/** The options that take a value, and the options that take none. */
+const VALUE_OPTIONS = ["--cpus", "--environment", "--file", "--only", "--conditions", "--parallel", "--timeout-s", "--pages", "--render", "--pdk", "--simulator", "--band", "--table", "--block", "--interface", "--adapter", "--pdk-root", "--dir", "--inputs", "--source", "--check", "--experiment", "--condition", "--measurement", "--requirement", "--status", "--operation", "--limit", "--since", "--by", "--note", "--statement", "--class"];
+const FLAG_OPTIONS = ["--root", "--detach", "--json", "--write", "--detached-worker"];
+
 async function main(argv: string[]): Promise<number> {
 	let root: string | null = null;
 	const args: string[] = [];
@@ -117,8 +121,14 @@ async function main(argv: string[]): Promise<number> {
 			// Internal: the supervisor of a detached run (see runExperiment). The argument is the experiment directory.
 			const result = await runDetachedWorker(argv[++i] ?? usage());
 			return result.status === "completed" ? 0 : 1;
-		} else if (["--cpus", "--environment", "--file", "--only", "--conditions", "--parallel", "--timeout-s", "--pages", "--render", "--pdk", "--simulator", "--band", "--table", "--block", "--interface", "--adapter", "--pdk-root", "--dir", "--inputs", "--source", "--check", "--experiment", "--condition", "--measurement", "--requirement", "--status", "--operation", "--limit", "--since", "--by", "--note", "--statement", "--class"].includes(argv[i])) options[argv[i].slice(2)] = argv[++i] ?? usage();
-		else args.push(argv[i]);
+		} else if (VALUE_OPTIONS.includes(argv[i])) {
+			const name = argv[i];
+			const value = argv[++i];
+			// The next word is another option: the value is missing. It must not become the value (for example the name of who answers).
+			if (value === undefined) usage();
+			if (VALUE_OPTIONS.includes(value) || FLAG_OPTIONS.includes(value)) throw new Error(`the option ${name} needs a value`);
+			options[name.slice(2)] = value;
+		} else args.push(argv[i]);
 	}
 	root ??= findRoot(process.cwd()) ?? process.cwd();
 	const [command, arg] = args;
@@ -180,7 +190,7 @@ async function main(argv: string[]): Promise<number> {
 		return outcome.jobs.every((o) => o.status === "completed") ? 0 : 1;
 	}
 	if (command === "inbox") {
-		const decisions = formatDecisionInbox(readDecisionInbox(root));
+		const decisions = formatDecisionInbox(decisionInbox(root));
 		console.log(`${formatInbox(readInbox(root))}\n${decisions ? `${decisions}\n` : ""}${formatHeavyQueue(heavyQueue())}`);
 		return 0;
 	}
@@ -195,15 +205,18 @@ async function main(argv: string[]): Promise<number> {
 		for (const c of classes ?? []) if (!(DECISION_CLASSES as string[]).includes(c)) throw new Error(`class "${c}": the classes are A, B and C`);
 		const since = options.since === undefined ? null : parseSince(options.since);
 		const status = options.status === "waiting" ? "waiting for owner" : options.status;
-		const found = listDecisions(root).filter((d) => (!classes || classes.includes(d.class)) && (status === undefined || d.status === status) && (!since || Date.parse(d.created_at) >= since.getTime() || d.answers.some((a) => Date.parse(a.at) >= since.getTime())));
+		const { decisions: all, unreadable } = readDecisions(root);
+		const found = all.filter((d) => (!classes || classes.includes(d.class)) && (status === undefined || d.status === status) && (!since || Date.parse(d.created_at) >= since.getTime() || d.answers.some((a) => Date.parse(a.at) >= since.getTime())));
 		console.log(formatDecisionList(found));
+		// A record that cannot be read is named: it can be a decision that waits.
+		for (const file of unreadable) console.log(`DECISION RECORD NOT READ: ${file} cannot be read.`);
 		return 0;
 	}
 	if (command === "decision" && arg === "show") {
 		const decision = findDecision(root, args[2] ?? usage());
-		// The answer of the owner is read: it leaves the inbox.
-		ackAnswers(root, [decision.id]);
 		console.log(formatDecision(root, decision));
+		// The answer that is printed is read: it leaves the inbox. A newer answer stays.
+		ackAnswers(root, [decision]);
 		return 0;
 	}
 	if (command === "decision" && arg === "answer") {

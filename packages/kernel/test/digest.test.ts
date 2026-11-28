@@ -3,11 +3,11 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { answerDecision, buildDigest, formatDigest, parseSince, recordDecision } from "../src/index.ts";
+import { answerDecision, buildDigest, formatDigest, formatOutcome, parseSince, recordDecision, runCheck, runExperiment } from "../src/index.ts";
 
 const fixture = new URL("./fixtures/owner-digest/", import.meta.url).pathname;
 const cli = new URL("../src/cli.ts", import.meta.url).pathname;
@@ -106,4 +106,76 @@ test("simra digest prints the digest; --json gives the record; a wrong time is a
 	const bad = simra("digest", "--since", "last week");
 	assert.equal(bad.status, 1);
 	assert.match(bad.stderr, /simra: since "last week": give an ISO date or time/);
+});
+
+const adapters = new URL("./fixtures/adapters", import.meta.url).pathname;
+const hourAgo = () => new Date(Date.now() - 3_600_000);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function designRoot(t: { after: (fn: () => void) => void }, requirements?: unknown): string {
+	const root = mkdtempSync(join(tmpdir(), "simra-digest-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	writeFileSync(join(root, "simra.config.json"), JSON.stringify({ adapter_dirs: [adapters] }));
+	if (requirements) writeFileSync(join(root, "requirements.json"), JSON.stringify(requirements));
+	return root;
+}
+
+test("NOT RUN: two checks of one run that did not run are two items, and one check that is recorded two times is one item", async (t) => {
+	const root = designRoot(t);
+	const values = (inputs: Record<string, unknown>) => runExperiment({ root, adapter: "fake", operation: "run", inputs: { mode: "values", values: {}, ...inputs } });
+	const two = await values({ report: ["timing check: not run"], diagnostics: [{ severity: "warning", message: "pin check: not run" }] });
+	const one = await values({ report: ["timing check: not run"], diagnostics: [{ severity: "warning", message: "timing check: not run (no clock in the netlist)" }] });
+	const digest = buildDigest(root, hourAgo());
+	assert.deepEqual(digest.not_run.map((x) => [x.where.split(" ")[1], x.count, x.items]), [
+		[two.id, 2, ["timing check: not run", "pin check: not run"]],
+		[one.id, 1, ["timing check: not run"]],
+	]);
+	assert.match(formatDigest(digest), /^NOT RUN: 3 items in 2 records$/m);
+});
+
+test("NOT RUN: the rows of a check that are not measured are named, and a corner that was not selected counts as not selected in each row", async (t) => {
+	const root = designRoot(t, {
+		schema: "simra.requirements/0",
+		conditions: { tt: { inputs: { values: { gain_db: null } } }, ss: { inputs: { values: { gain_db: 59 } } } },
+		experiments: { ac: { adapter: "fake", operation: "run", inputs: { mode: "values" } } },
+		requirements: [{ id: "gain", experiment: "ac", measurement: "gain_db", op: ">=", limit: 58, conditions: ["tt", "ss"] }],
+		gates: { corners: { required: ["tt", "ss"] } },
+	});
+	const { verdict } = await runCheck({ root, conditions: ["tt"] });
+	assert.deepEqual(verdict.counts, { pass: 0, fail: 0, not_measured: 1, not_run: 3 });
+	const digest = buildDigest(root, hourAgo());
+	assert.deepEqual(digest.not_run.map((x) => [x.count, x.not_selected, x.not_measured]), [[3, 2, 1]]);
+	const text = formatDigest(digest);
+	assert.match(text, /^NOT RUN: 3 items in 1 record; NOT MEASURED: 1 row$/m);
+	assert.match(text, new RegExp(`^  check ${verdict.id}: 3 not run \\(2 not selected\\), 1 not measured$`, "m"));
+	assert.match(text, /^ {4}gain @ tt: not measured: experiment \S+ gave no value for gain_db$/m);
+});
+
+test("PASS RULE: a rule file that changes after the given time is named, also when its run ended before", async (t) => {
+	const root = designRoot(t);
+	writeFileSync(join(root, "rule.txt"), "gain_db >= 58\n");
+	const run = await runExperiment({ root, adapter: "fake", operation: "run", inputs: { mode: "ok" }, passRule: { file: "rule.txt" } });
+	await sleep(30);
+	const since = new Date();
+	assert.deepEqual(buildDigest(root, since).pass_rule.changed, []);
+	await sleep(30);
+	writeFileSync(join(root, "rule.txt"), "gain_db >= 50\n");
+	assert.match(formatOutcome(root, run.experiment, run.result), /^PASS RULE CHANGED: file rule.txt changed after this run started/m);
+	const digest = buildDigest(root, since);
+	assert.deepEqual(digest.pass_rule.changed.map((r) => r.id), [run.id]);
+	assert.equal(digest.counts.experiments, 0);
+	assert.match(formatDigest(digest), new RegExp(`^PASS RULE: 1 changed, 0 failed\\n  CHANGED ${run.id} fake.run: file rule.txt changed after this run started`, "m"));
+});
+
+test("the digest gives the full name of who answered, names a class C decision that the owner answered, and refuses a time that is no date", (t) => {
+	const root = designRoot(t);
+	const b = recordDecision(root, { class: "B", statement: "Use a two-stage pipeline", alternative: "one stage", why: "setup fails", reverse: "remove the register", affects: ["file:rtl/mul.v"] });
+	const c = recordDecision(root, { class: "C", statement: "Use the run tag try3", why: "try2 exists" });
+	answerDecision(root, b.id, { answer: "confirmed", by: "Ada Owner" });
+	answerDecision(root, c.id, { answer: "reversed", by: "Ada Owner" });
+	const text = formatDigest(buildDigest(root, hourAgo()));
+	assert.match(text, new RegExp(`^  B ${b.id.slice(-6)} confirmed by Ada Owner: Use a two-stage pipeline$`, "m"));
+	assert.match(text, new RegExp(`^CLASS C: 1 logged, 1 answered by the owner\\n  C ${c.id.slice(-6)} reversed by Ada Owner \\d{4}-\\d\\d-\\d\\d \\d\\d:\\d\\d; marked 0 results: Use the run tag try3$`, "m"));
+	assert.throws(() => parseSince("999999999999999d"), /since "999999999999999d": give an ISO date or time/);
+	assert.throws(() => parseSince("2026-13-45"), /since "2026-13-45": give an ISO date or time/);
 });

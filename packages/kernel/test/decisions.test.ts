@@ -240,7 +240,8 @@ test("a changed decision needs the statement of the owner, marks the earlier res
 	// The owner can answer again: the status is the last answer, and the earlier answer stays.
 	const again = answerDecision(root, a.id, { answer: "confirmed", by: "owner" });
 	assert.deepEqual(again.answers.map((x) => x.answer), ["changed", "confirmed"]);
-	assert.doesNotMatch(formatOutcome(root, before.experiment, before.result), /DECISION/);
+	// The earlier result keeps its line: it depended on the statement that the owner replaced.
+	assert.match(formatOutcome(root, before.experiment, before.result), /^DECISION CHANGED: .* Judge it again, or run again\. The last answer of the owner is "confirmed" \(owner, .*\)\.$/m);
 });
 
 const amplifier = {

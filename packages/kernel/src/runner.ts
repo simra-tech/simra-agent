@@ -166,6 +166,8 @@ interface Job {
 	detached?: boolean;
 	/** The sha256 of the pass rule of experiment.json, copied into result.json. */
 	pass_rule_sha256?: string;
+	/** The decisions that the run cites (full ids). They are checked again when the adapter is about to start. */
+	decisions?: string[];
 }
 
 const JOB_FILE = "job.json";
@@ -254,6 +256,7 @@ function prepareExperiment(opts: RunOptions): { job: Job; env: NodeJS.ProcessEnv
 	if (heavy) job.heavy = true;
 	if (opts.detached) job.detached = true;
 	if (passRule) job.pass_rule_sha256 = passRule.sha256;
+	if (decisions) job.decisions = decisions;
 	return { job, env: invocation.env, dir, experiment };
 }
 
@@ -280,13 +283,25 @@ async function executeJob(job: Job, env: NodeJS.ProcessEnv, signal?: AbortSignal
 			writeStatus(root, id, { status: "running", detached: old?.detached ?? job.detached === true, pid: process.pid, started_at: old?.started_at ?? queuedAt });
 		} else cancelledInQueue = true;
 	}
+	// The cited decisions are checked again when the adapter is about to start: the owner can answer while the run
+	// waits in the queue. A decision that the owner reversed stops the run here.
+	let refused: string | null = null;
+	if (!cancelledInQueue && job.decisions?.length) {
+		try {
+			citeDecisions(root, job.decisions);
+		} catch (e) {
+			refused = `the adapter did not start: ${(e as Error).message.replace(/^the run did not start: /, "")}`;
+		}
+	}
 	const started = new Date();
 	let exit: SpawnResult;
 	let containerLeft = false;
 	try {
 		exit = cancelledInQueue
 			? { code: null, signal: null, timedOut: false, cancelled: true, spawnError: null }
-			: await spawnAndWait(job.command, job.args, { cwd: root, env, stdoutPath, stderrPath, timeoutS: job.timeout_s, signal, onSpawn: (pid) => lock?.track({ pid, engine: job.engine ?? undefined }) });
+			: refused !== null
+				? { code: null, signal: null, timedOut: false, cancelled: false, spawnError: null }
+				: await spawnAndWait(job.command, job.args, { cwd: root, env, stdoutPath, stderrPath, timeoutS: job.timeout_s, signal, onSpawn: (pid) => lock?.track({ pid, engine: job.engine ?? undefined }) });
 		// A stopped engine client can leave its container running: remove the container of this experiment by its label.
 		// A heavy job keeps the lock until this is done.
 		// When the removal fails, the state of the container is not known: the lock is not given back (see heavy.ts).
@@ -329,6 +344,8 @@ async function executeJob(job: Job, env: NodeJS.ProcessEnv, signal?: AbortSignal
 	}
 	if (exit.timedOut || exit.cancelled) {
 		// the status and its message are set above
+	} else if (refused !== null) {
+		result.errors.push(refused);
 	} else if (!existsSync(responsePath)) {
 		result.errors.push(`the adapter wrote no response (exit code ${exit.code}); see ${result.logs.adapter_stderr}`);
 	} else {

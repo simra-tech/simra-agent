@@ -716,21 +716,27 @@ The fields:
 - `statement`, `why`: required. `alternative` (the alternative that was not taken) and `reverse` (how to reverse the
   decision, and what that costs): required for class A and B.
 - `evidence`: files of the design root, or ids of experiments or checks. The record has the sha256 of each file. A path
-  to no file stops the record.
+  to no file stops the record, and so does a link to a file outside the design root.
 - `affects`: required for class A and B. Each entry is `kind:ref` or `{"kind": ..., "ref": ...}`. The kinds are
   `experiment` and `check` (a record id), `pass_rule` (its id or file), `file` (a file or a directory of the design
-  root), `requirement` and `assumption` (an id of `requirements.json`), and `claim` (a statement for a reader outside
-  the project, as text).
+  root; `.` is the root), `requirement` and `assumption` (an id of `requirements.json`), and `claim` (a statement for a
+  reader outside the project, as text). An experiment or a check that is named must be there, with its full id.
 - The class has a floor. A decision with a `claim` is class A. A decision with a `pass_rule`, a `requirement` or an
   `assumption` is class B or A.
 
 A result rests on a decision in two ways:
 
 - The run cites it: `"decisions": ["<id>"]` in the run specification (`simra run`, `simra jobs`), or the parameter
-  `decisions` of `run_experiment` and of a job of `run_jobs`. The runner writes the ids to `experiment.json`. The run
-  does not start when a cited class A decision waits for the owner, or when the owner reversed a cited decision.
-- The decision names it in `affects`: an experiment, a check, the runs with a pass rule, the runs that read a file,
-  the checks with a requirement or an assumption. A check rests on a decision when one of its experiments does.
+  `decisions` of `run_experiment` and of a job of `run_jobs`. For `simra check`, an experiment of `requirements.json`
+  has the field: `"experiments": {"ac": {..., "decisions": ["<id>"]}}`. The runner writes the ids to
+  `experiment.json`. The run does not start when a cited class A decision waits for the owner, when the owner reversed
+  a cited decision, or when the record of a cited decision cannot be read. The runner checks this two times: when the
+  run is recorded, and again when the adapter is about to start (a run can wait in the queue of the
+  [heavy-job lock](#heavy-jobs-one-at-a-time) while the owner answers). A check does not start a run when one of its
+  experiments cites such a decision.
+- The decision names it in `affects`: an experiment, a check, the runs with a pass rule (by its id or its file), the
+  runs that read a file, the checks with a requirement or an assumption (a scored row or a reported row). A check
+  rests on a decision when one of its experiments does.
 
 The summary of such a result (`simra show`, `simra wait`, `run_experiment`, `wait_experiments`, and the summary of a
 check) has one of these lines:
@@ -741,7 +747,9 @@ DECISION REVERSED: the owner (owner) reversed decision 20261128-101530-3fa2c1 on
 DECISION CHANGED: the owner (owner) changed decision 20261128-101530-3fa2c1 on 2026-11-28T11:02:00.000Z: now "...". This result depended on the earlier statement. Judge it again, or run again.
 ```
 
-A line is a statement, as `PASS RULE CHANGED` is. It does not change the status of a run or of a check. A run that
+A line is a statement, as `PASS RULE CHANGED` is. It does not change the status of a run or of a check. A later
+answer does not take a line away: a result that a `changed` answer marked keeps `DECISION CHANGED` after the owner
+confirms the new statement, and the line then ends with the last answer. A run that
 cites a decision also has a line `decision: <id> class B, adopted by policy (no answer of the owner): "..."`, so
 "adopted by policy" is never read as "confirmed by the owner".
 
@@ -754,10 +762,21 @@ The owner answers a decision:
    wait.
 
 The answer is added to the record (`answers`: the answer, the time, the name, a note, and how it arrived). The status
-of the decision is its last answer. A `changed` or `reversed` answer lists the results that depended on the decision
-at that time (`marked`), and their summaries get the line. A result that comes later is not marked. The agent has no
-tool that answers. An answer from the command line records if it came from a terminal. When an agent runs `simra
-decision answer` in its shell, the pi extension adds a note to the result of the command.
+of the decision is its last answer. The statement of a `changed` answer holds until the owner changes it again. A
+`changed` or `reversed` answer lists the results that depended on the decision at that time (`marked`), and their
+summaries get the line. A run without a result at that time is in the list with `no_result`: it is not counted as a
+result, and its later result has the line. A result of a run that starts after the answer is not marked. The agent
+has no tool that answers. An answer from the command line records if it came from a terminal. When a shell command
+of the agent records an answer that did not come from a terminal, the pi extension adds a note to the result of the
+command. The note follows the record, not the text of the command.
+
+Two answers at the same time are recorded one after the other. A writer holds the lock `<record>.lock` (a symbolic
+link that names its process). A lock is taken over only when its process is gone, never for its age. When the lock
+cannot be had in 5 seconds, the command stops with an error and writes nothing.
+
+A record that is not complete is not read: for example a record without its status, or with a status that does not
+follow from its class and its answers. `simra digest` and `simra decision list` name the file, and a run that cites
+the decision does not start.
 
 Other commands: `npx simra decision list [--class A,B] [--status waiting] [--since 24h]` and `npx simra decision show
 <id>` (the record, the evidence that changed after the decision, the results that rest on it now). In pi, the tools
@@ -765,12 +784,16 @@ are `record_decision` and `decisions`.
 
 A class A decision that waits has a marker in the [inbox](#inbox), `simra/inbox/decision-<id>.json`. The answer of the
 owner removes it and writes `simra/inbox/answer-<id>.json`, which stays until the decision is read (`simra decision
-show`, tool `decisions`). `npx simra inbox` prints both. In pi, the inbox note names a decision that waits and an
+show`, tool `decisions`). `npx simra inbox` prints both. What the inbox says comes from the records: a decision that
+waits is named also when its marker is lost, and an answer is named with the last answer of the record. A read takes
+out the answer that it showed; a newer answer stays. In pi, the inbox note names a decision that waits and an
 answer one time for each session, and an idle session starts a turn with the note. So a session that coordinates
 other agents learns that a decision waits, and a session that waits learns of the answer.
 
 Limits: the class is the statement of the agent. The kernel checks the fields and the floor, not the meaning. A
-decision that an agent does not record is not seen. The records are files: they are not a security boundary.
+decision that an agent does not record is not seen. The records are files: they are not a security boundary. The lock
+of a record knows the processes of one host: on a file system that two hosts share, a lock of the other host is never
+taken over.
 
 ### Owner digest
 
@@ -803,12 +826,16 @@ NOT RUN: 4 items in 2 records
 ```
 
 - A class A decision that waits is in every digest, also when it is older than the time.
-- A class A or B decision is in the digest when it was taken or answered since the time. Class C gives a count.
+- A class A or B decision is in the digest when it was taken or answered since the time. Class C gives a count, and
+  one line for each class C decision that the owner answered.
 - `PASS RULE`: the runs whose summary has `PASS RULE CHANGED`; the runs with a pass rule that did not complete; the
-  checks with the status `fail`. The kernel does not apply a pass rule, so the completed runs with a pass rule are a
-  count with the words "not judged".
+  checks with the status `fail`. A run that ended before the time is named when its rule file or its record changed
+  in the time of the digest (by the change time of the files). The kernel does not apply a pass rule, so the completed
+  runs with a pass rule are a count with the words "not judged".
 - `NOT RUN`: the rows of a check with the status `not_run`, and the runs whose record says "not run" (a measurement,
-  an item of a pack check, a report line or a diagnostic).
+  an item of a pack check, a report line or a diagnostic). Two lines with the same check name are one item; two
+  checks are two items. The rows of a check with the status `not_measured` are named with the words "not measured",
+  and the heading has their count (`NOT MEASURED`).
 - Each list shows 5 entries and the number of the others. A count is never cut. A decision file that cannot be read is
   named.
 
@@ -1336,15 +1363,20 @@ A gate row takes the value and the status of the row of its requirement at that 
 - the requirement has no row at the corner (its `conditions` do not list it);
 - the corner is only in `reported` (a reported row is not scored);
 - the check did not select the row (`--only`, `--conditions`);
-- the experiment did not complete, or it gave no value at the corner.
+- the experiment did not complete, or it gave no value at the corner;
+- the row reads the same measurement with the same inputs as another condition of the requirement. Such a row is not a
+  result at its corner: nothing in the file ties it to the corner. The check of the file reports this as an error
+  before a run starts.
 
 So a required corner is never left out of the verdict, and the pass at the typical corner never covers it: the check
 is `incomplete`, not `pass`.
 
 An experiment can give one measurement per corner in one result. The `read` operation of the librelane adapter gives
 `setup_ws_ns@<corner>` and `hold_ws_ns@<corner>`. Write `"measurement": "setup_ws_ns@{condition}"`: `{condition}` is
-replaced with the condition name. A corner that the flow did not analyse has no measurement, so its gate row is
-`not_run`. `examples/acc-sg13g2/requirements.json` is such a file for a public block, with its result in the README
+replaced with the condition name. Without `{condition}` in the name (and without inputs of their own), all corners
+would read one value, and the file is refused. A corner that the flow did not analyse has no measurement, so its gate
+row is `not_run`. The gate row shows the limit of its corner; when the file gives no limit for the corner, it shows
+"not given for this corner". `examples/acc-sg13g2/requirements.json` is such a file for a public block, with its result in the README
 of the example.
 
 Why the list is in `requirements.json`, not in the configuration of the flow:
