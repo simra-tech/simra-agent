@@ -2,8 +2,10 @@
 // simra: plain command line for the kernel. It does not need pi.
 //
 //   simra run <spec.json>     run one experiment; spec = { adapter, operation, inputs, environment?, purpose?, timeout_s?,
-//                             pass_rule?, heavy? }. pass_rule = { text | file, id? }: the rule that decides pass or fail,
+//                             pass_rule?, heavy?, decisions? }. pass_rule = { text | file, id? }: the rule that decides pass or fail,
 //                             recorded before the run. heavy: true makes the run wait for the heavy-job lock of the machine.
+//                             decisions: the ids of the decisions that the run rests on; the run does not start when one
+//                             of them is a class A decision that waits for the owner.
 //   simra run --detach <spec.json>
 //                             start the experiment in a supervisor process, print its id and return at once
 //   simra wait <id> [<id>...] [--timeout-s <n>]
@@ -15,6 +17,19 @@
 //                             line per job (status, exit code, runtime, logs). Exit code 0 only when every job completed.
 //   simra inbox               the detached runs that ended and whose result nobody has read, and the heavy-job lock with
 //                             its queue. A wait or a show of a run takes it out of the inbox.
+//   simra decide <decision.json>
+//                             record a decision; decision.json = { class, statement, alternative, why, reverse, evidence?,
+//                             affects?, decided_by? }. Class A (scope, cost, schedule, an external claim or a number for a
+//                             third party) waits for the owner: exit code 3. Class B (a technical direction that is costly
+//                             to reverse) and class C (routine): exit code 0.
+//   simra decision list [--class <A,B,C>] [--status <status>] [--since <time>]
+//   simra decision show <id>  one decision with the results that rest on it (the id, or the start or end of the id)
+//   simra decision answer <id> confirmed|changed|reversed --by <name> [--note <text>] [--statement <text>]
+//                             the answer of the owner; changed needs --statement. A changed or reversed decision marks
+//                             the results that depended on it.
+//   simra digest [--since <time>] [--json]
+//                             the owner digest since a time (default 24h; an ISO time, or 90m, 24h, 3d, 2w): the class A
+//                             and B decisions, the results whose pass rule failed or changed, the checks that did not run
 //   simra show <id> [--json]  print the summary of the experiment (with a STALE line for each input file that changed
 //                             after the run); with --json, the experiment and result records
 //   simra record [<path>...]  print the design record: each file of record, its hash, and the checks that ran on it
@@ -63,7 +78,9 @@ import { formatWorkarounds, workaroundsFor } from "./workarounds.ts";
 import { checkTable, connectionGate, formatConnectionRows, loadConnectionTable } from "./connections.ts";
 import { formatJobs, runJobs } from "./jobs.ts";
 import { formatHeavyQueue, formatHolder, heavyQueue } from "./heavy.ts";
-import { ackInbox, formatInbox, readInbox } from "./inbox.ts";
+import { ackInbox, formatDecisionInbox, formatInbox, readDecisionInbox, readInbox } from "./inbox.ts";
+import { ackAnswers, answerDecision, DECISION_CLASSES, findDecision, formatDecision, formatDecisionList, formatRecorded, listDecisions, OWNER_ANSWERS, type OwnerAnswer, recordDecision, waitsForOwner } from "./decisions.ts";
+import { buildDigest, formatDigest, parseSince } from "./digest.ts";
 import { assumptionUses, latestVerdict, loadRequirements, runCheck } from "./requirements.ts";
 import { runtimeEstimate } from "./estimate.ts";
 import { designRecord, formatDesignRecord } from "./record.ts";
@@ -77,7 +94,7 @@ class CliUsageError extends Error {}
 
 function usage(): never {
 	console.error(
-		"usage: simra run [--detach] <spec.json> | simra jobs <jobs.json> [--cpus <list>] [--parallel <n>] [--timeout-s <n>] | simra wait <id> [<id>...] [--timeout-s <n>] | simra inbox | simra show <id> [--json] | simra record [<path>...] | simra probe --pdk <name> [--environment <env>] [--cpus <list>] [--json] | simra em <inputs.json> [--environment <env>] [--cpus <list>] [--parallel <n>] [--timeout-s <n>] | simra workarounds [--simulator <name>] [--pdk <name>] | simra query [--source experiments|checks] [--check <id|latest>] [--experiment <id or text>] [--condition <name>] [--measurement <text or /re/>] [--requirement <text>] [--status <s>] [--operation <op>] [--limit <n>] | simra snp-diff <a.sNp> <b.sNp> [--band <lo,hi>] | simra connections --table <file> [--block <name> --interface <file>] | simra list | simra assumptions [<id>] [--file <path>] | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>] | simra pdf <file> [--pages <a-b> | --render <N>] | simra pack init --pdk <name> [--adapter <name>] [--pdk-root <dir>] [--dir <dir>] [--inputs <json>] [--write] | simra pack check --pdk <name> [--adapter <name>] [--inputs <json>] | simra analytics <on|off|status>   [--root <dir>]",
+		"usage: simra run [--detach] <spec.json> | simra jobs <jobs.json> [--cpus <list>] [--parallel <n>] [--timeout-s <n>] | simra wait <id> [<id>...] [--timeout-s <n>] | simra inbox | simra decide <decision.json> | simra decision list [--class <A,B,C>] [--status <status>] [--since <time>] | simra decision show <id> | simra decision answer <id> confirmed|changed|reversed --by <name> [--note <text>] [--statement <text>] | simra digest [--since <time>] [--json] | simra show <id> [--json] | simra record [<path>...] | simra probe --pdk <name> [--environment <env>] [--cpus <list>] [--json] | simra em <inputs.json> [--environment <env>] [--cpus <list>] [--parallel <n>] [--timeout-s <n>] | simra workarounds [--simulator <name>] [--pdk <name>] | simra query [--source experiments|checks] [--check <id|latest>] [--experiment <id or text>] [--condition <name>] [--measurement <text or /re/>] [--requirement <text>] [--status <s>] [--operation <op>] [--limit <n>] | simra snp-diff <a.sNp> <b.sNp> [--band <lo,hi>] | simra connections --table <file> [--block <name> --interface <file>] | simra list | simra assumptions [<id>] [--file <path>] | simra check [--file <path>] [--only <id,...>] [--conditions <name,...>] [--parallel <n>] | simra pdf <file> [--pages <a-b> | --render <N>] | simra pack init --pdk <name> [--adapter <name>] [--pdk-root <dir>] [--dir <dir>] [--inputs <json>] [--write] | simra pack check --pdk <name> [--adapter <name>] [--inputs <json>] | simra analytics <on|off|status>   [--root <dir>]",
 	);
 	throw new CliUsageError();
 }
@@ -100,7 +117,7 @@ async function main(argv: string[]): Promise<number> {
 			// Internal: the supervisor of a detached run (see runExperiment). The argument is the experiment directory.
 			const result = await runDetachedWorker(argv[++i] ?? usage());
 			return result.status === "completed" ? 0 : 1;
-		} else if (["--cpus", "--environment", "--file", "--only", "--conditions", "--parallel", "--timeout-s", "--pages", "--render", "--pdk", "--simulator", "--band", "--table", "--block", "--interface", "--adapter", "--pdk-root", "--dir", "--inputs", "--source", "--check", "--experiment", "--condition", "--measurement", "--requirement", "--status", "--operation", "--limit"].includes(argv[i])) options[argv[i].slice(2)] = argv[++i] ?? usage();
+		} else if (["--cpus", "--environment", "--file", "--only", "--conditions", "--parallel", "--timeout-s", "--pages", "--render", "--pdk", "--simulator", "--band", "--table", "--block", "--interface", "--adapter", "--pdk-root", "--dir", "--inputs", "--source", "--check", "--experiment", "--condition", "--measurement", "--requirement", "--status", "--operation", "--limit", "--since", "--by", "--note", "--statement", "--class"].includes(argv[i])) options[argv[i].slice(2)] = argv[++i] ?? usage();
 		else args.push(argv[i]);
 	}
 	root ??= findRoot(process.cwd()) ?? process.cwd();
@@ -128,6 +145,7 @@ async function main(argv: string[]): Promise<number> {
 			timeoutS: spec.timeout_s,
 			passRule: spec.pass_rule,
 			heavy: spec.heavy,
+			decisions: spec.decisions,
 		};
 		if (detach) {
 			const started = await runExperiment({ ...opts, detached: true });
@@ -162,7 +180,43 @@ async function main(argv: string[]): Promise<number> {
 		return outcome.jobs.every((o) => o.status === "completed") ? 0 : 1;
 	}
 	if (command === "inbox") {
-		console.log(`${formatInbox(readInbox(root))}\n${formatHeavyQueue(heavyQueue())}`);
+		const decisions = formatDecisionInbox(readDecisionInbox(root));
+		console.log(`${formatInbox(readInbox(root))}\n${decisions ? `${decisions}\n` : ""}${formatHeavyQueue(heavyQueue())}`);
+		return 0;
+	}
+	if (command === "decide" && arg) {
+		const decision = recordDecision(root, JSON.parse(readFileSync(arg, "utf8")));
+		console.log(formatRecorded(root, decision));
+		// Class A waits for the owner: the exit code stops a command chain that would continue.
+		return waitsForOwner(decision) ? 3 : 0;
+	}
+	if (command === "decision" && arg === "list") {
+		const classes = list(options.class)?.map((c) => c.toUpperCase());
+		for (const c of classes ?? []) if (!(DECISION_CLASSES as string[]).includes(c)) throw new Error(`class "${c}": the classes are A, B and C`);
+		const since = options.since === undefined ? null : parseSince(options.since);
+		const status = options.status === "waiting" ? "waiting for owner" : options.status;
+		const found = listDecisions(root).filter((d) => (!classes || classes.includes(d.class)) && (status === undefined || d.status === status) && (!since || Date.parse(d.created_at) >= since.getTime() || d.answers.some((a) => Date.parse(a.at) >= since.getTime())));
+		console.log(formatDecisionList(found));
+		return 0;
+	}
+	if (command === "decision" && arg === "show") {
+		const decision = findDecision(root, args[2] ?? usage());
+		// The answer of the owner is read: it leaves the inbox.
+		ackAnswers(root, [decision.id]);
+		console.log(formatDecision(root, decision));
+		return 0;
+	}
+	if (command === "decision" && arg === "answer") {
+		const answer = args[3] ?? usage();
+		if (!(OWNER_ANSWERS as string[]).includes(answer)) usage();
+		if (options.by === undefined) throw new Error("decision answer: give who answers with --by <name>");
+		const decision = answerDecision(root, args[2] ?? usage(), { answer: answer as OwnerAnswer, by: options.by, via: "cli", terminal: Boolean(process.stdin.isTTY && process.stdout.isTTY), note: options.note, statement: options.statement });
+		console.log(formatDecision(root, decision));
+		return 0;
+	}
+	if (command === "digest") {
+		const digest = buildDigest(root, parseSince(options.since ?? "24h"));
+		console.log(json ? JSON.stringify(digest, null, 2) : formatDigest(digest));
 		return 0;
 	}
 	if (command === "show" && arg) {

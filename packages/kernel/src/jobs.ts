@@ -30,6 +30,8 @@ export interface JobSpec {
 	pass_rule?: PassRuleInput;
 	/** A heavy job: it waits for the heavy-job lock of the machine (see heavy.ts). */
 	heavy?: boolean;
+	/** The decisions that the job rests on (see decisions.ts). A job that cites a class A decision that waits does not start. */
+	decisions?: string[];
 }
 
 export interface JobsOptions {
@@ -160,6 +162,7 @@ export async function runJobs(opts: JobsOptions): Promise<JobsOutcome> {
 					cpus: slots[slot] ?? undefined,
 					detached: true,
 					passRule: j.pass_rule,
+					decisions: j.decisions,
 					heavy: j.heavy,
 				});
 				o.id = started.id;

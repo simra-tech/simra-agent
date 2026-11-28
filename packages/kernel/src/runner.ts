@@ -38,6 +38,7 @@ import { runtimeEstimate, type RuntimeEstimate } from "./estimate.ts";
 import { acquireHeavyLock, formatHolder, type HeavyLock, heavyQueue, isHeavyOperation } from "./heavy.ts";
 import { writeInboxMarker } from "./inbox.ts";
 import { type PassRuleInput, recordPassRule } from "./passrule.ts";
+import { citeDecisions } from "./decisions.ts";
 import { describeTouchstone, isTouchstoneEntry } from "./touchstone.ts";
 
 export const CONTRACT = "simra.adapter/0";
@@ -82,6 +83,12 @@ export interface RunOptions {
 	 * with the status "queued". Default: true when heavy_operations of the configuration names the operation.
 	 */
 	heavy?: boolean;
+	/**
+	 * The decisions that the run rests on (ids of simra/decisions, or the start or end of an id). They are recorded in
+	 * experiment.json. The run does not start when a cited class A decision waits for the owner, or when the owner
+	 * reversed a cited decision.
+	 */
+	decisions?: string[];
 }
 
 export interface RunOutcome {
@@ -203,6 +210,8 @@ function prepareExperiment(opts: RunOptions): { job: Job; env: NodeJS.ProcessEnv
 	const heavy = opts.heavy ?? isHeavyOperation(config.heavy_operations, opts.adapter, opts.operation);
 	// The pass rule is checked and hashed before the experiment directory exists: a rule that cannot be read stops the run.
 	const passRule = opts.passRule === undefined ? undefined : recordPassRule(root, opts.passRule);
+	// The cited decisions are checked before the experiment directory exists: a class A decision that waits stops the run.
+	const decisions = opts.decisions === undefined || (Array.isArray(opts.decisions) && opts.decisions.length === 0) ? undefined : citeDecisions(root, opts.decisions);
 	const id = newExperimentId();
 	const dir = experimentDir(root, id);
 	const requestPath = join(dir, "request.json");
@@ -227,6 +236,7 @@ function prepareExperiment(opts: RunOptions): { job: Job; env: NodeJS.ProcessEnv
 		simra: { kernel_version: KERNEL_VERSION },
 		...(passRule ? { pass_rule: passRule } : {}),
 		...(heavy ? { heavy: true } : {}),
+		...(decisions ? { decisions } : {}),
 	};
 	writeJsonAtomic(join(dir, "experiment.json"), experiment);
 	writeJsonAtomic(requestPath, {

@@ -1,0 +1,28 @@
+{
+  "schema": "simra.experiment/0",
+  "id": "20261110-090000-e5f6a7",
+  "created_at": "2026-11-10T09:00:00.000Z",
+  "purpose": "first global route",
+  "adapter": {
+    "name": "librelane",
+    "version": "0.1.0",
+    "dir": "adapters/librelane",
+    "files": []
+  },
+  "operation": "read",
+  "inputs": {
+    "run": "runs/grt"
+  },
+  "environment": {
+    "name": "local",
+    "kind": "local"
+  },
+  "design": {
+    "root": ".",
+    "git_commit": null,
+    "git_dirty": null
+  },
+  "simra": {
+    "kernel_version": "0.1.0"
+  }
+}

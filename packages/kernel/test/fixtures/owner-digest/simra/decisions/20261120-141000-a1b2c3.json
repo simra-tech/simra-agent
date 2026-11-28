@@ -1,0 +1,25 @@
+{
+  "schema": "simra.decision/0",
+  "id": "20261120-141000-a1b2c3",
+  "created_at": "2026-11-20T14:10:00.000Z",
+  "class": "A",
+  "alternative": "state no clock rate until the timing with extracted wires exists",
+  "reverse": "replace the number in the table when the extracted timing exists",
+  "evidence": [],
+  "affects": [
+    {
+      "kind": "claim",
+      "ref": "clock rate of acc in the project table"
+    },
+    {
+      "kind": "pass_rule",
+      "ref": "timing"
+    }
+  ],
+  "decided_by": "flow agent",
+  "status": "waiting for owner",
+  "authority": "policy",
+  "answers": [],
+  "statement": "State 140 MHz as the clock rate of acc in the project table, from the timing of the global route",
+  "why": "the table is due before the detailed route ends"
+}

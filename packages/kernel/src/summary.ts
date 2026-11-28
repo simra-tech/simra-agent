@@ -3,6 +3,7 @@
 
 import { join, relative } from "node:path";
 import type { RuntimeEstimate } from "./estimate.ts";
+import { experimentDecisionFlags, formatCited, listDecisions, verdictDecisionFlags } from "./decisions.ts";
 import { formatPassRule, passRuleFlags } from "./passrule.ts";
 import { formatStale, staleInputs } from "./record.ts";
 import { type CommandRun, experimentDir, type ExperimentRecord, type ResultRecord } from "./records.ts";
@@ -34,10 +35,26 @@ function passRuleLines(root: string, experiment: ExperimentRecord, result: Resul
 	return [...(experiment.pass_rule ? [formatPassRule(experiment.pass_rule)] : []), ...passRuleFlags(root, experiment, result)];
 }
 
+/**
+ * The decisions of the run: one line for each decision that the run cites, then the flags (a class A decision that the
+ * owner did not confirm, a decision that the owner changed or reversed). Nothing for a design root without decisions.
+ */
+function decisionLines(root: string, experiment: ExperimentRecord, result: ResultRecord | null): string[] {
+	let decisions: ReturnType<typeof listDecisions>;
+	try {
+		decisions = listDecisions(root);
+	} catch {
+		return [];
+	}
+	if (!decisions.length && !experiment.decisions?.length) return [];
+	const cited = (experiment.decisions ?? []).map((id) => decisions.find((d) => d.id === id)).filter((d) => d !== undefined);
+	return [...cited.map(formatCited), ...experimentDecisionFlags(root, experiment, result, decisions)];
+}
+
 /** The summary of a detached experiment just after its start. `queued`: the holder of the heavy-job lock, for a heavy job that waits. */
 export function formatStarted(root: string, experiment: ExperimentRecord, estimate: RuntimeEstimate | null, queued?: string | null): string {
 	const state = queued ? `queued (detached; a heavy job: it starts when the heavy-job lock is free; held by ${queued})` : "running (detached)";
-	return [`experiment ${experiment.id}: ${state}`, ...headLines(root, experiment, estimate), ...passRuleLines(root, experiment, null)].join("\n");
+	return [`experiment ${experiment.id}: ${state}`, ...headLines(root, experiment, estimate), ...passRuleLines(root, experiment, null), ...decisionLines(root, experiment, null)].join("\n");
 }
 
 /** One block per outcome of a wait: the summary of an ended run, or one line for a run that still runs. */
@@ -59,6 +76,7 @@ export function formatOutcome(root: string, experiment: ExperimentRecord, result
 	lines.push(...headLines(root, experiment, estimate));
 	if (result.queued_s !== undefined && result.queued_s >= 1) lines.push(`heavy job: waited ${result.queued_s.toFixed(1)} s for the heavy-job lock`);
 	lines.push(...passRuleLines(root, experiment, result));
+	lines.push(...decisionLines(root, experiment, result));
 	if (result.tool) lines.push(`tool: ${result.tool.name} ${result.tool.version}`);
 	for (const c of result.commands ?? []) lines.push(formatCommand(c));
 	const design = experiment.design;
@@ -117,6 +135,11 @@ export function formatVerdict(root: string, verdict: VerdictRecord): string {
 		`check ${verdict.id}: ${verdict.status.toUpperCase()} (${c.pass} pass, ${c.fail} fail, ${c.not_measured} not measured, ${c.not_run} not run; ${verdict.experiments.length} experiment${verdict.experiments.length === 1 ? "" : "s"})`,
 	);
 	lines.push(`record: ${relative(root, join(checksDir(root), verdict.id))}/verdict.json`);
+	try {
+		lines.push(...verdictDecisionFlags(root, verdict));
+	} catch {
+		// a decision record that cannot be read does not stop the summary of a check
+	}
 	if (verdict.status === "incomplete") lines.push("Not every part of the check passed or ran, so this check does not show that the design meets its requirements.");
 	// The diagnostics of each experiment that gave a row that is not a pass, for example design errors with file and line.
 	const pending = new Set(verdict.rows.filter((r) => r.status !== "pass" && r.experiment).map((r) => r.experiment));

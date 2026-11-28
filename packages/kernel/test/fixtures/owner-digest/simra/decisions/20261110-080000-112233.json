@@ -1,0 +1,21 @@
+{
+  "schema": "simra.decision/0",
+  "id": "20261110-080000-112233",
+  "created_at": "2026-11-10T08:00:00.000Z",
+  "class": "B",
+  "alternative": "55 %",
+  "reverse": "change FP_CORE_UTIL and run the flow again",
+  "evidence": [],
+  "affects": [
+    {
+      "kind": "file",
+      "ref": "config.json"
+    }
+  ],
+  "decided_by": null,
+  "status": "adopted",
+  "authority": "policy",
+  "answers": [],
+  "statement": "Set the core utilization of acc to 40 %",
+  "why": "the global route had overflow at 55 %"
+}

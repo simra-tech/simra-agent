@@ -1,0 +1,20 @@
+{
+  "schema": "simra.result/0",
+  "experiment": "20261110-090000-e5f6a7",
+  "status": "completed",
+  "started_at": "2026-11-10T09:00:05.000Z",
+  "finished_at": "2026-11-10T09:00:05.000Z",
+  "duration_s": 1,
+  "exit_code": 0,
+  "signal": null,
+  "errors": [],
+  "tool": null,
+  "input_files": null,
+  "outputs": [],
+  "measurements": {},
+  "diagnostics": [],
+  "logs": {
+    "adapter_stdout": "adapter.stdout.log",
+    "adapter_stderr": "adapter.stderr.log"
+  }
+}

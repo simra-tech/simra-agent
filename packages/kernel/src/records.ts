@@ -61,6 +61,8 @@ export interface ExperimentRecord {
 	pass_rule?: PassRuleRecord;
 	/** Optional: true for a heavy job. It runs only while it holds the heavy-job lock of the machine (see heavy.ts). */
 	heavy?: boolean;
+	/** Optional: the ids of the decisions that the run rests on, as the caller cited them before the run (see decisions.ts). */
+	decisions?: string[];
 }
 
 /** One external command that an adapter ran: the command line as it was run, its exit code and its runtime. */

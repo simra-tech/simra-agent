@@ -1,0 +1,41 @@
+{
+  "schema": "simra.experiment/0",
+  "id": "20261127-140000-a7b8c9",
+  "created_at": "2026-11-27T14:00:00.000Z",
+  "purpose": "timing after the detailed route",
+  "adapter": {
+    "name": "openroad",
+    "version": "0.1.0",
+    "dir": "adapters/openroad",
+    "files": []
+  },
+  "operation": "timing",
+  "inputs": {
+    "log": "runs/route/sta.log"
+  },
+  "environment": {
+    "name": "local",
+    "kind": "local"
+  },
+  "design": {
+    "root": ".",
+    "git_commit": null,
+    "git_dirty": null
+  },
+  "simra": {
+    "kernel_version": "0.1.0"
+  },
+  "pass_rule": {
+    "key": "timing",
+    "text": "setup slack >= 0 ns at the three corners, with the wires of the global route",
+    "sha256": "1d21da0aa5421d73ec03d75c1e0fd797c3664912e98327b42b3340b83c9b4d90",
+    "recorded_at": "2026-11-27T13:00:00.000Z",
+    "changed_after_results": [
+      {
+        "experiment": "20261127-090000-b2c3d4",
+        "sha256": "dca3b6cebe9b119d47c8ab49de6027edaf49c97009c1651cac9c0e0876843516",
+        "finished_at": "2026-11-27T09:00:20.000Z"
+      }
+    ]
+  }
+}

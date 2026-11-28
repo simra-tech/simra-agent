@@ -1,0 +1,37 @@
+{
+  "schema": "simra.result/0",
+  "experiment": "20261127-140000-a7b8c9",
+  "status": "failed",
+  "started_at": "2026-11-27T14:00:02.000Z",
+  "finished_at": "2026-11-27T14:00:02.000Z",
+  "duration_s": 1,
+  "exit_code": 1,
+  "signal": null,
+  "errors": [],
+  "tool": null,
+  "input_files": null,
+  "outputs": [],
+  "measurements": {
+    "timing_check": {
+      "value": null,
+      "unit": "",
+      "status": "failed",
+      "reason": "not run: the log has no slack line and no path report"
+    }
+  },
+  "diagnostics": [
+    {
+      "severity": "error",
+      "message": "not run: the log has no slack line and no path report",
+      "source": "runs/route/sta.log"
+    }
+  ],
+  "logs": {
+    "adapter_stdout": "adapter.stdout.log",
+    "adapter_stderr": "adapter.stderr.log"
+  },
+  "pass_rule_sha256": "1d21da0aa5421d73ec03d75c1e0fd797c3664912e98327b42b3340b83c9b4d90",
+  "report": [
+    "timing check: not run"
+  ]
+}

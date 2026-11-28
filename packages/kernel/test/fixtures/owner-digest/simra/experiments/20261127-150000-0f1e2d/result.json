@@ -1,0 +1,22 @@
+{
+  "schema": "simra.result/0",
+  "experiment": "20261127-150000-0f1e2d",
+  "status": "timeout",
+  "started_at": "2026-11-27T16:00:00.000Z",
+  "finished_at": "2026-11-27T16:00:00.000Z",
+  "duration_s": 1,
+  "exit_code": 1,
+  "signal": null,
+  "errors": [
+    "the run reached its timeout of 3600 s"
+  ],
+  "tool": null,
+  "input_files": null,
+  "outputs": [],
+  "measurements": {},
+  "diagnostics": [],
+  "logs": {
+    "adapter_stdout": "adapter.stdout.log",
+    "adapter_stderr": "adapter.stderr.log"
+  }
+}

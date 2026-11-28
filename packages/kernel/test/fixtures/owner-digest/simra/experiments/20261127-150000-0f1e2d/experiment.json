@@ -1,0 +1,28 @@
+{
+  "schema": "simra.experiment/0",
+  "id": "20261127-150000-0f1e2d",
+  "created_at": "2026-11-27T15:00:00.000Z",
+  "purpose": "DRC of the routed layout",
+  "adapter": {
+    "name": "klayout",
+    "version": "0.1.0",
+    "dir": "adapters/klayout",
+    "files": []
+  },
+  "operation": "drc",
+  "inputs": {
+    "layout": "runs/route/acc.gds"
+  },
+  "environment": {
+    "name": "local",
+    "kind": "local"
+  },
+  "design": {
+    "root": ".",
+    "git_commit": null,
+    "git_dirty": null
+  },
+  "simra": {
+    "kernel_version": "0.1.0"
+  }
+}

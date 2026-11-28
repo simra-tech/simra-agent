@@ -25,3 +25,5 @@ export * from "./passrule.ts";
 export * from "./heavy.ts";
 export * from "./inbox.ts";
 export * from "./timingcheck.ts";
+export * from "./decisions.ts";
+export * from "./digest.ts";
