@@ -84,7 +84,7 @@ import {
 	runJobs,
 	readInbox,
 	formatInbox,
-	readDecisionInbox,
+	decisionInbox,
 	formatDecisionInbox,
 	recordDecision,
 	formatRecorded,
@@ -512,15 +512,25 @@ export function parseDecisionCommand(args: string): { id: string; answer: OwnerA
 	return { id: m[1], answer: m[2] as OwnerAnswer, text: m[3] };
 }
 
-/** The note for a shell command of the agent that answers a decision (see answerNote). */
+/** The note for a shell command of the agent that recorded an answer to a decision (see answerNote). */
 export const ANSWER_NOTE =
 	"\nSimra decisions: this command recorded an answer to a decision from the shell of the agent. An answer is the word of the owner. " +
 	"The record has the name that the command gave and the fact that it did not come from a terminal. If the owner did not give this answer in this session, say so now and ask the owner to answer again.";
 
-/** A shell command of the agent that ran `simra decision answer` and did not fail: the result gets ANSWER_NOTE. */
-export function answerNote(event: Pick<ToolResultEvent, "toolName" | "isError" | "input">): string | null {
-	if (event.toolName !== "bash" || event.isError) return null;
-	return /\bdecision\s+answer\b/.test(String((event.input as { command?: unknown })?.command ?? "")) ? ANSWER_NOTE : null;
+/**
+ * A shell command of the agent during which an answer to a decision was recorded from a command line that is not a
+ * terminal: the result gets ANSWER_NOTE and the decisions. The records decide, not the words of the command: a command
+ * that only prints "decision answer" gets no note, and a script that answers gets one. since: the start of the command.
+ */
+export function answerNote(event: Pick<ToolResultEvent, "toolName">, root: string, since: number | null): string | null {
+	if (event.toolName !== "bash" || since === null) return null;
+	let answered: string[];
+	try {
+		answered = listDecisions(root).flatMap((d) => d.answers.filter((a) => a.via === "cli" && !a.terminal && Date.parse(a.at) >= since).map((a) => `${d.id} ${a.answer} by ${a.by}`));
+	} catch {
+		return null;
+	}
+	return answered.length ? `${ANSWER_NOTE}\nRecorded: ${answered.join("; ")}` : null;
 }
 
 export const STATE_NOTE_MAX = 3000;
@@ -641,13 +651,14 @@ export default function (pi: ExtensionAPI) {
 	/** The note for the runs that the session was not told about, and the call that marks them as told. */
 	function inboxFresh(cwd: string): { note: string; told: () => void } | null {
 		let fresh: ReturnType<typeof readInbox>;
-		let decisions: ReturnType<typeof readDecisionInbox>;
+		let decisions: ReturnType<typeof decisionInbox>;
 		try {
 			const root = findRoot(cwd) ?? cwd;
 			fresh = readInbox(root).filter((m) => !inboxTold.has(m.experiment));
 			// A class A decision that waits for the owner, and an answer of the owner that nobody has read: each is named
 			// one time in a session, as an ended run is.
-			decisions = readDecisionInbox(root).filter((m) => !inboxTold.has(decisionKey(m)));
+			// The records decide what is named (decisionInbox): a marker that is lost or out of date changes nothing.
+			decisions = decisionInbox(root).filter((m) => !inboxTold.has(decisionKey(m)));
 		} catch {
 			return null;
 		}
@@ -794,7 +805,7 @@ export default function (pi: ExtensionAPI) {
 			process.env.SIMRA_FLOW_CHECK === "off" ? null : timingNote(event, ctx.cwd, since, sizes),
 		];
 		const inbox = inboxNote(ctx.cwd);
-		const notes = [await netlistNote(event, ctx.cwd), ...flowNotes, recordNote, outputNote, answerNote(event), inbox === null ? null : `\n${inbox}`, clock?.(Date.now()) ?? null].filter((n): n is string => n !== null);
+		const notes = [await netlistNote(event, ctx.cwd), ...flowNotes, recordNote, outputNote, answerNote(event, findRoot(ctx.cwd) ?? ctx.cwd, since), inbox === null ? null : `\n${inbox}`, clock?.(Date.now()) ?? null].filter((n): n is string => n !== null);
 		if (notes.length === 0) return;
 		return { content: [...event.content, ...notes.map((text) => ({ type: "text" as const, text }))], structuredContent: event.structuredContent };
 	});
@@ -990,9 +1001,10 @@ export default function (pi: ExtensionAPI) {
 			const root = findRoot(ctx.cwd) ?? ctx.cwd;
 			if (params.id) {
 				const decision = findDecision(root, params.id);
-				// The agent read the answer of the owner: it leaves the inbox.
-				ackAnswers(root, [decision.id]);
-				return { content: [{ type: "text", text: formatDecision(root, decision) }], details: { id: decision.id, class: decision.class, status: decision.status } };
+				const text = formatDecision(root, decision);
+				// The agent read this answer of the owner: it leaves the inbox. A newer answer stays.
+				ackAnswers(root, [decision]);
+				return { content: [{ type: "text", text }], details: { id: decision.id, class: decision.class, status: decision.status } };
 			}
 			const found = listDecisions(root).filter((d) => (!params.class || params.class.includes(d.class)) && (!params.waiting || waitsForOwner(d)));
 			return { content: [{ type: "text", text: formatDecisionList(found) }], details: { count: found.length, waiting: found.filter(waitsForOwner).length } };
@@ -1359,8 +1371,10 @@ export default function (pi: ExtensionAPI) {
 			"  For ngspice, a condition can give params ({name: value}) and temp_c; they replace the deck's .param values and .temp.",
 			"- A sweep bench prints one line per point, 'ROW <sweep>=<v> <name>=<value> ...', and the check uses the worst point",
 			"  over the sweep and names it (@ <sweep>=<v>). A sweep point without a value is never a pass.",
-			"- experiments: {name: {adapter, operation, inputs, environment?, timeout_s?}}, with the same inputs as",
+			"- experiments: {name: {adapter, operation, inputs, environment?, timeout_s?, decisions?}}, with the same inputs as",
 			"  run_experiment. In each input string, \"{condition}\" is replaced with the condition name.",
+			"  decisions lists the decisions (record_decision) that each run of the experiment rests on: a class A decision that",
+			"  waits for the owner stops the check before a run starts.",
 			"- requirements: [{id, description?, experiment, measurement, unit?, op, limit, conditions?}]. op is \"<=\", \">=\" or",
 			"  \"between\". limit is a number, [low, high] for between, or {condition: limit}. measurement is a measurement",
 			"  of the experiment (for simulate, a key of inputs.measurements). conditions lists the condition names to check. A requirement without conditions runs its",
@@ -1388,6 +1402,8 @@ export default function (pi: ExtensionAPI) {
 			"  row there (the requirement does not list the corner, the run failed, or it gave no value), the gate row is not run and",
 			"  the check cannot pass: the typical corner does not cover another corner. In measurement, \"{condition}\" is replaced",
 			"  with the condition name (librelane read: \"setup_ws_ns@{condition}\").",
+			"  Two conditions of a requirement that give the same inputs and read the same measurement are an error: put",
+			"  \"{condition}\" in the measurement name, or give each condition its inputs.",
 			"- gates.netlist (optional): {file, subckt, pins, devices, given, wiring, couplings, fitted, em_passives_min, allow_params,",
 			"  technology}: one row with the rule errors of the design file (the instance parameters of each PDK device come from the",
 			"  technology pack; a parameter that changes the device physics, for example selft or dtemp, is an error unless",

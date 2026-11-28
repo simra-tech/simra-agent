@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { answerDecision, findDecision, listDecisions, readDecisionInbox, recordDecision } from "@simra-tech/kernel";
+import { answerDecision, decisionInbox, findDecision, listDecisions, readDecisionInbox, recordDecision } from "@simra-tech/kernel";
 import extension, { ANSWER_NOTE, answerNote, INBOX_TYPE, parseDecisionCommand } from "../index.ts";
 
 const fakeAdapters = new URL("../../kernel/test/fixtures/adapters", import.meta.url).pathname;
@@ -165,15 +165,42 @@ test("/digest shows the owner digest of the fixture, and a wrong time is an erro
 	assert.deepEqual([s.notified.at(-1)?.type, /give an ISO date or time/.test(s.notified.at(-1)?.message ?? "")], ["error", true]);
 });
 
-test("a shell command of the agent that answers a decision gets a note; another command gets none", async (t) => {
+test("a shell command of the agent that records an answer gets a note; a command that only prints the words gets none", async (t) => {
 	const s = session(t);
-	const answer = { ...bashResult, input: { command: "simra decision answer 3fa2c1 confirmed --by owner" } };
-	assert.equal(answerNote(answer), ANSWER_NOTE);
-	const result = await s.emit("tool_result", answer);
-	assert.equal(result.content.at(-1).text, ANSWER_NOTE);
-	// Negative controls: a read of a decision, a failed command, another tool.
-	assert.equal(answerNote({ ...bashResult, input: { command: "simra decision show 3fa2c1" } }), null);
-	assert.equal(answerNote({ ...answer, isError: true }), null);
-	assert.equal(answerNote({ ...answer, toolName: "read" }), null);
-	assert.equal(await s.emit("tool_result", bashResult), undefined);
+	const d = recordDecision(s.root, longRun as Parameters<typeof recordDecision>[1]);
+	const bash = async (id: string, command: string, during: () => void = () => {}) => {
+		await s.emit("tool_call", { toolName: "bash", toolCallId: id, input: { command } });
+		during();
+		const result = await s.emit("tool_result", { ...bashResult, toolCallId: id, input: { command } });
+		return ((result?.content ?? []) as { text: string }[]).map((c) => c.text).filter((x) => x.startsWith(ANSWER_NOTE));
+	};
+	// The words of the command are not an answer: the records decide.
+	assert.deepEqual(await bash("c2", "echo 'simra decision answer 3fa2c1 confirmed --by owner'"), []);
+	// An answer from a terminal and an answer of the user in the session are the word of the owner: no note.
+	assert.deepEqual(await bash("c3", "ls", () => answerDecision(s.root, d.id, { answer: "confirmed", by: "owner", via: "cli", terminal: true })), []);
+	assert.deepEqual(await bash("c4", "ls", () => answerDecision(s.root, d.id, { answer: "confirmed", by: "user of the session", via: "session" })), []);
+	// A script of the agent answers: the note names the decision, whatever the command text is.
+	const notes = await bash("c5", "sh tools/finish.sh", () => answerDecision(s.root, d.id, { answer: "reversed", by: "owner", via: "cli", terminal: false }));
+	assert.deepEqual(notes, [`${ANSWER_NOTE}\nRecorded: ${d.id} reversed by owner`]);
+	// The next command gets no note for the same answer, and another tool gets none.
+	await sleep(20);
+	assert.deepEqual(await bash("c6", "ls"), []);
+	assert.equal(answerNote({ toolName: "read" }, s.root, 0), null);
+	assert.match(answerNote({ toolName: "bash" }, s.root, 0) ?? "", /Recorded: \S+ reversed by owner$/);
+});
+
+test("the tool decisions takes the answer that it shows out of the inbox, and keeps a newer answer", async (t) => {
+	const s = session(t);
+	const d = recordDecision(s.root, longRun as Parameters<typeof recordDecision>[1]);
+	answerDecision(s.root, d.id, { answer: "confirmed", by: "owner" });
+	// The marker of a waiting decision that another process left behind does not bring the decision back.
+	writeFileSync(join(s.root, "simra/inbox", `decision-${d.id}.json`), JSON.stringify({ schema: "simra.inbox/0", kind: "decision", decision: d.id, class: "A", statement: d.statement, at: d.created_at }));
+	const first = await s.emit("tool_result", bashResult);
+	assert.match(first.content.at(-1).text, /the owner answered 1 decision/);
+	assert.doesNotMatch(first.content.at(-1).text, /waits for the owner/);
+	assert.match(await call(s, "decisions", { id: d.id }), /class A, confirmed by owner/);
+	assert.deepEqual(decisionInbox(s.root), []);
+	answerDecision(s.root, d.id, { answer: "reversed", by: "owner" });
+	const second = await s.emit("tool_result", bashResult);
+	assert.match(second.content.at(-1).text, new RegExp(`${d.id}: reversed by owner`));
 });
